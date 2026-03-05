@@ -21,6 +21,12 @@ export function runCommand() {
       }
 
       const config = await loadConfig(opts.config);
+
+      if (config.workstreams.length === 0) {
+        console.log('No workstreams defined. Add one with: ws create <name> "<prompt>"');
+        return;
+      }
+
       const dag = buildDAG(config.workstreams);
 
       if (opts.dryRun) {

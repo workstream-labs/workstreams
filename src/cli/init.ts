@@ -43,27 +43,25 @@ export function initCommand() {
         await Bun.write(".gitignore", gitignore);
       }
 
-      // Create example workstream.yaml if none exists
+      // Create workstream.yaml if none exists
       const configFile = Bun.file("workstream.yaml");
       if (!(await configFile.exists())) {
         await Bun.write(
           "workstream.yaml",
-          `# Workstream configuration
-agent:
+          `agent:
   command: "claude"
-  args: ["-p", "--allowedTools", "Edit,Write,Bash"]
+  args: ["-p"]
+  acceptAll: true
   timeout: 600
 
-workstreams:
-  example-task:
-    prompt: "Describe what this workstream should do..."
-    type: code
+workstreams: {}
 `
         );
       }
 
       console.log("Initialized workstreams in", cwd);
       console.log("  Created .workstreams/ directory");
-      console.log("  Created workstream.yaml (edit this to define your DAG)");
+      console.log("  Created workstream.yaml");
+      console.log('Add workstreams with: ws create <name> "<prompt>"');
     });
 }

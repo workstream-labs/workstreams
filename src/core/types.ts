@@ -13,6 +13,7 @@ export interface AgentConfig {
   args?: string[];
   env?: Record<string, string>;
   timeout?: number;
+  acceptAll?: boolean;
 }
 
 export interface WorkstreamDef {

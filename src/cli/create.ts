@@ -6,10 +6,10 @@ export function createCommand() {
   return new Command("create")
     .description("Add a new workstream to workstream.yaml")
     .argument("<name>", "workstream name")
-    .requiredOption("--prompt <prompt>", "prompt for the agent")
+    .argument("<prompt>", "prompt for the agent")
     .option("--type <type>", "node type (code or review)", "code")
     .option("--depends-on <deps>", "comma-separated dependency names")
-    .action(async (name: string, opts: { prompt: string; type: string; dependsOn?: string }) => {
+    .action(async (name: string, prompt: string, opts: { type: string; dependsOn?: string }) => {
       const validTypes: NodeType[] = ["code", "review"];
       if (!validTypes.includes(opts.type as NodeType)) {
         console.error(`Error: type must be one of: ${validTypes.join(", ")}`);
@@ -31,7 +31,7 @@ export function createCommand() {
       }
 
       const entry: Record<string, any> = {
-        prompt: opts.prompt,
+        prompt,
         type: opts.type,
       };
 

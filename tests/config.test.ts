@@ -124,4 +124,64 @@ workstreams:
     await Bun.write(tmpPath, yaml);
     expect(loadConfig(tmpPath)).rejects.toThrow("Duplicate");
   });
+
+  it("defaults acceptAll to true when not specified", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: claude
+  args: ["-p"]
+workstreams:
+  task-a:
+    prompt: "Do task A"
+`;
+    const tmpPath = "/tmp/test-ws-acceptall-default.yaml";
+    await Bun.write(tmpPath, yaml);
+    const config = await loadConfig(tmpPath);
+    expect(config.agent.acceptAll).toBe(true);
+  });
+
+  it("respects explicit acceptAll: false", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: claude
+  args: ["-p"]
+  acceptAll: false
+workstreams:
+  task-a:
+    prompt: "Do task A"
+`;
+    const tmpPath = "/tmp/test-ws-acceptall-false.yaml";
+    await Bun.write(tmpPath, yaml);
+    const config = await loadConfig(tmpPath);
+    expect(config.agent.acceptAll).toBe(false);
+  });
+
+  it("allows empty workstreams object", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: claude
+  args: ["-p"]
+workstreams: {}
+`;
+    const tmpPath = "/tmp/test-ws-empty.yaml";
+    await Bun.write(tmpPath, yaml);
+    const config = await loadConfig(tmpPath);
+    expect(config.workstreams).toHaveLength(0);
+  });
+
+  it("allows missing workstreams section", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: claude
+  args: ["-p"]
+`;
+    const tmpPath = "/tmp/test-ws-missing.yaml";
+    await Bun.write(tmpPath, yaml);
+    const config = await loadConfig(tmpPath);
+    expect(config.workstreams).toHaveLength(0);
+  });
 });

@@ -1,6 +1,18 @@
 import type { AgentConfig, NodeType } from "./types";
 import { AgentError } from "./errors";
 
+const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
+  claude: ["--dangerouslySkipPermissions"],
+  codex: ["--full-auto"],
+  aider: ["--yes"],
+};
+
+function getAutoAcceptFlags(config: AgentConfig): string[] {
+  if (config.acceptAll === false) return [];
+  const cmd = config.command.split("/").pop() ?? config.command;
+  return AUTO_ACCEPT_FLAGS[cmd] ?? [];
+}
+
 export interface AgentRunOptions {
   workDir: string;
   prompt: string;
@@ -24,7 +36,9 @@ export class AgentAdapter {
       fullPrompt = `Here are the upstream changes to review:\n\n${diffBlock}\n\n---\n\n${prompt}`;
     }
 
-    const args = [...(agentConfig.args ?? []), fullPrompt];
+    // Inject auto-accept flags based on agent command when acceptAll is true (default)
+    const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
+    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), fullPrompt];
     const env = { ...process.env, ...agentConfig.env };
 
     const logWriter = Bun.file(logFile).writer();

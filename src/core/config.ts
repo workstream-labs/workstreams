@@ -32,15 +32,21 @@ function validateConfig(raw: any): WorkstreamConfig {
     args: raw.agent.args,
     env: raw.agent.env,
     timeout: raw.agent.timeout,
+    acceptAll: raw.agent.acceptAll ?? true,
   };
 
-  // Validate workstreams
-  if (!raw.workstreams || typeof raw.workstreams !== "object") {
-    throw new ConfigError("Missing 'workstreams' section");
+  // Validate workstreams — allow empty or missing
+  if (raw.workstreams !== undefined && raw.workstreams !== null && typeof raw.workstreams !== "object") {
+    throw new ConfigError("'workstreams' must be an object or array");
   }
 
   const defs: WorkstreamDef[] = [];
   const names = new Set<string>();
+
+  // If workstreams is empty/null/undefined, return early with empty list
+  if (!raw.workstreams || (typeof raw.workstreams === "object" && !Array.isArray(raw.workstreams) && Object.keys(raw.workstreams).length === 0)) {
+    return { agent, workstreams: defs };
+  }
 
   // Support both map and array formats
   const entries = Array.isArray(raw.workstreams)
