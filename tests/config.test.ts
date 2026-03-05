@@ -1,0 +1,127 @@
+import { describe, it, expect } from "bun:test";
+import { parse } from "yaml";
+
+// We test the validation logic by importing loadConfig and feeding it temp files
+
+describe("config validation", () => {
+  it("parses a valid config", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+  args: ["-p"]
+  timeout: 60
+
+workstreams:
+  task-a:
+    prompt: "Do task A"
+    type: code
+  task-b:
+    prompt: "Do task B"
+    type: code
+    depends_on: [task-a]
+  reviewer:
+    prompt: "Review all"
+    type: review
+    depends_on: [task-a, task-b]
+`;
+    const tmpPath = "/tmp/test-ws-valid.yaml";
+    await Bun.write(tmpPath, yaml);
+    const config = await loadConfig(tmpPath);
+
+    expect(config.agent.command).toBe("echo");
+    expect(config.workstreams).toHaveLength(3);
+    expect(config.workstreams[0].name).toBe("task-a");
+    expect(config.workstreams[2].type).toBe("review");
+    expect(config.workstreams[2].dependsOn).toEqual(["task-a", "task-b"]);
+  });
+
+  it("rejects missing agent command", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent: {}
+workstreams:
+  foo:
+    prompt: "hi"
+`;
+    const tmpPath = "/tmp/test-ws-no-agent.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("agent.command");
+  });
+
+  it("rejects missing prompt", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  foo:
+    type: code
+`;
+    const tmpPath = "/tmp/test-ws-no-prompt.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("prompt is required");
+  });
+
+  it("rejects invalid type", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  foo:
+    prompt: "hi"
+    type: deploy
+`;
+    const tmpPath = "/tmp/test-ws-bad-type.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("type must be one of");
+  });
+
+  it("rejects unknown dependency reference", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  foo:
+    prompt: "hi"
+    depends_on: [nonexistent]
+`;
+    const tmpPath = "/tmp/test-ws-bad-dep.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("unknown workstream");
+  });
+
+  it("rejects review node without depends_on", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  foo:
+    prompt: "review this"
+    type: review
+`;
+    const tmpPath = "/tmp/test-ws-review-no-deps.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("review nodes must have depends_on");
+  });
+
+  it("rejects duplicate names", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    // YAML maps naturally dedupe, so test array format
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  - name: foo
+    prompt: "hi"
+  - name: foo
+    prompt: "hi again"
+`;
+    const tmpPath = "/tmp/test-ws-dup.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("Duplicate");
+  });
+});
