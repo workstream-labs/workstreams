@@ -52,6 +52,12 @@ export class DAGExecutor {
     this.setupSignalHandlers();
     this.emit("run:start", undefined, { runId: this.run.runId });
 
+    // Clear old log files
+    const { unlink } = await import("fs/promises");
+    for (const ws of Object.values(this.run.workstreams)) {
+      await unlink(ws.logFile).catch(() => {});
+    }
+
     console.log(`Starting run ${this.run.runId} with ${this.dag.nodes.size} workstreams`);
     console.log(`Execution order: ${this.dag.order.join(" → ")}`);
     console.log();

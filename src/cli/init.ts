@@ -4,7 +4,8 @@ import { loadState } from "../core/state";
 export function initCommand() {
   return new Command("init")
     .description("Initialize workstreams in the current git repo")
-    .action(async () => {
+    .option("-f, --force", "reinitialize even if already initialized")
+    .action(async (opts: { force?: boolean }) => {
       const { $ } = await import("bun");
 
       // Check we're in a git repo
@@ -17,8 +18,8 @@ export function initCommand() {
 
       // Check not already initialized
       const existing = await loadState();
-      if (existing) {
-        console.error("Error: workstreams already initialized");
+      if (existing && !opts.force) {
+        console.error("Error: workstreams already initialized (use --force to reinitialize)");
         process.exit(1);
       }
 

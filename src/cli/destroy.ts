@@ -7,8 +7,9 @@ export function destroyCommand() {
     .description("Remove workstream worktrees and clean state")
     .argument("[name]", "workstream name to destroy")
     .option("--all", "destroy all workstreams")
+    .option("--nuke", "destroy everything including .workstreams/ and workstream.yaml")
     .option("-y, --yes", "skip confirmation")
-    .action(async (name: string | undefined, opts: { all?: boolean; yes?: boolean }) => {
+    .action(async (name: string | undefined, opts: { all?: boolean; nuke?: boolean; yes?: boolean }) => {
       const state = await loadState();
       if (!state) {
         console.error("Error: workstreams not initialized.");
@@ -16,19 +17,21 @@ export function destroyCommand() {
       }
 
       const run = state.currentRun;
-      if (!run) {
+      if (!run && !opts.nuke) {
         console.log("No active run to destroy.");
         return;
       }
 
       const wt = new WorktreeManager();
-      const toDestroy = opts.all
+      const toDestroy = !run
+        ? []
+        : opts.all || opts.nuke
         ? Object.keys(run.workstreams)
         : name
           ? [name]
           : [];
 
-      if (toDestroy.length === 0) {
+      if (toDestroy.length === 0 && !opts.nuke) {
         console.error("Specify a workstream name or use --all");
         process.exit(1);
       }
@@ -68,6 +71,14 @@ export function destroyCommand() {
       }
 
       await saveState(state);
-      console.log("Cleanup complete.");
+
+      if (opts.nuke) {
+        const { rm } = await import("fs/promises");
+        await rm(".workstreams", { recursive: true, force: true });
+        await rm("workstream.yaml", { force: true });
+        console.log("Nuked .workstreams/ and workstream.yaml");
+      } else {
+        console.log("Cleanup complete.");
+      }
     });
 }

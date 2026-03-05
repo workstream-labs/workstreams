@@ -2,7 +2,7 @@ import type { AgentConfig, NodeType } from "./types";
 import { AgentError } from "./errors";
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
-  claude: ["--dangerouslySkipPermissions"],
+  claude: ["--dangerously-skip-permissions"],
   codex: ["--full-auto"],
   aider: ["--yes"],
 };
