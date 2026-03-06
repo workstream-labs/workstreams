@@ -2,7 +2,7 @@ import type { AgentConfig, NodeType } from "./types";
 import { AgentError } from "./errors";
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
-  claude: ["--dangerously-skip-permissions"],
+  claude: ["--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
   codex: ["--full-auto"],
   aider: ["--yes"],
 };
@@ -11,6 +11,50 @@ function getAutoAcceptFlags(config: AgentConfig): string[] {
   if (config.acceptAll === false) return [];
   const cmd = config.command.split("/").pop() ?? config.command;
   return AUTO_ACCEPT_FLAGS[cmd] ?? [];
+}
+
+function formatStreamEvent(line: string): string | null {
+  try {
+    const event = JSON.parse(line);
+    const ts = event.timestamp ? `[${event.timestamp}]` : "";
+
+    switch (event.type) {
+      case "assistant": {
+        const content = event.message?.content ?? [];
+        const parts: string[] = [];
+
+        for (const block of content) {
+          if (block.type === "text" && block.text) {
+            parts.push(`${ts} [assistant] ${block.text}`);
+          } else if (block.type === "tool_use") {
+            const input = typeof block.input === "string" ? block.input : JSON.stringify(block.input);
+            const truncated = input.length > 500 ? input.slice(0, 500) + "..." : input;
+            parts.push(`${ts} [tool_call] ${block.name}: ${truncated}`);
+          }
+        }
+        return parts.join("\n") || null;
+      }
+      case "result": {
+        const cost = event.total_cost_usd ? ` (cost: $${event.total_cost_usd.toFixed(4)})` : "";
+        const duration = event.duration_ms ? ` (${(event.duration_ms / 1000).toFixed(1)}s)` : "";
+        return `${ts} [result] ${event.subtype ?? "done"}${duration}${cost}`;
+      }
+      case "tool_result": {
+        const content = event.content ?? "";
+        const text = typeof content === "string" ? content : JSON.stringify(content);
+        const truncated = text.length > 1000 ? text.slice(0, 1000) + "..." : text;
+        return `${ts} [tool_result] ${truncated}`;
+      }
+      case "system": {
+        return `${ts} [system] ${event.subtype ?? ""} ${event.message ?? ""}`.trim();
+      }
+      default:
+        return null;
+    }
+  } catch {
+    // Not valid JSON, output raw
+    return line;
+  }
 }
 
 export interface AgentRunOptions {
@@ -65,6 +109,8 @@ export class AgentAdapter {
         stderr: "pipe",
       });
 
+      const isStreamJson = args.includes("stream-json");
+
       // Stream stdout and stderr to log file
       const streamToLog = async (
         stream: ReadableStream<Uint8Array> | null,
@@ -72,10 +118,27 @@ export class AgentAdapter {
       ) => {
         if (!stream) return;
         const reader = stream.getReader();
+        let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          await appendLog(value);
+          if (isStreamJson && label === "stdout") {
+            buffer += new TextDecoder().decode(value);
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const formatted = formatStreamEvent(line);
+              if (formatted) await appendLog(formatted + "\n");
+            }
+          } else {
+            await appendLog(value);
+          }
+        }
+        // Flush remaining buffer
+        if (buffer.trim() && isStreamJson && label === "stdout") {
+          const formatted = formatStreamEvent(buffer);
+          if (formatted) await appendLog(formatted + "\n");
         }
       };
 
