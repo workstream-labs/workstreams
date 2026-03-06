@@ -1,12 +1,9 @@
-export type NodeType = "code" | "review";
-
 export type WorkstreamStatus =
   | "pending"
   | "queued"
   | "running"
   | "success"
-  | "failed"
-  | "skipped";
+  | "failed";
 
 export interface AgentConfig {
   command: string;
@@ -18,9 +15,7 @@ export interface AgentConfig {
 
 export interface WorkstreamDef {
   name: string;
-  type: NodeType;
   prompt: string;
-  dependsOn?: string[];
   baseBranch?: string;
 }
 
@@ -31,7 +26,6 @@ export interface WorkstreamConfig {
 
 export interface WorkstreamState {
   name: string;
-  type: NodeType;
   status: WorkstreamStatus;
   branch: string;
   worktreePath: string;
@@ -41,6 +35,7 @@ export interface WorkstreamState {
   exitCode?: number;
   error?: string;
   logFile: string;
+  sessionId?: string;
 }
 
 export interface RunState {
@@ -57,20 +52,6 @@ export interface ProjectState {
   history: RunState[];
 }
 
-export interface DAGNode {
-  name: string;
-  def: WorkstreamDef;
-  dependencies: string[];
-  dependents: string[];
-  inDegree: number;
-}
-
-export interface DAG {
-  nodes: Map<string, DAGNode>;
-  roots: string[];
-  order: string[];
-}
-
 export type EventType =
   | "run:start"
   | "run:complete"
@@ -78,7 +59,6 @@ export type EventType =
   | "node:running"
   | "node:success"
   | "node:failed"
-  | "node:skipped"
   | "log:line";
 
 export interface WorkstreamEvent {

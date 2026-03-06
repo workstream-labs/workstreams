@@ -12,13 +12,6 @@ export class ConfigError extends WorkstreamError {
   }
 }
 
-export class DAGError extends WorkstreamError {
-  constructor(message: string) {
-    super(message);
-    this.name = "DAGError";
-  }
-}
-
 export class AgentError extends WorkstreamError {
   constructor(message: string) {
     super(message);

@@ -1,8 +1,6 @@
 import { parse } from "yaml";
 import { ConfigError } from "./errors";
-import type { AgentConfig, NodeType, WorkstreamConfig, WorkstreamDef } from "./types";
-
-const VALID_TYPES: NodeType[] = ["code", "review"];
+import type { AgentConfig, WorkstreamConfig, WorkstreamDef } from "./types";
 
 export async function loadConfig(path: string): Promise<WorkstreamConfig> {
   const file = Bun.file(path);
@@ -72,46 +70,11 @@ function validateConfig(raw: any): WorkstreamConfig {
       throw new ConfigError(`Workstream "${name}": prompt is required`);
     }
 
-    const type: NodeType = d.type ?? "code";
-    if (!VALID_TYPES.includes(type)) {
-      throw new ConfigError(
-        `Workstream "${name}": type must be one of: ${VALID_TYPES.join(", ")}`
-      );
-    }
-
-    const dependsOn = d.depends_on ?? d.dependsOn ?? undefined;
-    if (dependsOn !== undefined && !Array.isArray(dependsOn)) {
-      throw new ConfigError(
-        `Workstream "${name}": depends_on must be an array`
-      );
-    }
-
-    if (type === "review" && (!dependsOn || dependsOn.length === 0)) {
-      throw new ConfigError(
-        `Workstream "${name}": review nodes must have depends_on`
-      );
-    }
-
     defs.push({
       name,
-      type,
       prompt: d.prompt,
-      dependsOn,
       baseBranch: d.base_branch ?? d.baseBranch,
     });
-  }
-
-  // Validate dependsOn references
-  for (const def of defs) {
-    if (def.dependsOn) {
-      for (const dep of def.dependsOn) {
-        if (!names.has(dep)) {
-          throw new ConfigError(
-            `Workstream "${def.name}": depends_on references unknown workstream "${dep}"`
-          );
-        }
-      }
-    }
   }
 
   return { agent, workstreams: defs };

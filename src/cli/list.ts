@@ -8,22 +8,20 @@ export function listCommand() {
     .action(async (opts: { config: string }) => {
       const config = await loadConfig(opts.config);
 
+      if (config.workstreams.length === 0) {
+        console.log('No workstreams defined. Add one with: ws create <name> "<prompt>"');
+        return;
+      }
+
       const nameWidth = 30;
-      const typeWidth = 8;
-      console.log(
-        "Name".padEnd(nameWidth) +
-          "Type".padEnd(typeWidth) +
-          "Dependencies"
-      );
-      console.log("-".repeat(nameWidth + typeWidth + 20));
+      console.log("Name".padEnd(nameWidth) + "Prompt");
+      console.log("-".repeat(nameWidth + 40));
 
       for (const ws of config.workstreams) {
-        const deps = ws.dependsOn?.join(", ") ?? "-";
-        console.log(
-          ws.name.padEnd(nameWidth) +
-            ws.type.padEnd(typeWidth) +
-            deps
-        );
+        const prompt = ws.prompt.length > 60
+          ? ws.prompt.slice(0, 57) + "..."
+          : ws.prompt;
+        console.log(ws.name.padEnd(nameWidth) + prompt);
       }
     });
 }

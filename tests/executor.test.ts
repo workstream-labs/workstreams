@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { DAGExecutor } from "../src/core/executor";
-import { buildDAG } from "../src/core/dag";
+import { Executor } from "../src/core/executor";
+import { buildGraph } from "../src/core/dag";
 import { saveState } from "../src/core/state";
 import type { ProjectState, RunState, WorkstreamConfig } from "../src/core/types";
 import { mkdir, rm } from "fs/promises";
@@ -18,7 +18,7 @@ async function setupTestRepo() {
   await mkdir(`${TEST_DIR}/.workstreams/logs`, { recursive: true });
 }
 
-describe("DAG executor", () => {
+describe("Executor", () => {
   beforeEach(async () => {
     await setupTestRepo();
     process.chdir(TEST_DIR);
@@ -29,16 +29,16 @@ describe("DAG executor", () => {
     await rm(TEST_DIR, { recursive: true, force: true });
   });
 
-  it("executes independent nodes in parallel", async () => {
+  it("executes all nodes in parallel", async () => {
     const config: WorkstreamConfig = {
       agent: { command: "echo", args: ["done"] },
       workstreams: [
-        { name: "a", type: "code", prompt: "A" },
-        { name: "b", type: "code", prompt: "B" },
+        { name: "a", prompt: "A" },
+        { name: "b", prompt: "B" },
       ],
     };
 
-    const dag = buildDAG(config.workstreams);
+    const graph = buildGraph(config.workstreams);
     const run: RunState = {
       runId: "test-1",
       startedAt: new Date().toISOString(),
@@ -52,23 +52,22 @@ describe("DAG executor", () => {
     };
     await saveState(state);
 
-    const executor = new DAGExecutor(config, dag, state);
+    const executor = new Executor(config, graph, state);
     await executor.execute();
 
     expect(run.workstreams["a"].status).toBe("success");
     expect(run.workstreams["b"].status).toBe("success");
   });
 
-  it("respects dependency order", async () => {
+  it("marks failed nodes correctly", async () => {
     const config: WorkstreamConfig = {
-      agent: { command: "echo", args: ["done"] },
+      agent: { command: "false" }, // exits with code 1
       workstreams: [
-        { name: "a", type: "code", prompt: "A" },
-        { name: "b", type: "code", prompt: "B", dependsOn: ["a"] },
+        { name: "a", prompt: "A" },
       ],
     };
 
-    const dag = buildDAG(config.workstreams);
+    const graph = buildGraph(config.workstreams);
     const run: RunState = {
       runId: "test-2",
       startedAt: new Date().toISOString(),
@@ -82,45 +81,9 @@ describe("DAG executor", () => {
     };
     await saveState(state);
 
-    const executor = new DAGExecutor(config, dag, state);
-    await executor.execute();
-
-    expect(run.workstreams["a"].status).toBe("success");
-    expect(run.workstreams["b"].status).toBe("success");
-
-    // b should have finished after a
-    const aFinish = new Date(run.workstreams["a"].finishedAt!).getTime();
-    const bStart = new Date(run.workstreams["b"].startedAt!).getTime();
-    expect(bStart).toBeGreaterThanOrEqual(aFinish);
-  });
-
-  it("skips downstream on failure", async () => {
-    const config: WorkstreamConfig = {
-      agent: { command: "false" }, // exits with code 1
-      workstreams: [
-        { name: "a", type: "code", prompt: "A" },
-        { name: "b", type: "code", prompt: "B", dependsOn: ["a"] },
-      ],
-    };
-
-    const dag = buildDAG(config.workstreams);
-    const run: RunState = {
-      runId: "test-3",
-      startedAt: new Date().toISOString(),
-      workstreams: {},
-    };
-    const state: ProjectState = {
-      initialized: true,
-      rootDir: TEST_DIR,
-      currentRun: run,
-      history: [],
-    };
-    await saveState(state);
-
-    const executor = new DAGExecutor(config, dag, state);
+    const executor = new Executor(config, graph, state);
     await executor.execute();
 
     expect(run.workstreams["a"].status).toBe("failed");
-    expect(run.workstreams["b"].status).toBe("skipped");
   });
 });
