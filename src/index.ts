@@ -11,6 +11,7 @@ import { switchCommand } from "./cli/switch";
 import { diffCommand } from "./cli/diff";
 import { logCommand } from "./cli/log";
 import { dashboardCommand } from "./cli/dashboard";
+import { mergeCommand } from "./cli/merge";
 
 const program = new Command();
 
@@ -29,5 +30,6 @@ program.addCommand(switchCommand());
 program.addCommand(diffCommand());
 program.addCommand(logCommand());
 program.addCommand(dashboardCommand());
+program.addCommand(mergeCommand());
 
 program.parse();

@@ -20,6 +20,7 @@ export class DAGExecutor {
   private eventBus?: EventBus;
   private aborted = false;
   private runningProcs: Set<string> = new Set();
+  private worktreeLock: Promise<void> = Promise.resolve();
 
   constructor(
     config: WorkstreamConfig,
@@ -52,8 +53,9 @@ export class DAGExecutor {
     this.setupSignalHandlers();
     this.emit("run:start", undefined, { runId: this.run.runId });
 
-    // Clear old log files
-    const { unlink } = await import("fs/promises");
+    // Ensure log directory exists and clear old log files
+    const { unlink, mkdir } = await import("fs/promises");
+    await mkdir(".workstreams/logs", { recursive: true });
     for (const ws of Object.values(this.run.workstreams)) {
       await unlink(ws.logFile).catch(() => {});
     }
@@ -148,6 +150,12 @@ export class DAGExecutor {
   private async executeNode(name: string): Promise<void> {
     const ws = this.run.workstreams[name];
     const node = this.dag.nodes.get(name)!;
+    const { appendFile } = await import("fs/promises");
+
+    const logLine = async (msg: string) => {
+      const ts = new Date().toISOString();
+      await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
+    };
 
     ws.status = "running";
     ws.startedAt = new Date().toISOString();
@@ -156,20 +164,29 @@ export class DAGExecutor {
     await saveState(this.state);
 
     console.log(`\x1b[34m▶ Starting: ${name}\x1b[0m`);
+    await logLine(`Workstream "${name}" starting (type: ${node.def.type})`);
 
     try {
-      await this.wt.create(name, node.def.baseBranch);
+      // Serialize worktree creation to avoid git lock races
+      await logLine("Creating git worktree...");
+      await this.acquireWorktreeLock(async () => {
+        await this.wt.create(name, node.def.baseBranch);
+      });
+      await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
 
       // For review nodes, gather upstream diffs
       let upstreamDiffs: string[] | undefined;
       if (node.def.type === "review" && node.dependencies.length > 0) {
+        await logLine("Gathering upstream diffs for review...");
         upstreamDiffs = [];
         for (const dep of node.dependencies) {
           const diff = await this.wt.diffBranch(`ws/${dep}`);
           if (diff) upstreamDiffs.push(`=== Changes from ${dep} ===\n${diff}`);
         }
+        await logLine(`Collected diffs from ${node.dependencies.length} upstream workstreams`);
       }
 
+      await logLine("Launching agent...");
       const result = await this.agent.run({
         workDir: ws.worktreePath,
         prompt: node.def.prompt,
@@ -183,13 +200,16 @@ export class DAGExecutor {
       ws.status = result.exitCode === 0 ? "success" : "failed";
       if (result.exitCode !== 0) {
         ws.error = `Agent exited with code ${result.exitCode}`;
+        await logLine(`FAILED: ${ws.error}`);
       }
     } catch (e: any) {
       ws.status = "failed";
       ws.error = e.message;
+      await logLine(`ERROR: ${e.message}`);
     }
 
     ws.finishedAt = new Date().toISOString();
+    await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
     await saveState(this.state);
 
     const icon = ws.status === "success" ? "✓" : "✗";
@@ -210,6 +230,18 @@ export class DAGExecutor {
       name,
       data,
     });
+  }
+
+  private async acquireWorktreeLock(fn: () => Promise<void>): Promise<void> {
+    const prev = this.worktreeLock;
+    let resolve: () => void;
+    this.worktreeLock = new Promise((r) => (resolve = r));
+    await prev;
+    try {
+      await fn();
+    } finally {
+      resolve!();
+    }
   }
 
   private setupSignalHandlers() {

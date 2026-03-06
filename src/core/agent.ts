@@ -39,9 +39,23 @@ export class AgentAdapter {
     // Inject auto-accept flags based on agent command when acceptAll is true (default)
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
     const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), fullPrompt];
-    const env = { ...process.env, ...agentConfig.env };
+    const { CLAUDECODE, ...baseEnv } = process.env;
+    const env = { ...baseEnv, ...agentConfig.env };
 
-    const logWriter = Bun.file(logFile).writer();
+    const { appendFile, mkdir } = await import("fs/promises");
+    const { dirname } = await import("path");
+
+    // Ensure log directory exists
+    await mkdir(dirname(logFile), { recursive: true });
+
+    const appendLog = async (data: string | Uint8Array) => {
+      await appendFile(logFile, data);
+    };
+
+    const timestamp = () => new Date().toISOString();
+    await appendLog(`[${timestamp()}] Agent starting: ${agentConfig.command} ${args.join(" ")}\n`);
+    await appendLog(`[${timestamp()}] Working directory: ${workDir}\n`);
+    await appendLog(`[${timestamp()}] Log file: ${logFile}\n---\n`);
 
     try {
       const proc = Bun.spawn([agentConfig.command, ...args], {
@@ -53,28 +67,57 @@ export class AgentAdapter {
 
       // Stream stdout and stderr to log file
       const streamToLog = async (
-        stream: ReadableStream<Uint8Array> | null
+        stream: ReadableStream<Uint8Array> | null,
+        label: string
       ) => {
         if (!stream) return;
         const reader = stream.getReader();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          logWriter.write(value);
+          await appendLog(value);
         }
       };
 
       await Promise.all([
-        streamToLog(proc.stdout),
-        streamToLog(proc.stderr),
+        streamToLog(proc.stdout, "stdout"),
+        streamToLog(proc.stderr, "stderr"),
       ]);
 
       const exitCode = await proc.exited;
-      logWriter.end();
+      await appendLog(`\n---\n[${timestamp()}] Agent exited with code ${exitCode}\n`);
+
+      // Auto-commit any changes the agent made
+      if (exitCode === 0) {
+        await this.autoCommit(workDir, appendLog, timestamp);
+      }
+
       return { exitCode };
     } catch (e: any) {
-      logWriter.end();
+      await appendLog(`\n---\n[${timestamp()}] Agent error: ${e.message}\n`);
       throw new AgentError(`Agent failed: ${e.message}`);
+    }
+  }
+
+  private async autoCommit(
+    workDir: string,
+    appendLog: (data: string | Uint8Array) => Promise<void>,
+    timestamp: () => string
+  ): Promise<void> {
+    const { $ } = await import("bun");
+
+    // Check if there are any uncommitted changes
+    const status = await $`git -C ${workDir} status --porcelain`.quiet();
+    const changes = status.stdout.toString().trim();
+    if (!changes) return;
+
+    await appendLog(`[${timestamp()}] Auto-committing changes...\n`);
+    try {
+      await $`git -C ${workDir} add -A`.quiet();
+      await $`git -C ${workDir} commit -m "ws: apply agent changes"`.quiet();
+      await appendLog(`[${timestamp()}] Changes committed\n`);
+    } catch (e: any) {
+      await appendLog(`[${timestamp()}] Auto-commit failed: ${e.stderr?.toString() ?? e.message}\n`);
     }
   }
 }

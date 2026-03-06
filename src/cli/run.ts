@@ -91,18 +91,31 @@ async function runSingle(
   state: any
 ) {
   const { saveState: save } = await import("../core/state");
+  const { appendFile, mkdir } = await import("fs/promises");
   const wt = new WorktreeManager();
   const agent = new AgentAdapter();
   const ws = run.workstreams[name];
+
+  const logLine = async (msg: string) => {
+    const ts = new Date().toISOString();
+    await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
+  };
+
+  await mkdir(".workstreams/logs", { recursive: true });
 
   console.log(`Creating worktree for ${name}...`);
   ws.status = "running";
   ws.startedAt = new Date().toISOString();
   await save(state);
+  await logLine(`Workstream "${name}" starting (type: ${ws.type})`);
 
   try {
+    await logLine("Creating git worktree...");
     await wt.create(name);
+    await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
+
     console.log(`Running agent for ${name}...`);
+    await logLine("Launching agent...");
 
     const result = await agent.run({
       workDir: ws.worktreePath,
@@ -116,13 +129,19 @@ async function runSingle(
 
     ws.exitCode = result.exitCode;
     ws.status = result.exitCode === 0 ? "success" : "failed";
+    if (result.exitCode !== 0) {
+      ws.error = `Agent exited with code ${result.exitCode}`;
+      await logLine(`FAILED: ${ws.error}`);
+    }
   } catch (e: any) {
     ws.status = "failed";
     ws.error = e.message;
+    await logLine(`ERROR: ${e.message}`);
   }
 
   ws.finishedAt = new Date().toISOString();
   run.finishedAt = new Date().toISOString();
+  await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
   await save(state);
 
   const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
