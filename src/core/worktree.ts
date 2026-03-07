@@ -8,6 +8,7 @@ export class WorktreeManager {
     const branch = `ws/${name}`;
     const path = `${TREES_DIR}/${name}`;
     const base = baseBranch ?? "HEAD";
+    const { rm } = await import("fs/promises");
 
     // If no explicit base branch, check HEAD is valid (fails on repos with no commits)
     if (!baseBranch) {
@@ -17,6 +18,11 @@ export class WorktreeManager {
         await $`git commit --allow-empty -m "initial commit"`.quiet();
       }
     }
+
+    // Clean up any stale state from a previous run to make creation idempotent
+    await $`git worktree remove ${path} --force`.quiet().catch(() => {});
+    await rm(path, { recursive: true, force: true });
+    await $`git branch -D ${branch}`.quiet().catch(() => {});
 
     try {
       await $`git worktree add -b ${branch} ${path} ${base}`.quiet();
@@ -31,17 +37,11 @@ export class WorktreeManager {
   async remove(name: string): Promise<void> {
     const path = `${TREES_DIR}/${name}`;
     const branch = `ws/${name}`;
+    const { rm } = await import("fs/promises");
 
-    try {
-      await $`git worktree remove ${path} --force`.quiet();
-    } catch {
-      // worktree may already be removed
-    }
-    try {
-      await $`git branch -D ${branch}`.quiet();
-    } catch {
-      // branch may already be deleted
-    }
+    await $`git worktree remove ${path} --force`.quiet().catch(() => {});
+    await rm(path, { recursive: true, force: true });
+    await $`git branch -D ${branch}`.quiet().catch(() => {});
   }
 
   async list(): Promise<Array<{ path: string; branch: string; head: string }>> {
