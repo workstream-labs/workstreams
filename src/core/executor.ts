@@ -9,6 +9,13 @@ import { AgentAdapter } from "./agent";
 import { saveState } from "./state";
 import type { EventBus } from "./events";
 
+const COLOR_SUCCESS = "\x1b[32m";
+const COLOR_FAILED = "\x1b[31m";
+const COLOR_WAITING = "\x1b[33m";
+const COLOR_OTHER = "\x1b[90m";
+const COLOR_RESET = "\x1b[0m";
+const COLOR_BLUE = "\x1b[34m";
+
 export class Executor {
   private config: WorkstreamConfig;
   private graph: WorkstreamGraph;
@@ -42,6 +49,7 @@ export class Executor {
           branch: `ws/${name}`,
           worktreePath: `.workstreams/trees/${name}`,
           logFile: `.workstreams/logs/${name}.log`,
+          planFirst: node.def.planFirst ?? false,
         };
       }
     }
@@ -83,11 +91,13 @@ export class Executor {
     for (const [name, ws] of Object.entries(this.run.workstreams)) {
       const color =
         ws.status === "success"
-          ? "\x1b[32m"
+          ? COLOR_SUCCESS
           : ws.status === "failed"
-            ? "\x1b[31m"
-            : "\x1b[90m";
-      console.log(`  ${color}${ws.status.padEnd(8)}\x1b[0m ${name}`);
+            ? COLOR_FAILED
+            : ws.status === "waiting"
+              ? COLOR_WAITING
+              : COLOR_OTHER;
+      console.log(`  ${color}${ws.status.padEnd(8)}${COLOR_RESET} ${name}`);
     }
   }
 
@@ -107,7 +117,7 @@ export class Executor {
     this.emit("node:running", name);
     await saveState(this.state);
 
-    console.log(`\x1b[34m▶ Starting: ${name}\x1b[0m`);
+    console.log(`${COLOR_BLUE}▶ Starting: ${name}${COLOR_RESET}`);
     await logLine(`Workstream "${name}" starting`);
 
     try {
@@ -124,6 +134,7 @@ export class Executor {
         prompt: node.def.prompt,
         logFile: ws.logFile,
         agentConfig: this.config.agent,
+        planFirst: ws.planFirst,
         onSessionId: async (id) => {
           ws.sessionId = id;
           await saveState(this.state);
@@ -132,11 +143,15 @@ export class Executor {
       });
 
       ws.exitCode = result.exitCode;
-      ws.status = result.exitCode === 0 ? "success" : "failed";
       if (result.sessionId) ws.sessionId = result.sessionId;
-      if (result.exitCode !== 0) {
-        ws.error = `Agent exited with code ${result.exitCode}`;
-        await logLine(`FAILED: ${ws.error}`);
+      if (result.exitCode === 0 && ws.planFirst) {
+        ws.status = "waiting";
+      } else {
+        ws.status = result.exitCode === 0 ? "success" : "failed";
+        if (result.exitCode !== 0) {
+          ws.error = `Agent exited with code ${result.exitCode}`;
+          await logLine(`FAILED: ${ws.error}`);
+        }
       }
     } catch (e: any) {
       ws.status = "failed";
@@ -149,15 +164,14 @@ export class Executor {
     await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
     await saveState(this.state);
 
-    const icon = ws.status === "success" ? "✓" : "✗";
-    const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
-    console.log(`${color}${icon} ${name}: ${ws.status}\x1b[0m`);
+    const icon = ws.status === "success" ? "✓" : ws.status === "waiting" ? "⏸" : "✗";
+    const color =
+      ws.status === "success" ? COLOR_SUCCESS : ws.status === "waiting" ? COLOR_WAITING : COLOR_FAILED;
+    console.log(`${color}${icon} ${name}: ${ws.status}${COLOR_RESET}`);
 
-    this.emit(
-      ws.status === "success" ? "node:success" : "node:failed",
-      name,
-      { exitCode: ws.exitCode, error: ws.error }
-    );
+    const eventType =
+      ws.status === "success" ? "node:success" : ws.status === "waiting" ? "node:waiting" : "node:failed";
+    this.emit(eventType, name, { exitCode: ws.exitCode, error: ws.error });
   }
 
   private emit(type: string, name?: string, data?: Record<string, unknown>) {
