@@ -19,8 +19,8 @@ cd my-project
 ws init
 
 # 2. Add workstreams
-ws create add-tests "Add unit tests for the API routes using pytest"
-ws create dark-mode "Implement dark mode toggle in the React frontend"
+ws create add-tests -p "Add unit tests for the API routes using pytest"
+ws create dark-mode -p "Implement dark mode toggle in the React frontend"
 
 # 3. Run all workstreams in parallel
 ws run
@@ -89,9 +89,9 @@ agent:
 
 Initialize workstreams in the current git repo. Creates `.workstreams/` directory and `workstream.yaml`.
 
-### `ws create <name> <prompt>`
+### `ws create <name> -p <prompt> [--plan-first]`
 
-Add a new workstream to `workstream.yaml`.
+Add a new workstream to `workstream.yaml`. Use `--plan-first` to have the agent write a plan for review before proceeding.
 
 ### `ws run [name]`
 
