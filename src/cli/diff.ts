@@ -28,7 +28,7 @@ export function diffCommand() {
         if (ws.status !== "success" && ws.status !== "running") continue;
 
         try {
-          const diff = await wt.diff(n);
+          const diff = await wt.diffBranch(`ws/${n}`);
           if (diff.trim()) {
             console.log(`\x1b[1m=== ${n} ===\x1b[0m`);
             console.log(diff);

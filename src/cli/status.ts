@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { loadState } from "../core/state";
-import type { WorkstreamStatus } from "../core/types";
+import type { WorkstreamState, WorkstreamStatus } from "../core/types";
 
 const STATUS_COLORS: Record<WorkstreamStatus, string> = {
   pending: "\x1b[90m",   // gray
@@ -10,11 +10,13 @@ const STATUS_COLORS: Record<WorkstreamStatus, string> = {
   failed: "\x1b[31m",    // red
 };
 const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
 
 export function statusCommand() {
   return new Command("status")
     .description("Show status of workstreams")
-    .action(async () => {
+    .argument("[name]", "workstream name for detailed view")
+    .action(async (name?: string) => {
       const state = await loadState();
       if (!state) {
         console.error("Error: workstreams not initialized. Run `ws init` first.");
@@ -27,38 +29,142 @@ export function statusCommand() {
         return;
       }
 
+      if (name) {
+        const ws = run.workstreams[name];
+        if (!ws) {
+          console.error(`Error: workstream "${name}" not found in current run`);
+          process.exit(1);
+        }
+        await showDetail(name, ws);
+        return;
+      }
+
+      // Summary table
       console.log(`Run: ${run.runId}`);
       console.log(`Started: ${run.startedAt}`);
       if (run.finishedAt) console.log(`Finished: ${run.finishedAt}`);
       console.log();
 
-      // Table header
       const nameWidth = 30;
       const statusWidth = 10;
-      console.log(
-        "Name".padEnd(nameWidth) +
-          "Status".padEnd(statusWidth) +
-          "Duration"
-      );
+      console.log("Name".padEnd(nameWidth) + "Status".padEnd(statusWidth) + "Duration");
       console.log("-".repeat(nameWidth + statusWidth + 12));
 
-      for (const [name, ws] of Object.entries(run.workstreams)) {
+      for (const [n, ws] of Object.entries(run.workstreams)) {
         const color = STATUS_COLORS[ws.status];
         let duration = "";
         if (ws.startedAt) {
           const start = new Date(ws.startedAt).getTime();
-          const end = ws.finishedAt
-            ? new Date(ws.finishedAt).getTime()
-            : Date.now();
-          const secs = Math.round((end - start) / 1000);
-          duration = `${secs}s`;
+          const end = ws.finishedAt ? new Date(ws.finishedAt).getTime() : Date.now();
+          duration = `${Math.round((end - start) / 1000)}s`;
         }
-
         console.log(
-          name.padEnd(nameWidth) +
+          n.padEnd(nameWidth) +
             `${color}${ws.status}${RESET}`.padEnd(statusWidth + 9) +
             duration
         );
       }
     });
+}
+
+async function showDetail(name: string, ws: WorkstreamState) {
+  const color = STATUS_COLORS[ws.status];
+
+  console.log(`${BOLD}${name}${RESET}`);
+  console.log(`  Status:  ${color}${ws.status}${RESET}`);
+  console.log(`  Branch:  ${ws.branch}`);
+
+  if (ws.startedAt) {
+    const start = new Date(ws.startedAt).getTime();
+    const end = ws.finishedAt ? new Date(ws.finishedAt).getTime() : Date.now();
+    console.log(`  Duration: ${Math.round((end - start) / 1000)}s`);
+  }
+
+  if (ws.exitCode !== undefined) {
+    console.log(`  Exit code: ${ws.exitCode}`);
+  }
+
+  if (ws.sessionId) {
+    console.log(`  Session:  ${ws.sessionId}`);
+  }
+
+  if (ws.error) {
+    console.log(`\n  ${BOLD}Error:${RESET}`);
+    console.log(`  ${ws.error}`);
+  }
+
+  // Show tail of log file
+  const logTail = await readLogTail(ws.logFile, 20);
+  if (logTail) {
+    console.log(`\n  ${BOLD}Recent log (${ws.logFile}):${RESET}`);
+    for (const line of logTail) {
+      console.log(`  ${line}`);
+    }
+  }
+
+  // Suggest a fix for failed workstreams
+  if (ws.status === "failed") {
+    const fix = suggestFix(name, ws);
+    if (fix) {
+      console.log(`\n  ${BOLD}Fix:${RESET}`);
+      for (const line of fix) {
+        console.log(`  ${line}`);
+      }
+    }
+  }
+}
+
+async function readLogTail(logFile: string, lines: number): Promise<string[] | null> {
+  try {
+    const text = await Bun.file(logFile).text();
+    const all = text.split("\n").filter((l) => l.trim());
+    return all.slice(-lines);
+  } catch {
+    return null;
+  }
+}
+
+function suggestFix(name: string, ws: WorkstreamState): string[] | null {
+  const err = ws.error ?? "";
+  const log = ""; // error context comes from ws.error
+
+  if (err.includes("already exists")) {
+    return [
+      "The worktree directory already exists from a previous run.",
+      "Clean it up and re-run:",
+      `  ws destroy ${name}`,
+      `  ws run ${name}`,
+    ];
+  }
+
+  if (err.includes("invalid reference: HEAD") || err.includes("not a git repository")) {
+    return [
+      "The git repository has no commits. Make an initial commit first:",
+      `  git add -A && git commit -m "initial commit"`,
+      `  ws run ${name}`,
+    ];
+  }
+
+  if (err.includes("not found") || err.includes("No such file or directory")) {
+    return [
+      "The agent binary may not be installed or not in PATH.",
+      "Check that your agent command is available, then re-run:",
+      `  ws run ${name}`,
+    ];
+  }
+
+  if (ws.exitCode !== undefined && ws.exitCode !== 0) {
+    return [
+      `Agent exited with code ${ws.exitCode}.`,
+      "Review the log above for details, then resume with new instructions:",
+      `  ws resume ${name} -p "<revised instructions>"`,
+      "Or re-run from scratch:",
+      `  ws destroy ${name} && ws run ${name}`,
+    ];
+  }
+
+  return [
+    "Check the log above for details.",
+    `  ws destroy ${name} && ws run ${name}`,
+  ];
 }

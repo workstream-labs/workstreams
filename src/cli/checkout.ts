@@ -21,6 +21,28 @@ export function checkoutCommand() {
         process.exit(1);
       }
 
+      // Handle in-progress states
+      if (ws.status === "pending" || ws.status === "queued") {
+        console.log(`"${name}" has not started yet (status: ${ws.status}).`);
+        console.log("Use `ws status` to check progress.");
+        return;
+      }
+
+      if (ws.status === "running") {
+        if (!ws.sessionId) {
+          console.log(`"${name}" is still starting — session not ready yet.`);
+          console.log("Try again shortly or use `ws status` to check progress.");
+          return;
+        }
+        console.log(`Note: "${name}" is still running.`);
+        const choice = await promptChoice(`Checkout "${name}":`, [
+          "Resume Claude session (interactive)",
+        ]);
+        if (choice === 1) await sessionView(name, ws);
+        return;
+      }
+
+      // Completed (success or failed)
       const choices: string[] = [];
       if (ws.sessionId) {
         choices.push("Resume Claude session (interactive)");
@@ -28,7 +50,6 @@ export function checkoutCommand() {
       choices.push("View diff and add review comments");
 
       if (choices.length === 1 && !ws.sessionId) {
-        // Only diff view available
         await diffView(name, ws);
         return;
       }
@@ -39,8 +60,6 @@ export function checkoutCommand() {
         return;
       }
 
-      // If sessionId exists, choice 1 = session, choice 2 = diff
-      // If no sessionId, choice 1 = diff
       if (ws.sessionId && choice === 1) {
         await sessionView(name, ws);
       } else {
@@ -74,7 +93,7 @@ async function diffView(name: string, ws: { worktreePath: string }) {
   const wt = new WorktreeManager();
 
   console.log(`\nDiff for "${name}":\n`);
-  const diff = await wt.diff(name);
+  const diff = await wt.diffBranch(`ws/${name}`);
   if (!diff.trim()) {
     console.log("  (no changes)");
     return;

@@ -62,6 +62,7 @@ export interface AgentRunOptions {
   prompt: string;
   logFile: string;
   agentConfig: AgentConfig;
+  onSessionId?: (id: string) => void | Promise<void>;
 }
 
 export interface AgentResult {
@@ -122,7 +123,13 @@ export class AgentAdapter {
             buffer = lines.pop() ?? "";
             for (const line of lines) {
               if (!line.trim()) continue;
-              try { const p = JSON.parse(line); if (p.session_id) sessionId = p.session_id; } catch {}
+              try {
+                const p = JSON.parse(line);
+                if (p.session_id && !sessionId) {
+                  sessionId = p.session_id;
+                  if (options.onSessionId) await options.onSessionId(sessionId);
+                }
+              } catch {}
               const formatted = formatStreamEvent(line);
               if (formatted) await appendLog(formatted + "\n");
             }
@@ -132,7 +139,13 @@ export class AgentAdapter {
         }
         // Flush remaining buffer
         if (buffer.trim() && isStreamJson && label === "stdout") {
-          try { const p = JSON.parse(buffer); if (p.session_id) sessionId = p.session_id; } catch {}
+          try {
+            const p = JSON.parse(buffer);
+            if (p.session_id && !sessionId) {
+              sessionId = p.session_id;
+              if (options.onSessionId) await options.onSessionId(sessionId);
+            }
+          } catch {}
           const formatted = formatStreamEvent(buffer);
           if (formatted) await appendLog(formatted + "\n");
         }

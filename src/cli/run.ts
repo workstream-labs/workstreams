@@ -3,8 +3,6 @@ import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { buildGraph } from "../core/dag";
 import { Executor } from "../core/executor";
-import { WorktreeManager } from "../core/worktree";
-import { AgentAdapter } from "../core/agent";
 import type { RunState } from "../core/types";
 
 export function runCommand() {
@@ -14,6 +12,13 @@ export function runCommand() {
     .option("-c, --config <path>", "config file path", "workstream.yaml")
     .option("-d, --dry-run", "show what would run without executing")
     .action(async (name: string | undefined, opts: { config: string; dryRun?: boolean }) => {
+      // Background mode: actually run the executor with the pre-saved state
+      if (process.env.WS_BACKGROUND === "1") {
+        await runExecutor(name, opts.config);
+        return;
+      }
+
+      // Foreground mode: validate, set up state, spawn background worker
       const state = await loadState();
       if (!state) {
         console.error("Error: workstreams not initialized. Run `ws init` first.");
@@ -35,7 +40,6 @@ export function runCommand() {
         return;
       }
 
-      // If a specific name is given, run only that workstream
       const defsToRun = name
         ? config.workstreams.filter((w) => w.name === name)
         : config.workstreams;
@@ -45,14 +49,13 @@ export function runCommand() {
         process.exit(1);
       }
 
-      // Build run state
+      // Persist initial run state before spawning background worker
       const runId = `run-${Date.now()}`;
       const run: RunState = {
         runId,
         startedAt: new Date().toISOString(),
         workstreams: {},
       };
-
       for (const def of defsToRun) {
         run.workstreams[def.name] = {
           name: def.name,
@@ -62,82 +65,39 @@ export function runCommand() {
           logFile: `.workstreams/logs/${def.name}.log`,
         };
       }
-
       state.currentRun = run;
       await saveState(state);
 
-      if (name) {
-        // Single workstream execution
-        await runSingle(name, config.agent, run, state);
-      } else {
-        // Parallel execution
-        const graph = buildGraph(defsToRun);
-        const executor = new Executor(config, graph, state);
-        await executor.execute();
-      }
+      // Spawn detached background worker
+      const bgArgs = ["bun", Bun.main, "run", "-c", opts.config];
+      if (name) bgArgs.push(name);
+      const proc = Bun.spawn(bgArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, WS_BACKGROUND: "1" },
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      proc.unref();
+
+      const names = defsToRun.map((d) => d.name).join(", ");
+      console.log(`Started ${defsToRun.length} workstream(s) in the background: ${names}`);
+      console.log(`  Use \`ws status\` to check progress.`);
+      console.log(`  Use \`ws checkout <name>\` to inspect or resume a session.`);
     });
 }
 
-async function runSingle(
-  name: string,
-  agentConfig: any,
-  run: RunState,
-  state: any
-) {
-  const { saveState: save } = await import("../core/state");
-  const { appendFile, mkdir } = await import("fs/promises");
-  const wt = new WorktreeManager();
-  const agent = new AgentAdapter();
-  const ws = run.workstreams[name];
-
-  const logLine = async (msg: string) => {
-    const ts = new Date().toISOString();
-    await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
-  };
-
-  await mkdir(".workstreams/logs", { recursive: true });
-
-  console.log(`Creating worktree for ${name}...`);
-  ws.status = "running";
-  ws.startedAt = new Date().toISOString();
-  await save(state);
-  await logLine(`Workstream "${name}" starting`);
-
-  try {
-    await logLine("Creating git worktree...");
-    await wt.create(name);
-    await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
-
-    console.log(`Running agent for ${name}...`);
-    await logLine("Launching agent...");
-
-    const result = await agent.run({
-      workDir: ws.worktreePath,
-      prompt: (await loadConfig("workstream.yaml")).workstreams.find(
-        (w) => w.name === name
-      )!.prompt,
-      logFile: ws.logFile,
-      agentConfig,
-    });
-
-    ws.exitCode = result.exitCode;
-    ws.status = result.exitCode === 0 ? "success" : "failed";
-    if (result.sessionId) ws.sessionId = result.sessionId;
-    if (result.exitCode !== 0) {
-      ws.error = `Agent exited with code ${result.exitCode}`;
-      await logLine(`FAILED: ${ws.error}`);
-    }
-  } catch (e: any) {
-    ws.status = "failed";
-    ws.error = e.message;
-    await logLine(`ERROR: ${e.message}`);
+async function runExecutor(name: string | undefined, configPath: string) {
+  const state = await loadState();
+  if (!state?.currentRun) {
+    process.exit(1);
   }
+  const config = await loadConfig(configPath);
+  const defsToRun = name
+    ? config.workstreams.filter((w) => w.name === name)
+    : config.workstreams;
 
-  ws.finishedAt = new Date().toISOString();
-  run.finishedAt = new Date().toISOString();
-  await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
-  await save(state);
-
-  const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
-  console.log(`${color}${name}: ${ws.status}\x1b[0m`);
+  const graph = buildGraph(defsToRun);
+  const executor = new Executor(config, graph, state);
+  await executor.execute();
 }
