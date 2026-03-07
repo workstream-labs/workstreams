@@ -144,14 +144,10 @@ export class Executor {
 
       ws.exitCode = result.exitCode;
       if (result.sessionId) ws.sessionId = result.sessionId;
-      if (result.exitCode === 0 && ws.planFirst) {
-        ws.status = "waiting";
-      } else {
-        ws.status = result.exitCode === 0 ? "success" : "failed";
-        if (result.exitCode !== 0) {
-          ws.error = `Agent exited with code ${result.exitCode}`;
-          await logLine(`FAILED: ${ws.error}`);
-        }
+      ws.status = result.exitCode === 0 ? "success" : "failed";
+      if (result.exitCode !== 0) {
+        ws.error = `Agent exited with code ${result.exitCode}`;
+        await logLine(`FAILED: ${ws.error}`);
       }
     } catch (e: any) {
       ws.status = "failed";

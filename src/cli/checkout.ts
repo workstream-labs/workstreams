@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
+import { loadState, saveState } from "../core/state";
+import type { ProjectState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
 import { prompt, promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
@@ -47,7 +48,7 @@ export function checkoutCommand() {
         const choice = await promptChoice(`Checkout "${name}":`, [
           "Resume Claude session (interactive)",
         ]);
-        if (choice === 1) await sessionView(name, ws);
+        if (choice === 1) await sessionView(name, ws, state!, false);
         return;
       }
 
@@ -63,7 +64,7 @@ export function checkoutCommand() {
           return;
         }
         if (choice === 1) {
-          await sessionView(name, ws);
+          await sessionView(name, ws, state!, true);
         } else {
           await diffView(name, ws);
         }
@@ -89,14 +90,19 @@ export function checkoutCommand() {
       }
 
       if (ws.sessionId && choice === 1) {
-        await sessionView(name, ws);
+        await sessionView(name, ws, state!, true);
       } else {
         await diffView(name, ws);
       }
     });
 }
 
-async function sessionView(name: string, ws: { sessionId?: string; worktreePath: string }) {
+async function sessionView(
+  name: string,
+  ws: { sessionId?: string; worktreePath: string; status: string; finishedAt?: string },
+  state: ProjectState,
+  updateStatus: boolean
+) {
   if (!ws.sessionId) {
     console.error("Error: no session ID captured for this workstream.");
     console.error("Session IDs are only captured when using the Claude agent with stream-json output.");
@@ -106,15 +112,30 @@ async function sessionView(name: string, ws: { sessionId?: string; worktreePath:
   console.log(`\nResuming Claude session for "${name}"...`);
   console.log("(You are now in an interactive Claude session. Exit Claude to return to ws.)\n");
 
-  const proc = Bun.spawn(["claude", "--resume", ws.sessionId], {
+  const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
     cwd: ws.worktreePath,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
 
-  await proc.exited;
+  const exitCode = await proc.exited;
   console.log(`\nReturned from Claude session for "${name}".`);
+
+  if (updateStatus) {
+    const { $ } = await import("bun");
+    const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
+    const changes = gitStatus?.stdout.toString().trim();
+    if (changes) {
+      await $`git -C ${ws.worktreePath} add -A`.quiet().catch(() => {});
+      await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
+    }
+
+    (ws as any).status = exitCode === 0 ? "success" : "waiting";
+    (ws as any).finishedAt = new Date().toISOString();
+    await saveState(state);
+    console.log(`Status updated to: ${(ws as any).status}`);
+  }
 }
 
 async function diffView(name: string, ws: { worktreePath: string }) {
