@@ -1,4 +1,4 @@
-import type { AgentConfig, NodeType } from "./types";
+import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
@@ -60,29 +60,22 @@ function formatStreamEvent(line: string): string | null {
 export interface AgentRunOptions {
   workDir: string;
   prompt: string;
-  type: NodeType;
   logFile: string;
   agentConfig: AgentConfig;
-  upstreamDiffs?: string[];
 }
 
 export interface AgentResult {
   exitCode: number;
+  sessionId?: string;
 }
 
 export class AgentAdapter {
   async run(options: AgentRunOptions): Promise<AgentResult> {
-    const { workDir, prompt, type, logFile, agentConfig, upstreamDiffs } = options;
-
-    let fullPrompt = prompt;
-    if (type === "review" && upstreamDiffs?.length) {
-      const diffBlock = upstreamDiffs.join("\n\n---\n\n");
-      fullPrompt = `Here are the upstream changes to review:\n\n${diffBlock}\n\n---\n\n${prompt}`;
-    }
+    const { workDir, prompt, logFile, agentConfig } = options;
 
     // Inject auto-accept flags based on agent command when acceptAll is true (default)
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
-    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), fullPrompt];
+    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), prompt];
     const { CLAUDECODE, ...baseEnv } = process.env;
     const env = { ...baseEnv, ...agentConfig.env };
 
@@ -110,6 +103,7 @@ export class AgentAdapter {
       });
 
       const isStreamJson = args.includes("stream-json");
+      let sessionId: string | undefined;
 
       // Stream stdout and stderr to log file
       const streamToLog = async (
@@ -128,6 +122,7 @@ export class AgentAdapter {
             buffer = lines.pop() ?? "";
             for (const line of lines) {
               if (!line.trim()) continue;
+              try { const p = JSON.parse(line); if (p.session_id) sessionId = p.session_id; } catch {}
               const formatted = formatStreamEvent(line);
               if (formatted) await appendLog(formatted + "\n");
             }
@@ -137,6 +132,7 @@ export class AgentAdapter {
         }
         // Flush remaining buffer
         if (buffer.trim() && isStreamJson && label === "stdout") {
+          try { const p = JSON.parse(buffer); if (p.session_id) sessionId = p.session_id; } catch {}
           const formatted = formatStreamEvent(buffer);
           if (formatted) await appendLog(formatted + "\n");
         }
@@ -155,7 +151,7 @@ export class AgentAdapter {
         await this.autoCommit(workDir, appendLog, timestamp);
       }
 
-      return { exitCode };
+      return { exitCode, sessionId };
     } catch (e: any) {
       await appendLog(`\n---\n[${timestamp()}] Agent error: ${e.message}\n`);
       throw new AgentError(`Agent failed: ${e.message}`);

@@ -8,7 +8,6 @@ const STATUS_COLORS: Record<WorkstreamStatus, string> = {
   running: "\x1b[34m",   // blue
   success: "\x1b[32m",   // green
   failed: "\x1b[31m",    // red
-  skipped: "\x1b[33m",   // yellow
 };
 const RESET = "\x1b[0m";
 
@@ -36,14 +35,12 @@ export function statusCommand() {
       // Table header
       const nameWidth = 30;
       const statusWidth = 10;
-      const typeWidth = 8;
       console.log(
         "Name".padEnd(nameWidth) +
           "Status".padEnd(statusWidth) +
-          "Type".padEnd(typeWidth) +
           "Duration"
       );
-      console.log("-".repeat(nameWidth + statusWidth + typeWidth + 12));
+      console.log("-".repeat(nameWidth + statusWidth + 12));
 
       for (const [name, ws] of Object.entries(run.workstreams)) {
         const color = STATUS_COLORS[ws.status];
@@ -60,7 +57,6 @@ export function statusCommand() {
         console.log(
           name.padEnd(nameWidth) +
             `${color}${ws.status}${RESET}`.padEnd(statusWidth + 9) +
-            ws.type.padEnd(typeWidth) +
             duration
         );
       }

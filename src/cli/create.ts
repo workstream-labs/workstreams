@@ -1,21 +1,12 @@
 import { Command } from "commander";
 import { parse, stringify } from "yaml";
-import type { NodeType } from "../core/types";
 
 export function createCommand() {
   return new Command("create")
     .description("Add a new workstream to workstream.yaml")
     .argument("<name>", "workstream name")
     .argument("<prompt>", "prompt for the agent")
-    .option("--type <type>", "node type (code or review)", "code")
-    .option("--depends-on <deps>", "comma-separated dependency names")
-    .action(async (name: string, prompt: string, opts: { type: string; dependsOn?: string }) => {
-      const validTypes: NodeType[] = ["code", "review"];
-      if (!validTypes.includes(opts.type as NodeType)) {
-        console.error(`Error: type must be one of: ${validTypes.join(", ")}`);
-        process.exit(1);
-      }
-
+    .action(async (name: string, prompt: string) => {
       const configFile = Bun.file("workstream.yaml");
       if (!(await configFile.exists())) {
         console.error("Error: workstream.yaml not found. Run `ws init` first.");
@@ -30,16 +21,8 @@ export function createCommand() {
         process.exit(1);
       }
 
-      const entry: Record<string, any> = {
-        prompt,
-        type: opts.type,
-      };
+      raw.workstreams[name] = { prompt };
 
-      if (opts.dependsOn) {
-        entry.depends_on = opts.dependsOn.split(",").map((s) => s.trim());
-      }
-
-      raw.workstreams[name] = entry;
       await Bun.write("workstream.yaml", stringify(raw));
       console.log(`Added workstream "${name}" to workstream.yaml`);
     });
