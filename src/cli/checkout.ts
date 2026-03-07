@@ -5,15 +5,6 @@ import { WorktreeManager } from "../core/worktree";
 import { prompt, promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
 
-const WAITING_INTRO = (name: string) =>
-  `"${name}" has finished planning and is waiting for your review.`;
-const WAITING_NO_SESSION =
-  "No session ID captured. Use `ws resume` with a new prompt.";
-const WAITING_CHOICES = [
-  "Resume Claude session (review plan and tell Claude to proceed)",
-  "View diff and add review comments",
-];
-
 export function checkoutCommand() {
   return new Command("checkout")
     .description("Interactively inspect a workstream (session or diff)")
@@ -39,35 +30,8 @@ export function checkoutCommand() {
       }
 
       if (ws.status === "running") {
-        if (!ws.sessionId) {
-          console.log(`"${name}" is still starting — session not ready yet.`);
-          console.log("Try again shortly or use `ws status` to check progress.");
-          return;
-        }
-        console.log(`Note: "${name}" is still running.`);
-        const choice = await promptChoice(`Checkout "${name}":`, [
-          "Resume Claude session (interactive)",
-        ]);
-        if (choice === 1) await sessionView(name, ws, state!, false);
-        return;
-      }
-
-      if (ws.status === "waiting") {
-        console.log(WAITING_INTRO(name));
-        if (!ws.sessionId) {
-          console.log(WAITING_NO_SESSION);
-          return;
-        }
-        const choice = await promptChoice(`Checkout "${name}":`, WAITING_CHOICES);
-        if (choice === -1) {
-          console.log("Invalid choice.");
-          return;
-        }
-        if (choice === 1) {
-          await sessionView(name, ws, state!, true);
-        } else {
-          await diffView(name, ws);
-        }
+        console.log(`"${name}" is still running. Wait for it to finish before checking out.`);
+        console.log("Use `ws status` to check progress.");
         return;
       }
 
@@ -131,7 +95,7 @@ async function sessionView(
       await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
     }
 
-    (ws as any).status = exitCode === 0 ? "success" : "waiting";
+    (ws as any).status = exitCode === 0 ? "success" : "failed";
     (ws as any).finishedAt = new Date().toISOString();
     await saveState(state);
     console.log(`Status updated to: ${(ws as any).status}`);

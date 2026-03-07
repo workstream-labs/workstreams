@@ -5,9 +5,10 @@ export function mergeCommand() {
   return new Command("merge")
     .description("Merge workstream branch(es) into main")
     .argument("[name]", "workstream name (omit to merge all successful)")
+    .argument("[into]", "target branch to merge into (default: current branch)")
     .option("--squash", "squash commits into a single commit")
     .option("--no-cleanup", "keep worktree and branch after merge")
-    .action(async (name?: string, opts?: { squash?: boolean; cleanup: boolean }) => {
+    .action(async (name?: string, into?: string, opts?: { squash?: boolean; cleanup: boolean }) => {
       const { $ } = await import("bun");
 
       const state = await loadState();
@@ -40,12 +41,21 @@ export function mergeCommand() {
         }
       }
 
-      // Get current branch to return to after merging
+      // Get current branch; switch to target if specified
       const currentBranch = (await $`git rev-parse --abbrev-ref HEAD`.quiet()).stdout.toString().trim();
+      const targetBranch = into ?? currentBranch;
+      if (into && into !== currentBranch) {
+        try {
+          await $`git checkout ${into}`.quiet();
+        } catch (e: any) {
+          console.error(`Error: could not checkout "${into}": ${e.stderr?.toString() ?? e.message}`);
+          process.exit(1);
+        }
+      }
 
       for (const n of names) {
         const branch = `ws/${n}`;
-        console.log(`\x1b[34mMerging ${branch} into ${currentBranch}...\x1b[0m`);
+        console.log(`\x1b[34mMerging ${branch} into ${targetBranch}...\x1b[0m`);
 
         try {
           if (opts?.squash) {
@@ -76,6 +86,9 @@ export function mergeCommand() {
         }
       }
 
-      console.log(`\nDone. ${names.length} workstream(s) merged into ${currentBranch}.`);
+      if (into && into !== currentBranch) {
+        await $`git checkout ${currentBranch}`.quiet().catch(() => {});
+      }
+      console.log(`\nDone. ${names.length} workstream(s) merged into ${targetBranch}.`);
     });
 }

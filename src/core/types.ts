@@ -3,8 +3,7 @@ export type WorkstreamStatus =
   | "queued"
   | "running"
   | "success"
-  | "failed"
-  | "waiting";
+  | "failed";
 
 export interface AgentConfig {
   command: string;
@@ -62,7 +61,6 @@ export type EventType =
   | "node:running"
   | "node:success"
   | "node:failed"
-  | "node:waiting"
   | "log:line";
 
 export interface WorkstreamEvent {
