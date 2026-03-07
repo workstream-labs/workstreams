@@ -1,6 +1,14 @@
 import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
 
+const PLAN_PHASE_SUFFIX = [
+  "",
+  "---",
+  "IMPORTANT: This is the planning phase only. Write a detailed step-by-step plan",
+  "for implementing the above. Do not use any tools or edit any files — just write",
+  "the plan. Include any clarifying questions at the end. After presenting your plan, stop.",
+].join("\n");
+
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
   codex: ["--full-auto"],
@@ -62,6 +70,7 @@ export interface AgentRunOptions {
   prompt: string;
   logFile: string;
   agentConfig: AgentConfig;
+  planFirst?: boolean;
   onSessionId?: (id: string) => void | Promise<void>;
 }
 
@@ -72,11 +81,12 @@ export interface AgentResult {
 
 export class AgentAdapter {
   async run(options: AgentRunOptions): Promise<AgentResult> {
-    const { workDir, prompt, logFile, agentConfig } = options;
+    const { workDir, prompt, logFile, agentConfig, planFirst } = options;
 
     // Inject auto-accept flags based on agent command when acceptAll is true (default)
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
-    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), prompt];
+    const effectivePrompt = planFirst ? prompt + PLAN_PHASE_SUFFIX : prompt;
+    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), effectivePrompt];
     const { CLAUDECODE, ...baseEnv } = process.env;
     const env = { ...baseEnv, ...agentConfig.env };
 
@@ -159,8 +169,8 @@ export class AgentAdapter {
       const exitCode = await proc.exited;
       await appendLog(`\n---\n[${timestamp()}] Agent exited with code ${exitCode}\n`);
 
-      // Auto-commit any changes the agent made
-      if (exitCode === 0) {
+      // Auto-commit any changes the agent made (skip for plan-first phase — no file edits expected)
+      if (exitCode === 0 && !planFirst) {
         await this.autoCommit(workDir, appendLog, timestamp);
       }
 

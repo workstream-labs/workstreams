@@ -4,6 +4,15 @@ import { WorktreeManager } from "../core/worktree";
 import { prompt, promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
 
+const WAITING_INTRO = (name: string) =>
+  `"${name}" has finished planning and is waiting for your review.`;
+const WAITING_NO_SESSION =
+  "No session ID captured. Use `ws resume` with a new prompt.";
+const WAITING_CHOICES = [
+  "Resume Claude session (review plan and tell Claude to proceed)",
+  "View diff and add review comments",
+];
+
 export function checkoutCommand() {
   return new Command("checkout")
     .description("Interactively inspect a workstream (session or diff)")
@@ -39,6 +48,25 @@ export function checkoutCommand() {
           "Resume Claude session (interactive)",
         ]);
         if (choice === 1) await sessionView(name, ws);
+        return;
+      }
+
+      if (ws.status === "waiting") {
+        console.log(WAITING_INTRO(name));
+        if (!ws.sessionId) {
+          console.log(WAITING_NO_SESSION);
+          return;
+        }
+        const choice = await promptChoice(`Checkout "${name}":`, WAITING_CHOICES);
+        if (choice === -1) {
+          console.log("Invalid choice.");
+          return;
+        }
+        if (choice === 1) {
+          await sessionView(name, ws);
+        } else {
+          await diffView(name, ws);
+        }
         return;
       }
 

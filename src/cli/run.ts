@@ -28,7 +28,7 @@ export function runCommand() {
       const config = await loadConfig(opts.config);
 
       if (config.workstreams.length === 0) {
-        console.log('No workstreams defined. Add one with: ws create <name> "<prompt>"');
+        console.log("No workstreams defined. Add one with: ws create <name> -p \"<prompt>\"");
         return;
       }
 
@@ -63,6 +63,7 @@ export function runCommand() {
           branch: `ws/${def.name}`,
           worktreePath: `.workstreams/trees/${def.name}`,
           logFile: `.workstreams/logs/${def.name}.log`,
+          planFirst: def.planFirst ?? false,
         };
       }
       state.currentRun = run;

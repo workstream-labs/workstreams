@@ -3,7 +3,8 @@ export type WorkstreamStatus =
   | "queued"
   | "running"
   | "success"
-  | "failed";
+  | "failed"
+  | "waiting";
 
 export interface AgentConfig {
   command: string;
@@ -17,6 +18,7 @@ export interface WorkstreamDef {
   name: string;
   prompt: string;
   baseBranch?: string;
+  planFirst?: boolean;
 }
 
 export interface WorkstreamConfig {
@@ -36,6 +38,7 @@ export interface WorkstreamState {
   error?: string;
   logFile: string;
   sessionId?: string;
+  planFirst?: boolean;
 }
 
 export interface RunState {
@@ -59,6 +62,7 @@ export type EventType =
   | "node:running"
   | "node:success"
   | "node:failed"
+  | "node:waiting"
   | "log:line";
 
 export interface WorkstreamEvent {

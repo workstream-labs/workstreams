@@ -8,9 +8,17 @@ const STATUS_COLORS: Record<WorkstreamStatus, string> = {
   running: "\x1b[34m",   // blue
   success: "\x1b[32m",   // green
   failed: "\x1b[31m",    // red
+  waiting: "\x1b[33m",   // yellow
 };
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
+
+const WAITING_HINT = "Plan ready for review. Run `ws checkout <name>` to review and respond.";
+const WAITING_FIX = [
+  "Plan is ready. Review the log above, then either:",
+  "  ws checkout <name>               (interactive — tell Claude to proceed)",
+  '  ws resume <name> -p "proceed"    (non-interactive)',
+];
 
 export function statusCommand() {
   return new Command("status")
@@ -102,11 +110,16 @@ async function showDetail(name: string, ws: WorkstreamState) {
     }
   }
 
-  // Suggest a fix for failed workstreams
-  if (ws.status === "failed") {
+  if (ws.status === "waiting") {
+    console.log(`\n  ${BOLD}Hint:${RESET}`);
+    console.log(`  ${WAITING_HINT}`);
+  }
+
+  // Suggest a fix for failed or waiting workstreams
+  if (ws.status === "failed" || ws.status === "waiting") {
     const fix = suggestFix(name, ws);
     if (fix) {
-      console.log(`\n  ${BOLD}Fix:${RESET}`);
+      console.log(`\n  ${BOLD}Next steps:${RESET}`);
       for (const line of fix) {
         console.log(`  ${line}`);
       }
@@ -125,8 +138,11 @@ async function readLogTail(logFile: string, lines: number): Promise<string[] | n
 }
 
 function suggestFix(name: string, ws: WorkstreamState): string[] | null {
+  if (ws.status === "waiting") {
+    return WAITING_FIX.map((line) => line.replace("<name>", name));
+  }
+
   const err = ws.error ?? "";
-  const log = ""; // error context comes from ws.error
 
   if (err.includes("already exists")) {
     return [
