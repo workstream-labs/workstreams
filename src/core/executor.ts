@@ -124,6 +124,11 @@ export class Executor {
         prompt: node.def.prompt,
         logFile: ws.logFile,
         agentConfig: this.config.agent,
+        onSessionId: async (id) => {
+          ws.sessionId = id;
+          await saveState(this.state);
+          await logLine(`Session ID captured: ${id}`);
+        },
       });
 
       ws.exitCode = result.exitCode;
