@@ -63,6 +63,6 @@ workstreams: {}
       console.log("Initialized workstreams in", cwd);
       console.log("  Created .workstreams/ directory");
       console.log("  Created workstream.yaml");
-      console.log('Add workstreams with: ws create <name> "<prompt>"');
+      console.log('Add workstreams with: ws create <name> -p "<prompt>"');
     });
 }

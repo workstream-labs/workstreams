@@ -1,12 +1,14 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
-import { WorktreeManager } from "../core/worktree";
+import { loadState } from "../core/state.js";
+import { WorktreeManager } from "../core/worktree.js";
+import { openDiffViewer } from "../ui/diff-viewer.js";
 
 export function diffCommand() {
   return new Command("diff")
     .description("Show git diff for workstream(s)")
     .argument("[name]", "workstream name (omit for all)")
-    .action(async (name?: string) => {
+    .option("--raw", "print raw diff without the interactive viewer")
+    .action(async (name?: string, opts?: { raw?: boolean }) => {
       const state = await loadState();
       if (!state?.currentRun) {
         console.error("Error: no active run");
@@ -18,6 +20,26 @@ export function diffCommand() {
         ? [name]
         : Object.keys(state.currentRun.workstreams);
 
+      const useViewer = !opts?.raw && process.stdout.isTTY && names.length === 1;
+
+      if (useViewer) {
+        const n = names[0];
+        const ws = state.currentRun.workstreams[n];
+        if (!ws) {
+          console.error(`Error: workstream "${n}" not found`);
+          process.exit(1);
+        }
+        try {
+          const diff = await wt.diffBranch(`ws/${n}`);
+          await openDiffViewer(n, diff);
+        } catch (e: any) {
+          console.error(`Error: ${e.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Multi-workstream or raw mode: print plain diff
       for (const n of names) {
         const ws = state.currentRun.workstreams[n];
         if (!ws) {

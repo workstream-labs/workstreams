@@ -1,17 +1,19 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
+import { loadState, saveState } from "../core/state";
+import type { ProjectState, WorkstreamState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
-import { prompt, promptChoice } from "../core/prompt";
+import { prompt } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
 
-const WAITING_INTRO = (name: string) =>
-  `"${name}" has finished planning and is waiting for your review.`;
-const WAITING_NO_SESSION =
-  "No session ID captured. Use `ws resume` with a new prompt.";
-const WAITING_CHOICES = [
-  "Resume Claude session (review plan and tell Claude to proceed)",
-  "View diff and add review comments",
-];
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const STATUS_COLOR: Record<string, string> = {
+  running: "\x1b[33m",
+  waiting: "\x1b[36m",
+  success: "\x1b[32m",
+  failed: "\x1b[31m",
+};
 
 export function checkoutCommand() {
   return new Command("checkout")
@@ -30,91 +32,92 @@ export function checkoutCommand() {
         process.exit(1);
       }
 
-      // Handle in-progress states
       if (ws.status === "pending" || ws.status === "queued") {
         console.log(`"${name}" has not started yet (status: ${ws.status}).`);
         console.log("Use `ws status` to check progress.");
         return;
       }
 
+      if (ws.status === "running" && !ws.sessionId) {
+        console.log(`"${name}" is still starting — session not ready yet.`);
+        console.log("Try again shortly or use `ws status` to check progress.");
+        return;
+      }
+
       if (ws.status === "running") {
-        if (!ws.sessionId) {
-          console.log(`"${name}" is still starting — session not ready yet.`);
-          console.log("Try again shortly or use `ws status` to check progress.");
-          return;
-        }
-        console.log(`Note: "${name}" is still running.`);
-        const choice = await promptChoice(`Checkout "${name}":`, [
-          "Resume Claude session (interactive)",
-        ]);
-        if (choice === 1) await sessionView(name, ws);
-        return;
+        console.log(`Note: "${name}" is still running in the background.`);
       }
 
-      if (ws.status === "waiting") {
-        console.log(WAITING_INTRO(name));
-        if (!ws.sessionId) {
-          console.log(WAITING_NO_SESSION);
-          return;
-        }
-        const choice = await promptChoice(`Checkout "${name}":`, WAITING_CHOICES);
-        if (choice === -1) {
-          console.log("Invalid choice.");
-          return;
-        }
-        if (choice === 1) {
-          await sessionView(name, ws);
-        } else {
-          await diffView(name, ws);
-        }
-        return;
-      }
+      await showContextHeader(name, ws);
 
-      // Completed (success or failed)
-      const choices: string[] = [];
       if (ws.sessionId) {
-        choices.push("Resume Claude session (interactive)");
-      }
-      choices.push("View diff and add review comments");
-
-      if (choices.length === 1 && !ws.sessionId) {
-        await diffView(name, ws);
-        return;
-      }
-
-      const choice = await promptChoice(`Checkout "${name}":`, choices);
-      if (choice === -1) {
-        console.log("Invalid choice.");
-        return;
-      }
-
-      if (ws.sessionId && choice === 1) {
-        await sessionView(name, ws);
+        await sessionView(name, ws, state, ws.status !== "running");
       } else {
         await diffView(name, ws);
       }
     });
 }
 
-async function sessionView(name: string, ws: { sessionId?: string; worktreePath: string }) {
+async function showContextHeader(name: string, ws: WorkstreamState) {
+  const color = STATUS_COLOR[ws.status] ?? "";
+  console.log(`\n${BOLD}ws/${name}${RESET}  ${color}${ws.status}${RESET}  ${DIM}${ws.branch}${RESET}`);
+
+  const wt = new WorktreeManager();
+  try {
+    const diff = await wt.diffBranch(`ws/${name}`);
+    if (diff.trim()) {
+      const changedFiles = diff
+        .split("\n")
+        .filter((l) => l.startsWith("diff --git "))
+        .map((l) => l.replace(/^diff --git a\//, "").split(" b/")[0]);
+      if (changedFiles.length > 0) {
+        console.log(`${DIM}Changed: ${changedFiles.join(", ")}${RESET}`);
+      }
+    } else {
+      console.log(`${DIM}(no changes yet)${RESET}`);
+    }
+  } catch {
+    // worktree may not be set up yet
+  }
+  console.log();
+}
+
+async function sessionView(
+  name: string,
+  ws: { sessionId?: string; worktreePath: string; status: string; finishedAt?: string },
+  state: ProjectState,
+  updateStatus: boolean
+) {
   if (!ws.sessionId) {
     console.error("Error: no session ID captured for this workstream.");
     console.error("Session IDs are only captured when using the Claude agent with stream-json output.");
     process.exit(1);
   }
 
-  console.log(`\nResuming Claude session for "${name}"...`);
-  console.log("(You are now in an interactive Claude session. Exit Claude to return to ws.)\n");
-
-  const proc = Bun.spawn(["claude", "--resume", ws.sessionId], {
+  const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
     cwd: ws.worktreePath,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
 
-  await proc.exited;
+  const exitCode = await proc.exited;
   console.log(`\nReturned from Claude session for "${name}".`);
+
+  if (updateStatus) {
+    const { $ } = await import("bun");
+    const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
+    const changes = gitStatus?.stdout.toString().trim();
+    if (changes) {
+      await $`git -C ${ws.worktreePath} add -A`.quiet().catch(() => {});
+      await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
+    }
+
+    (ws as any).status = exitCode === 0 ? "success" : "waiting";
+    (ws as any).finishedAt = new Date().toISOString();
+    await saveState(state);
+    console.log(`Status updated to: ${(ws as any).status}`);
+  }
 }
 
 async function diffView(name: string, ws: { worktreePath: string }) {

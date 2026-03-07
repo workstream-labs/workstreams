@@ -4,9 +4,10 @@ import { AgentError } from "./errors";
 const PLAN_PHASE_SUFFIX = [
   "",
   "---",
-  "IMPORTANT: This is the planning phase only. Write a detailed step-by-step plan",
-  "for implementing the above. Do not use any tools or edit any files — just write",
-  "the plan. Include any clarifying questions at the end. After presenting your plan, stop.",
+  "IMPORTANT: Start by writing a detailed step-by-step plan for implementing the above.",
+  "Do not use any tools or edit any files while writing the plan.",
+  "Make judicious assumptions where details are unclear — do not ask clarifying questions.",
+  "After presenting your plan, immediately proceed to implement it.",
 ].join("\n");
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
@@ -169,8 +170,8 @@ export class AgentAdapter {
       const exitCode = await proc.exited;
       await appendLog(`\n---\n[${timestamp()}] Agent exited with code ${exitCode}\n`);
 
-      // Auto-commit any changes the agent made (skip for plan-first phase — no file edits expected)
-      if (exitCode === 0 && !planFirst) {
+      // Auto-commit any changes the agent made
+      if (exitCode === 0) {
         await this.autoCommit(workDir, appendLog, timestamp);
       }
 

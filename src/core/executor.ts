@@ -11,7 +11,6 @@ import type { EventBus } from "./events";
 
 const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
-const COLOR_WAITING = "\x1b[33m";
 const COLOR_OTHER = "\x1b[90m";
 const COLOR_RESET = "\x1b[0m";
 const COLOR_BLUE = "\x1b[34m";
@@ -90,13 +89,7 @@ export class Executor {
     console.log("=== Run Complete ===");
     for (const [name, ws] of Object.entries(this.run.workstreams)) {
       const color =
-        ws.status === "success"
-          ? COLOR_SUCCESS
-          : ws.status === "failed"
-            ? COLOR_FAILED
-            : ws.status === "waiting"
-              ? COLOR_WAITING
-              : COLOR_OTHER;
+        ws.status === "success" ? COLOR_SUCCESS : ws.status === "failed" ? COLOR_FAILED : COLOR_OTHER;
       console.log(`  ${color}${ws.status.padEnd(8)}${COLOR_RESET} ${name}`);
     }
   }
@@ -144,14 +137,10 @@ export class Executor {
 
       ws.exitCode = result.exitCode;
       if (result.sessionId) ws.sessionId = result.sessionId;
-      if (result.exitCode === 0 && ws.planFirst) {
-        ws.status = "waiting";
-      } else {
-        ws.status = result.exitCode === 0 ? "success" : "failed";
-        if (result.exitCode !== 0) {
-          ws.error = `Agent exited with code ${result.exitCode}`;
-          await logLine(`FAILED: ${ws.error}`);
-        }
+      ws.status = result.exitCode === 0 ? "success" : "failed";
+      if (result.exitCode !== 0) {
+        ws.error = `Agent exited with code ${result.exitCode}`;
+        await logLine(`FAILED: ${ws.error}`);
       }
     } catch (e: any) {
       ws.status = "failed";
@@ -164,13 +153,11 @@ export class Executor {
     await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
     await saveState(this.state);
 
-    const icon = ws.status === "success" ? "✓" : ws.status === "waiting" ? "⏸" : "✗";
-    const color =
-      ws.status === "success" ? COLOR_SUCCESS : ws.status === "waiting" ? COLOR_WAITING : COLOR_FAILED;
+    const icon = ws.status === "success" ? "✓" : "✗";
+    const color = ws.status === "success" ? COLOR_SUCCESS : COLOR_FAILED;
     console.log(`${color}${icon} ${name}: ${ws.status}${COLOR_RESET}`);
 
-    const eventType =
-      ws.status === "success" ? "node:success" : ws.status === "waiting" ? "node:waiting" : "node:failed";
+    const eventType = ws.status === "success" ? "node:success" : "node:failed";
     this.emit(eventType, name, { exitCode: ws.exitCode, error: ws.error });
   }
 
