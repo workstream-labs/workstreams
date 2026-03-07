@@ -35,6 +35,23 @@ const A = {
   bgWhite: CSI + "47m",
 };
 
+const bg256 = (n: number) => `\x1b[48;5;${n}m`;
+const fg256 = (n: number) => `\x1b[38;5;${n}m`;
+
+// Color palette
+const C = {
+  addLineBg: bg256(22),       // dark green bg for added lines
+  addWordBg: bg256(28),       // brighter green bg for added words
+  delLineBg: bg256(52),       // dark red bg for deleted lines
+  delWordBg: bg256(88),       // brighter red bg for deleted words
+  selectedBg: bg256(24),      // steel blue for selected file
+  hunkBg: bg256(17),          // dark navy for hunk headers
+  footerBg: bg256(235),       // very dark grey for footer
+  hunkAt: fg256(67),          // muted blue for @@ markers
+  hunkCtx: fg256(110),        // light blue for function context
+  scrollTrack: fg256(240),    // grey for scrollbar track
+};
+
 function moveTo(row: number, col: number) {
   return `${CSI}${row};${col}H`;
 }
@@ -88,41 +105,107 @@ interface State {
   workstreamName: string;
 }
 
+// ─── Word-level diff (pure LCS, no deps) ────────────────────────────────────
+
+interface Token { type: "same" | "del" | "add"; text: string; }
+
+function tokenize(line: string): string[] {
+  return line.match(/\w+|[^\w]+/g) ?? [];
+}
+
+function computeWordDiff(
+  oldLine: string,
+  newLine: string
+): { oldTokens: Token[]; newTokens: Token[] } | null {
+  const a = tokenize(oldLine);
+  const b = tokenize(newLine);
+  if (a.length > 150 || b.length > 150) return null;
+
+  // LCS DP
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--)
+    for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+
+  const oldToks: Token[] = [];
+  const newToks: Token[] = [];
+  let i = 0, j = 0;
+  while (i < m || j < n) {
+    if (i < m && j < n && a[i] === b[j]) {
+      oldToks.push({ type: "same", text: a[i] });
+      newToks.push({ type: "same", text: b[j] });
+      i++; j++;
+    } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
+      newToks.push({ type: "add", text: b[j++] });
+    } else {
+      oldToks.push({ type: "del", text: a[i++] });
+    }
+  }
+  return { oldTokens: oldToks, newTokens: newToks };
+}
+
+function renderWordMarked(tokens: Token[], lineType: "add" | "del"): string {
+  const wordBg = lineType === "add" ? C.addWordBg : C.delWordBg;
+  const lineBg = lineType === "add" ? C.addLineBg : C.delLineBg;
+  const fgColor = lineType === "add" ? A.brightGreen : A.brightRed;
+  let out = "";
+  for (const tok of tokens) {
+    if (tok.type === "same") {
+      out += lineBg + fgColor + tok.text;
+    } else {
+      out += wordBg + A.bold + fgColor + tok.text + A.reset + lineBg + fgColor;
+    }
+  }
+  return out;
+}
+
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
-const FILE_PANEL_WIDTH = 28; // left panel width including border
+const FILE_PANEL_WIDTH = 34; // left panel width including border
 const HEADER_ROWS = 2;       // top bar + divider
 const FOOTER_ROWS = 1;       // bottom help bar
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
 function renderHeader(s: State): string {
-  const title = `${A.bold}${A.brightWhite} ws diff: ${A.brightCyan}${s.workstreamName}${A.reset}`;
-  const modeLabel =
-    s.mode === "unified"
-      ? `${A.brightBlack}[${A.brightYellow}t${A.brightBlack}]${A.reset} ${A.brightYellow}unified${A.reset}`
-      : `${A.brightBlack}[${A.brightYellow}t${A.brightBlack}]${A.reset} ${A.brightMagenta}side-by-side${A.reset}`;
+  // Compute total stats across all files
+  let totalAdded = 0, totalDeleted = 0;
+  for (const f of s.files) {
+    const st = fileStat(f);
+    totalAdded += st.added;
+    totalDeleted += st.deleted;
+  }
 
-  const keys = [
-    `${A.brightBlack}[${A.brightYellow}q${A.brightBlack}]${A.reset}quit`,
-    `${A.brightBlack}[${A.brightYellow}Tab${A.brightBlack}]${A.reset}switch`,
-    `${A.brightBlack}[${A.brightYellow}jk${A.brightBlack}]${A.reset}scroll`,
-    `${A.brightBlack}[${A.brightYellow}np${A.brightBlack}]${A.reset}next/prev`,
-    modeLabel,
-  ].join("  ");
+  const title = `${A.bold}${A.brightWhite} ws diff: ${A.brightCyan}${s.workstreamName}${A.reset}`;
+  const centerStats =
+    `${A.brightWhite}${s.files.length} file${s.files.length !== 1 ? "s" : ""} · ` +
+    `${A.brightGreen}+${totalAdded}${A.brightWhite} ${A.brightRed}-${totalDeleted}${A.reset}`;
+  const keys =
+    `${A.brightBlack}q quit  │  jk scroll  │  np next/prev  │  Tab switch  │  t toggle  │  gG top/bot${A.reset}`;
 
   const titleVis = stripAnsi(title);
+  const centerVis = stripAnsi(centerStats);
   const keysVis = stripAnsi(keys);
-  const gap = Math.max(1, s.termW - titleVis.length - keysVis.length - 2);
-  const row1 = ` ${title}${" ".repeat(gap)}${keys} `;
 
-  // Divider
+  const remaining = s.termW - 2 - titleVis.length - keysVis.length;
+  const centerPad = Math.max(0, Math.floor((remaining - centerVis.length) / 2));
+  const rightPad = Math.max(1, remaining - centerVis.length - centerPad);
+
+  const row1 =
+    ` ${title}` +
+    " ".repeat(centerPad) + centerStats + " ".repeat(rightPad) +
+    `${keys} `;
+
+  // Divider: focused panel gets cyan segment
+  const fileSegLen = FILE_PANEL_WIDTH - 1;
+  const diffSegLen = s.termW - FILE_PANEL_WIDTH;
+  const fileDash = s.focus === "files" ? A.cyan : A.brightBlack;
+  const diffDash = s.focus === "diff" ? A.cyan : A.brightBlack;
   const divider =
-    A.brightBlack +
-    "─".repeat(FILE_PANEL_WIDTH - 1) +
-    "┬" +
-    "─".repeat(s.termW - FILE_PANEL_WIDTH) +
-    A.reset;
+    fileDash + "─".repeat(fileSegLen) + A.reset +
+    A.brightBlack + "┬" + A.reset +
+    diffDash + "─".repeat(diffSegLen) + A.reset;
 
   return moveTo(1, 1) + A.bgBrightBlack + A.brightWhite + pad(row1, s.termW) + A.reset + "\n" + divider;
 }
@@ -132,10 +215,28 @@ function renderFileList(s: State): string {
   const panelW = FILE_PANEL_WIDTH - 1; // subtract border char
   let out = "";
 
+  // Compute totals for footer
+  let totalAdded = 0, totalDeleted = 0;
+  for (const f of s.files) {
+    const st = fileStat(f);
+    totalAdded += st.added;
+    totalDeleted += st.deleted;
+  }
+
   const header = A.bold + A.brightWhite + ` Files (${s.files.length})` + A.reset;
   out += moveTo(HEADER_ROWS + 1, 1) + pad(header, panelW) + A.brightBlack + "│" + A.reset;
 
-  for (let i = 0; i < contentH - 1; i++) {
+  // Status icons
+  const statusIcon: Record<string, string> = {
+    A: A.brightGreen + "✚" + A.reset,
+    D: A.brightRed + "✖" + A.reset,
+    M: A.brightYellow + "●" + A.reset,
+    R: A.cyan + "➜" + A.reset,
+    "?": A.brightBlack + "?" + A.reset,
+  };
+
+  const listRows = contentH - 2; // reserve last row for footer
+  for (let i = 0; i < listRows; i++) {
     const fileIdx = s.fileScroll + i;
     const file = s.files[fileIdx];
     const row = HEADER_ROWS + 2 + i;
@@ -146,38 +247,96 @@ function renderFileList(s: State): string {
     }
 
     const selected = fileIdx === s.selectedFile;
+    const focused = selected && s.focus === "files";
     const stat = fileStat(file);
-    const addDelVis = `+${stat.added}/-${stat.deleted}`;
-    const statusColor =
-      file.status === "A" ? A.brightGreen : file.status === "D" ? A.brightRed : A.brightYellow;
-    const arrow = selected ? A.brightCyan + "▶" + A.reset : " ";
-    const name = truncate(file.path.split("/").pop() ?? file.path, panelW - addDelVis.length - 5);
-    const nameColored = selected
-      ? A.bold + A.brightWhite + name + A.reset
-      : A.white + name + A.reset;
-    const statusChar = statusColor + file.status + A.reset;
+    const addDelVis = `+${stat.added}-${stat.deleted}`;
+
+    // Smart path: dim dir/, bright filename
+    const parts = file.path.split("/");
+    const fname = parts.pop() ?? file.path;
+    const dir = parts.length > 0 ? parts.join("/") + "/" : "";
+    const maxName = panelW - addDelVis.length - 5;
+    const dirTrunc = truncate(dir, Math.max(0, maxName - fname.length));
+    const nameTrunc = truncate(fname, maxName - dirTrunc.length);
+
+    const icon = statusIcon[file.status] ?? statusIcon["?"];
     const addDelStr =
       A.brightGreen + `+${stat.added}` + A.reset +
-      A.brightBlack + "/" + A.reset +
-      A.brightRed + `-${stat.deleted}` + A.reset;
+      A.brightBlack + "-" + A.reset +
+      A.brightRed + `${stat.deleted}` + A.reset;
 
-    // Visible width calculation for padding
-    const prefixVis = `  ${selected ? "▶" : " "} ${name} ${file.status} `;
+    const prefixVis = ` ${selected ? "▶" : " "} ${file.status} ${dirTrunc}${nameTrunc} `;
     const gap = Math.max(0, panelW - prefixVis.length - addDelVis.length);
 
     let line: string;
-    if (selected && s.focus === "files") {
-      line = A.bgBlue + `  ${arrow} ${nameColored} ${statusChar} ` + " ".repeat(gap) + addDelStr + A.reset;
+    if (focused) {
+      const pathStr =
+        C.selectedBg + A.brightWhite + A.dim + dirTrunc + A.reset +
+        C.selectedBg + A.bold + A.brightWhite + nameTrunc + A.reset;
+      line =
+        C.selectedBg + ` ${A.brightCyan}▶${A.reset}${C.selectedBg} ${icon}${C.selectedBg} ` +
+        pathStr +
+        C.selectedBg + " ".repeat(gap) + addDelStr +
+        A.reset;
     } else if (selected) {
-      line = `  ${arrow} ${nameColored} ${statusChar} ` + " ".repeat(gap) + addDelStr;
+      const pathStr = A.dim + dirTrunc + A.reset + A.bold + A.brightWhite + nameTrunc + A.reset;
+      line =
+        ` ${A.brightCyan}▶${A.reset} ${icon} ` + pathStr +
+        " ".repeat(gap) + addDelStr;
     } else {
-      line = `   ${nameColored} ${statusChar} ` + " ".repeat(gap) + addDelStr;
+      const pathStr = A.dim + dirTrunc + A.reset + A.white + nameTrunc + A.reset;
+      line = `  ${icon} ` + pathStr + " ".repeat(gap) + addDelStr;
     }
 
-    out += moveTo(row, 1) + line + A.brightBlack + "│" + A.reset;
+    // Pad to panel width
+    const lineVis = stripAnsi(` ${selected ? "▶" : " "} ${file.status} `) + dirTrunc + nameTrunc + " ".repeat(gap) + addDelVis;
+    const trailing = Math.max(0, panelW - lineVis.length);
+    const bgClose = focused ? C.selectedBg + " ".repeat(trailing) + A.reset : " ".repeat(trailing);
+    out += moveTo(row, 1) + line + bgClose + A.brightBlack + "│" + A.reset;
   }
 
+  // Footer summary row
+  const footerRow = HEADER_ROWS + 2 + listRows;
+  const summaryStr =
+    A.brightGreen + `+${totalAdded}` + A.reset + " " +
+    A.brightRed + `-${totalDeleted}` + A.reset;
+  const summaryVis = `+${totalAdded} -${totalDeleted}`;
+  const summaryPad = Math.max(0, panelW - summaryVis.length - 1);
+  out +=
+    moveTo(footerRow, 1) +
+    A.brightBlack + " ".repeat(summaryPad) + A.reset +
+    summaryStr +
+    A.brightBlack + "│" + A.reset;
+
   return out;
+}
+
+/** Precompute word diffs for paired del/add sequences within a hunk */
+function precomputeWordDiffs(hunkLines: DiffLine[]): Map<DiffLine, string> {
+  const result = new Map<DiffLine, string>();
+  const dels: DiffLine[] = [];
+  const adds: DiffLine[] = [];
+
+  const flush = () => {
+    const pairCount = Math.min(dels.length, adds.length);
+    for (let i = 0; i < pairCount; i++) {
+      const wd = computeWordDiff(dels[i].content, adds[i].content);
+      if (wd) {
+        result.set(dels[i], renderWordMarked(wd.oldTokens, "del"));
+        result.set(adds[i], renderWordMarked(wd.newTokens, "add"));
+      }
+    }
+    dels.length = 0;
+    adds.length = 0;
+  };
+
+  for (const dl of hunkLines) {
+    if (dl.type === "del") dels.push(dl);
+    else if (dl.type === "add") adds.push(dl);
+    else flush();
+  }
+  flush();
+  return result;
 }
 
 /** Build flat list of renderable diff lines for a file */
@@ -193,35 +352,80 @@ function buildDiffLines(file: FileDiff, mode: ViewMode, panelW: number): string[
     return lines;
   }
 
-  const numW = 4; // width for line numbers
+  const numW = 4; // width per line-number column
+  // Dual line numbers: "oldNum │ newNum " = numW + 3 + numW = 11 chars prefix, then " " + sigil
+  const dualNumW = numW + 1 + numW; // "1234│5678"
+  const prefixW = dualNumW + 2; // " oldNum│newNum " (leading space + trailing space)
 
-  function fmtNum(n: number | undefined): string {
-    if (n === undefined) return " ".repeat(numW);
-    return A.brightBlack + String(n).padStart(numW) + A.reset;
+  function fmtDualNum(oldN: number | undefined, newN: number | undefined): string {
+    const oldStr = oldN !== undefined ? String(oldN).padStart(numW) : " ".repeat(numW);
+    const newStr = newN !== undefined ? String(newN).padStart(numW) : " ".repeat(numW);
+    return A.brightBlack + oldStr + "│" + newStr + A.reset;
+  }
+
+  // Hunk header styling: extract @@ part and context
+  function styleHunkHeader(header: string, width: number): string {
+    const m = header.match(/^(@@ [^@]+ @@)(.*)?$/);
+    const atPart = m ? m[1] : header;
+    const ctxPart = m ? (m[2] ?? "") : "";
+    const content =
+      C.hunkBg + " ╔ " +
+      C.hunkAt + atPart + A.reset +
+      C.hunkBg + C.hunkCtx + ctxPart + A.reset;
+    const vis = " ╔ " + atPart + ctxPart;
+    const pad_amt = Math.max(0, width - vis.length);
+    return content + C.hunkBg + " ".repeat(pad_amt) + A.reset;
   }
 
   for (const hunk of file.hunks) {
-    // Hunk header
-    lines.push(A.brightBlack + A.bold + truncate(hunk.header, panelW - 1) + A.reset);
+    lines.push(styleHunkHeader(hunk.header, panelW));
 
     if (mode === "unified") {
+      const wordDiffs = precomputeWordDiffs(hunk.lines);
+      const contentW = panelW - prefixW - 2; // 1 sigil + 1 space
+
       for (const dl of hunk.lines) {
-        const num = dl.type === "add" ? fmtNum(dl.newNum) : fmtNum(dl.oldNum);
-        const content = truncate(dl.content, panelW - numW - 3);
+        const nums = fmtDualNum(dl.oldNum, dl.newNum);
+        const prerendered = wordDiffs.get(dl);
+
         if (dl.type === "add") {
-          lines.push(` ${num} ${A.brightGreen}+${content}${A.reset}`);
+          const rawContent = truncate(dl.content, contentW);
+          const colored = prerendered
+            ? (C.addLineBg + A.brightGreen + prerendered + A.reset)
+            : (C.addLineBg + A.brightGreen + rawContent + A.reset);
+          const vis = rawContent;
+          const trail = Math.max(0, contentW - vis.length);
+          lines.push(
+            ` ${nums} ${C.addLineBg}${A.brightGreen}+${colored}` +
+            C.addLineBg + " ".repeat(trail) + A.reset
+          );
         } else if (dl.type === "del") {
-          lines.push(` ${num} ${A.brightRed}-${content}${A.reset}`);
+          const rawContent = truncate(dl.content, contentW);
+          const colored = prerendered
+            ? (C.delLineBg + A.brightRed + prerendered + A.reset)
+            : (C.delLineBg + A.brightRed + rawContent + A.reset);
+          const vis = rawContent;
+          const trail = Math.max(0, contentW - vis.length);
+          lines.push(
+            ` ${nums} ${C.delLineBg}${A.brightRed}-${colored}` +
+            C.delLineBg + " ".repeat(trail) + A.reset
+          );
         } else {
-          lines.push(` ${num} ${A.brightBlack} ${A.reset}${A.dim}${content}${A.reset}`);
+          const content = truncate(dl.content, contentW);
+          lines.push(` ${nums} ${A.brightBlack} ${A.reset}${A.dim}${content}${A.reset}`);
         }
       }
     } else {
-      // Side-by-side: pair del/add lines
+      // Side-by-side
       const halfW = Math.floor((panelW - 1) / 2);
-      const colW = halfW - numW - 3;
+      const colNumW = 4;
+      const colW = halfW - colNumW - 3;
 
-      // Header for columns
+      function fmtSideNum(n: number | undefined): string {
+        if (n === undefined) return " ".repeat(colNumW);
+        return A.brightBlack + String(n).padStart(colNumW) + A.reset;
+      }
+
       lines.push(
         A.bold + A.brightBlack +
         " OLD" + " ".repeat(halfW - 4) + "│" +
@@ -229,7 +433,6 @@ function buildDiffLines(file: FileDiff, mode: ViewMode, panelW: number): string[
         A.reset
       );
 
-      // Build paired rows
       const dels: DiffLine[] = [];
       const adds: DiffLine[] = [];
       const paired: Array<{ del?: DiffLine; add?: DiffLine; ctx?: DiffLine }> = [];
@@ -238,42 +441,43 @@ function buildDiffLines(file: FileDiff, mode: ViewMode, panelW: number): string[
         if (dl.type === "del") dels.push(dl);
         else if (dl.type === "add") adds.push(dl);
         else {
-          // flush pending del/add pairs
           const max = Math.max(dels.length, adds.length);
-          for (let i = 0; i < max; i++) {
-            paired.push({ del: dels[i], add: adds[i] });
-          }
-          dels.length = 0;
-          adds.length = 0;
+          for (let i = 0; i < max; i++) paired.push({ del: dels[i], add: adds[i] });
+          dels.length = 0; adds.length = 0;
           paired.push({ ctx: dl });
         }
       }
       const max = Math.max(dels.length, adds.length);
-      for (let i = 0; i < max; i++) {
-        paired.push({ del: dels[i], add: adds[i] });
-      }
+      for (let i = 0; i < max; i++) paired.push({ del: dels[i], add: adds[i] });
 
       for (const p of paired) {
         if (p.ctx) {
           const c = truncate(p.ctx.content, colW);
-          const leftNum = fmtNum(p.ctx.oldNum);
-          const rightNum = fmtNum(p.ctx.newNum);
-          const leftCell = ` ${leftNum} ${A.dim}${pad(c, colW)}${A.reset}`;
-          const rightCell = ` ${rightNum} ${A.dim}${pad(c, colW)}${A.reset}`;
+          const leftCell = ` ${fmtSideNum(p.ctx.oldNum)} ${A.dim}${pad(c, colW)}${A.reset}`;
+          const rightCell = ` ${fmtSideNum(p.ctx.newNum)} ${A.dim}${pad(c, colW)}${A.reset}`;
           lines.push(leftCell + A.brightBlack + "│" + A.reset + rightCell);
         } else {
           const delLine = p.del;
           const addLine = p.add;
-          const leftNum = delLine ? fmtNum(delLine.oldNum) : " ".repeat(numW);
-          const rightNum = addLine ? fmtNum(addLine.newNum) : " ".repeat(numW);
+          const wd = delLine && addLine ? computeWordDiff(delLine.content, addLine.content) : null;
           const leftContent = delLine ? truncate(delLine.content, colW) : "";
           const rightContent = addLine ? truncate(addLine.content, colW) : "";
+          const leftBody = wd
+            ? renderWordMarked(wd.oldTokens, "del")
+            : (C.delLineBg + A.brightRed + leftContent);
+          const rightBody = wd
+            ? renderWordMarked(wd.newTokens, "add")
+            : (C.addLineBg + A.brightGreen + rightContent);
+          const leftBg = delLine ? C.delLineBg : "";
+          const rightBg = addLine ? C.addLineBg : "";
+          const leftTrail = Math.max(0, colW - leftContent.length);
+          const rightTrail = Math.max(0, colW - rightContent.length);
           const leftCell = delLine
-            ? ` ${leftNum} ${A.brightRed}-${pad(leftContent, colW)}${A.reset}`
-            : ` ${" ".repeat(numW)} ${" ".repeat(colW + 1)}`;
+            ? ` ${fmtSideNum(delLine.oldNum)} ${leftBg}${A.brightRed}-${leftBody}${leftBg}${" ".repeat(leftTrail)}${A.reset}`
+            : ` ${" ".repeat(colNumW)} ${" ".repeat(colW + 1)}`;
           const rightCell = addLine
-            ? ` ${rightNum} ${A.brightGreen}+${pad(rightContent, colW)}${A.reset}`
-            : ` ${" ".repeat(numW)} ${" ".repeat(colW + 1)}`;
+            ? ` ${fmtSideNum(addLine.newNum)} ${rightBg}${A.brightGreen}+${rightBody}${rightBg}${" ".repeat(rightTrail)}${A.reset}`
+            : ` ${" ".repeat(colNumW)} ${" ".repeat(colW + 1)}`;
           lines.push(leftCell + A.brightBlack + "│" + A.reset + rightCell);
         }
       }
@@ -286,7 +490,9 @@ function buildDiffLines(file: FileDiff, mode: ViewMode, panelW: number): string[
 function renderDiffPanel(s: State): string {
   const contentH = s.termH - HEADER_ROWS - FOOTER_ROWS;
   const panelX = FILE_PANEL_WIDTH + 1;
+  // Reserve 1 char for scrollbar on the right
   const panelW = s.termW - FILE_PANEL_WIDTH;
+  const innerW = panelW - 1; // usable width excluding scrollbar column
   const file = s.files[s.selectedFile];
   let out = "";
 
@@ -294,8 +500,7 @@ function renderDiffPanel(s: State): string {
   const filePath = file
     ? A.bold + A.brightWhite + " " + file.path + A.reset
     : A.brightBlack + " (no file selected)" + A.reset;
-  const focusIndicator = s.focus === "diff" ? A.brightCyan + " [focused]" + A.reset : "";
-  out += moveTo(HEADER_ROWS + 1, panelX) + pad(filePath + focusIndicator, panelW);
+  out += moveTo(HEADER_ROWS + 1, panelX) + pad(filePath, panelW);
 
   if (!file) {
     for (let r = 0; r < contentH - 1; r++) {
@@ -304,50 +509,67 @@ function renderDiffPanel(s: State): string {
     return out;
   }
 
-  const diffLines = buildDiffLines(file, s.mode, panelW);
-  const visible = diffLines.slice(s.diffScroll, s.diffScroll + contentH - 1);
+  const diffLines = buildDiffLines(file, s.mode, innerW);
+  const viewH = contentH - 1;
+  const visible = diffLines.slice(s.diffScroll, s.diffScroll + viewH);
 
-  for (let i = 0; i < contentH - 1; i++) {
+  // Scrollbar geometry
+  const total = diffLines.length;
+  const hasScroll = total > viewH;
+  const thumbH = hasScroll ? Math.max(1, Math.round((viewH / total) * viewH)) : viewH;
+  const thumbTop = hasScroll
+    ? Math.round((s.diffScroll / (total - viewH)) * (viewH - thumbH))
+    : 0;
+
+  for (let i = 0; i < viewH; i++) {
     const row = HEADER_ROWS + 2 + i;
     out += moveTo(row, panelX);
     if (i < visible.length) {
       const raw = visible[i];
       const vis = stripAnsi(raw);
-      // render line, padding to panel width
-      const padded = raw + " ".repeat(Math.max(0, panelW - vis.length));
-      out += padded;
+      const trailing = Math.max(0, innerW - vis.length);
+      out += raw + " ".repeat(trailing);
     } else {
-      out += " ".repeat(panelW);
+      out += " ".repeat(innerW);
+    }
+    // Scrollbar column
+    if (hasScroll) {
+      const inThumb = i >= thumbTop && i < thumbTop + thumbH;
+      out += C.scrollTrack + (inThumb ? "█" : "│") + A.reset;
+    } else {
+      out += " ";
     }
   }
 
-  // Scroll indicator
-  const total = diffLines.length;
-  if (total > contentH - 1) {
-    const pct = Math.round((s.diffScroll / (total - contentH + 1)) * 100);
+  // Scroll indicator in bottom-right of diff area
+  if (total > viewH) {
+    const pct = Math.round((s.diffScroll / (total - viewH)) * 100);
     const indicator = A.brightBlack + ` ${pct}% (${s.diffScroll + 1}/${total})` + A.reset;
-    out += moveTo(s.termH - 1, panelX) + indicator;
+    const indicatorVis = ` ${pct}% (${s.diffScroll + 1}/${total})`;
+    const indicatorX = panelX + innerW - indicatorVis.length;
+    out += moveTo(s.termH - 1, indicatorX) + indicator;
   }
 
   return out;
 }
 
 function renderFooter(s: State): string {
+  const sep = A.brightBlack + "  │  " + A.brightWhite;
   const help =
-    A.bgBrightBlack +
+    C.footerBg +
     A.brightWhite +
     "  " +
     [
       `${A.brightYellow}q${A.brightWhite} quit`,
+      `${A.brightYellow}jk${A.brightWhite} / ${A.brightYellow}↑↓${A.brightWhite} scroll`,
+      `${A.brightYellow}np${A.brightWhite} next/prev`,
+      `${A.brightYellow}Tab${A.brightWhite} switch`,
       `${A.brightYellow}t${A.brightWhite} toggle view`,
-      `${A.brightYellow}Tab${A.brightWhite} switch panel`,
-      `${A.brightYellow}jk${A.brightWhite} scroll`,
-      `${A.brightYellow}np${A.brightWhite} next/prev file`,
       `${A.brightYellow}gG${A.brightWhite} top/bottom`,
-    ].join(A.brightBlack + "  │  " + A.brightWhite) +
+    ].join(sep) +
     "  " +
     A.reset;
-  return moveTo(s.termH, 1) + pad(help, s.termW);
+  return moveTo(s.termH, 1) + C.footerBg + pad(help, s.termW) + A.reset;
 }
 
 function render(s: State): string {
@@ -366,7 +588,9 @@ function render(s: State): string {
 function diffLineCount(s: State): number {
   const file = s.files[s.selectedFile];
   if (!file) return 0;
-  return buildDiffLines(file, s.mode, s.termW - FILE_PANEL_WIDTH).length;
+  // innerW = panelW - 1 (scrollbar column)
+  const innerW = (s.termW - FILE_PANEL_WIDTH) - 1;
+  return buildDiffLines(file, s.mode, innerW).length;
 }
 
 function maxDiffScroll(s: State): number {
@@ -375,8 +599,9 @@ function maxDiffScroll(s: State): number {
 }
 
 function maxFileScroll(s: State): number {
-  const contentH = s.termH - HEADER_ROWS - FOOTER_ROWS - 1;
-  return Math.max(0, s.files.length - contentH);
+  // contentH minus 1 for file list header row, minus 1 for footer summary row
+  const listRows = s.termH - HEADER_ROWS - FOOTER_ROWS - 2;
+  return Math.max(0, s.files.length - listRows);
 }
 
 function clamp(v: number, lo: number, hi: number) {
