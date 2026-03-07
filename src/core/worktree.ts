@@ -9,6 +9,15 @@ export class WorktreeManager {
     const path = `${TREES_DIR}/${name}`;
     const base = baseBranch ?? "HEAD";
 
+    // If no explicit base branch, check HEAD is valid (fails on repos with no commits)
+    if (!baseBranch) {
+      const headValid = await $`git rev-parse HEAD`.quiet().then(() => true).catch(() => false);
+      if (!headValid) {
+        console.log("No commits found — creating an empty initial commit...");
+        await $`git commit --allow-empty -m "initial commit"`.quiet();
+      }
+    }
+
     try {
       await $`git worktree add -b ${branch} ${path} ${base}`.quiet();
     } catch (e: any) {
