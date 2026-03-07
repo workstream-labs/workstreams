@@ -1,9 +1,19 @@
 import { Command } from "commander";
 import { loadState, saveState } from "../core/state";
-import type { ProjectState } from "../core/types";
+import type { ProjectState, WorkstreamState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
-import { prompt, promptChoice } from "../core/prompt";
+import { prompt } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
+
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const STATUS_COLOR: Record<string, string> = {
+  running: "\x1b[33m",
+  waiting: "\x1b[36m",
+  success: "\x1b[32m",
+  failed: "\x1b[31m",
+};
 
 export function checkoutCommand() {
   return new Command("checkout")
@@ -22,10 +32,15 @@ export function checkoutCommand() {
         process.exit(1);
       }
 
-      // Handle in-progress states
       if (ws.status === "pending" || ws.status === "queued") {
         console.log(`"${name}" has not started yet (status: ${ws.status}).`);
         console.log("Use `ws status` to check progress.");
+        return;
+      }
+
+      if (ws.status === "running" && !ws.sessionId) {
+        console.log(`"${name}" is still starting — session not ready yet.`);
+        console.log("Try again shortly or use `ws status` to check progress.");
         return;
       }
 
@@ -35,30 +50,36 @@ export function checkoutCommand() {
         return;
       }
 
-      // Completed (success or failed)
-      const choices: string[] = [];
       if (ws.sessionId) {
-        choices.push("Resume Claude session (interactive)");
-      }
-      choices.push("View diff and add review comments");
-
-      if (choices.length === 1 && !ws.sessionId) {
-        await diffView(name, ws);
-        return;
-      }
-
-      const choice = await promptChoice(`Checkout "${name}":`, choices);
-      if (choice === -1) {
-        console.log("Invalid choice.");
-        return;
-      }
-
-      if (ws.sessionId && choice === 1) {
-        await sessionView(name, ws, state!, true);
+        await sessionView(name, ws, state, true);
       } else {
         await diffView(name, ws);
       }
     });
+}
+
+async function showContextHeader(name: string, ws: WorkstreamState) {
+  const color = STATUS_COLOR[ws.status] ?? "";
+  console.log(`\n${BOLD}ws/${name}${RESET}  ${color}${ws.status}${RESET}  ${DIM}${ws.branch}${RESET}`);
+
+  const wt = new WorktreeManager();
+  try {
+    const diff = await wt.diffBranch(`ws/${name}`);
+    if (diff.trim()) {
+      const changedFiles = diff
+        .split("\n")
+        .filter((l) => l.startsWith("diff --git "))
+        .map((l) => l.replace(/^diff --git a\//, "").split(" b/")[0]);
+      if (changedFiles.length > 0) {
+        console.log(`${DIM}Changed: ${changedFiles.join(", ")}${RESET}`);
+      }
+    } else {
+      console.log(`${DIM}(no changes yet)${RESET}`);
+    }
+  } catch {
+    // worktree may not be set up yet
+  }
+  console.log();
 }
 
 async function sessionView(
@@ -72,9 +93,6 @@ async function sessionView(
     console.error("Session IDs are only captured when using the Claude agent with stream-json output.");
     process.exit(1);
   }
-
-  console.log(`\nResuming Claude session for "${name}"...`);
-  console.log("(You are now in an interactive Claude session. Exit Claude to return to ws.)\n");
 
   const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
     cwd: ws.worktreePath,
