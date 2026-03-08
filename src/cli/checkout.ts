@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadState, saveState } from "../core/state";
 import type { ProjectState, WorkstreamState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
-import { prompt, promptChoice } from "../core/prompt";
+import { promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 
@@ -148,34 +148,4 @@ async function diffView(name: string, ws: { worktreePath: string }, workstreams?
     return;
   }
   await openDiffViewer(name, diff, { workstreams });
-
-  console.log("\n--- Add review comments (enter 'done' to finish) ---\n");
-
-  const data = await loadComments(name);
-
-  while (true) {
-    const filePath = await prompt("File path (or 'done'): ");
-    if (filePath.toLowerCase() === "done" || !filePath) break;
-
-    const lineStr = await prompt("Line number (optional, press enter to skip): ");
-    const line = lineStr ? parseInt(lineStr, 10) : undefined;
-
-    const text = await prompt("Comment: ");
-    if (!text) continue;
-
-    data.comments.push({
-      filePath,
-      line: line && !isNaN(line) ? line : undefined,
-      text,
-      createdAt: new Date().toISOString(),
-    });
-
-    await saveComments(data);
-    console.log(`  Comment added. (${data.comments.length} total)\n`);
-  }
-
-  if (data.comments.length > 0) {
-    console.log(`\n${data.comments.length} comment(s) saved.`);
-    console.log(`Use 'ws resume ${name}' to send comments to the agent.`);
-  }
 }
