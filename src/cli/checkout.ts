@@ -2,8 +2,9 @@ import { Command } from "commander";
 import { loadState, saveState } from "../core/state";
 import type { ProjectState, WorkstreamState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
-import { prompt } from "../core/prompt";
+import { prompt, promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
+import { openDiffViewer } from "../ui/diff-viewer.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -50,7 +51,23 @@ export function checkoutCommand() {
         return;
       }
 
-      if (ws.sessionId) {
+      // Completed (success or failed)
+      const choices: string[] = [];
+      if (ws.sessionId) choices.push("Resume Claude session (interactive)");
+      choices.push("View diff and add review comments");
+
+      if (choices.length === 1) {
+        await diffView(name, ws);
+        return;
+      }
+
+      const choice = await promptChoice(`Checkout "${name}":`, choices);
+      if (choice === -1) {
+        console.log("Invalid choice.");
+        return;
+      }
+
+      if (ws.sessionId && choice === 1) {
         await sessionView(name, ws, state, true);
       } else {
         await diffView(name, ws);
@@ -123,13 +140,12 @@ async function sessionView(
 async function diffView(name: string, ws: { worktreePath: string }) {
   const wt = new WorktreeManager();
 
-  console.log(`\nDiff for "${name}":\n`);
   const diff = await wt.diffBranch(`ws/${name}`);
   if (!diff.trim()) {
     console.log("  (no changes)");
     return;
   }
-  console.log(diff);
+  await openDiffViewer(name, diff);
 
   console.log("\n--- Add review comments (enter 'done' to finish) ---\n");
 
