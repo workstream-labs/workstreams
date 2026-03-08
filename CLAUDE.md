@@ -38,14 +38,18 @@ workstreams:               # map format
 
 Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 
+`plan_first: true` on a workstream appends a planning suffix to the prompt instructing the agent to write a plan before implementing. The agent runs to completion (no pausing).
+
+Use `ws create <name> -p <prompt> [--plan-first]` to add a workstream to `workstream.yaml` without editing it directly.
+
 ## Architecture
 
 **Runtime:** Bun (TypeScript, ESNext modules). Uses `bun:test` for testing, `Bun.spawn` for process management.
 
 **Core engine** (`src/core/`):
-- `config.ts` — Loads and validates `workstream.yaml`. Accepts both map and array `workstreams` formats; `base_branch` and `baseBranch` are both valid keys.
+- `config.ts` — Loads and validates `workstream.yaml`. Accepts both map and array `workstreams` formats; `base_branch` and `baseBranch` are both valid keys. YAML uses `plan_first`, code uses `planFirst`.
 - `dag.ts` — Builds a graph of workstream nodes from definitions.
-- `executor.ts` — `Executor` runs all workstreams in parallel. Serializes worktree creation via a mutex (`worktreeLock`) to prevent git lock races. Handles SIGINT/SIGTERM cleanup.
+- `executor.ts` — `Executor` runs all workstreams in parallel. Serializes worktree creation via a mutex (`worktreeLock`) to prevent git lock races. Handles SIGINT/SIGTERM cleanup. Terminal statuses are only `success` or `failed`.
 - `agent.ts` — `AgentAdapter` spawns the configured agent in each worktree. Auto-injects accept flags per agent (`--dangerously-skip-permissions --output-format stream-json --verbose` for claude, `--full-auto` for codex, `--yes` for aider). Strips `CLAUDECODE` from the environment before spawning child agents. Parses Claude's stream-json stdout to extract `session_id` for later resume. Auto-commits any uncommitted changes after a successful agent run (`ws: apply agent changes`).
 - `worktree.ts` — `WorktreeManager` wraps git worktree commands. Creates branches prefixed `ws/` in `.workstreams/trees/`. `diff(name)` diffs against HEAD within the worktree; `diffBranch(branch, base)` diffs the branch against a base ref from the main repo.
 - `state.ts` — Persists run state to `.workstreams/state.json`.
@@ -57,10 +61,14 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 
 **CLI commands** (`src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `src/index.ts`.
 - `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`.
-- `checkout.ts` — `ws checkout <name>`: interactively resume a Claude session or view diff and add review comments.
-- `resume.ts` — `ws resume <name>`: re-run the agent hands-off with a new prompt (`-p`) or stored review comments (`--comments`). Clears stored comments on success.
+- `checkout.ts` — `ws checkout <name>`: when finished, offers an interactive Claude session resume or a TUI diff viewer with review comment entry. Blocks with an informational message if the workstream is still running.
+- `resume.ts` — `ws resume <name>`: re-run the agent hands-off with a new prompt (`-p`) or stored review comments (`--comments`). Passes `--resume <sessionId>` to Claude. Clears stored comments on success.
 - `merge.ts` — `ws merge [name]`: merge into the current branch. Supports `--squash` and `--no-cleanup`.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
 - `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches.
+
+**UI** (`src/ui/`):
+- `diff-viewer.ts` — Full-screen TUI diff viewer (vim-style keybindings: `jk` scroll, `np` next/prev file, `t` toggle unified/side-by-side, `Tab` switch panels, `q` quit). Renders word-level diffs using a pure LCS algorithm.
+- `diff-parser.ts` — Parses raw `git diff` output into structured `FileDiff`/`Hunk`/`DiffLine` objects consumed by the viewer.
 
 **State directory:** `.workstreams/` (gitignored) contains `state.json`, `trees/` (git worktrees), `logs/` (per-workstream log files), and `comments/` (review comments per workstream).
