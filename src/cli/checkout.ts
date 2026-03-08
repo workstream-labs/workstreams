@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadState, saveState } from "../core/state";
 import type { ProjectState, WorkstreamState } from "../core/types";
 import { WorktreeManager } from "../core/worktree";
-import { prompt, promptChoice } from "../core/prompt";
+import { promptChoice } from "../core/prompt";
 import { loadComments, saveComments } from "../core/comments";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 
@@ -56,8 +56,10 @@ export function checkoutCommand() {
       if (ws.sessionId) choices.push("Resume Claude session (interactive)");
       choices.push("View diff and add review comments");
 
+      const allWorkstreams = Object.keys(state.currentRun.workstreams);
+
       if (choices.length === 1) {
-        await diffView(name, ws);
+        await diffView(name, ws, allWorkstreams);
         return;
       }
 
@@ -70,7 +72,7 @@ export function checkoutCommand() {
       if (ws.sessionId && choice === 1) {
         await sessionView(name, ws, state, true);
       } else {
-        await diffView(name, ws);
+        await diffView(name, ws, allWorkstreams);
       }
     });
 }
@@ -137,7 +139,7 @@ async function sessionView(
   }
 }
 
-async function diffView(name: string, ws: { worktreePath: string }) {
+async function diffView(name: string, ws: { worktreePath: string }, workstreams?: string[]) {
   const wt = new WorktreeManager();
 
   const diff = await wt.diffBranch(`ws/${name}`);
@@ -145,35 +147,5 @@ async function diffView(name: string, ws: { worktreePath: string }) {
     console.log("  (no changes)");
     return;
   }
-  await openDiffViewer(name, diff);
-
-  console.log("\n--- Add review comments (enter 'done' to finish) ---\n");
-
-  const data = await loadComments(name);
-
-  while (true) {
-    const filePath = await prompt("File path (or 'done'): ");
-    if (filePath.toLowerCase() === "done" || !filePath) break;
-
-    const lineStr = await prompt("Line number (optional, press enter to skip): ");
-    const line = lineStr ? parseInt(lineStr, 10) : undefined;
-
-    const text = await prompt("Comment: ");
-    if (!text) continue;
-
-    data.comments.push({
-      filePath,
-      line: line && !isNaN(line) ? line : undefined,
-      text,
-      createdAt: new Date().toISOString(),
-    });
-
-    await saveComments(data);
-    console.log(`  Comment added. (${data.comments.length} total)\n`);
-  }
-
-  if (data.comments.length > 0) {
-    console.log(`\n${data.comments.length} comment(s) saved.`);
-    console.log(`Use 'ws resume ${name}' to send comments to the agent.`);
-  }
+  await openDiffViewer(name, diff, { workstreams });
 }

@@ -91,7 +91,7 @@ Initialize workstreams in the current git repo. Creates `.workstreams/` director
 
 ### `ws create <name> -p <prompt> [--plan-first]`
 
-Add a new workstream to `workstream.yaml`. Use `--plan-first` to prepend a planning step — the agent writes a detailed plan before implementing, then proceeds automatically.
+Add a new workstream to `workstream.yaml`. Use `--plan-first` to have the agent write a plan for review before proceeding.
 
 ### `ws run [name]`
 
@@ -113,19 +113,14 @@ List workstreams defined in `workstream.yaml`.
 
 ### `ws diff [name]`
 
-Show the git diff for a workstream's branch. For a single workstream in a TTY, opens an interactive TUI viewer with vim-style keybindings (`jk` scroll, `np` next/prev file, `t` toggle unified/side-by-side, `Tab` switch panels, `q` quit). Use `--raw` to print a plain diff instead.
-
-```bash
-ws diff add-tests          # interactive TUI viewer
-ws diff add-tests --raw    # plain diff output
-ws diff                    # plain diff for all workstreams
-```
+Show the git diff for a workstream's branch. Without a name, shows diffs for all workstreams.
 
 ### `ws checkout <name>`
 
-Inspect a completed workstream. If a Claude session ID was captured, resumes an interactive Claude session in the worktree. Otherwise, opens the TUI diff viewer and lets you add file-level review comments (file path, optional line number, comment text) saved to `.workstreams/comments/<name>.json`.
+Interactively inspect a workstream. Presents a menu:
 
-If the workstream is still running, prints a message and exits — use `ws status` to wait for completion.
+1. **Resume Claude session** — drops you into the live Claude session (interactive, no auto-accept). Requires a captured session ID from a prior `ws run`.
+2. **View diff and add comments** — shows the diff and lets you add file-level review comments (file path, optional line number, comment text). Comments are saved to `.workstreams/comments/<name>.json`.
 
 ### `ws resume <name>`
 
@@ -184,9 +179,6 @@ src/
     types.ts        # TypeScript interfaces
     prompt.ts       # Interactive input helpers
     comments.ts     # Review comment storage
-  ui/
-    diff-viewer.ts  # Full-screen TUI diff viewer (vim keybindings, word-level diffs)
-    diff-parser.ts  # Parses raw git diff output into structured objects
 tests/              # bun:test test files
 ```
 
