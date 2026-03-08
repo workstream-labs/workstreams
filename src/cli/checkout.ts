@@ -56,8 +56,10 @@ export function checkoutCommand() {
       if (ws.sessionId) choices.push("Resume Claude session (interactive)");
       choices.push("View diff and add review comments");
 
+      const allWorkstreams = Object.keys(state.currentRun.workstreams);
+
       if (choices.length === 1) {
-        await diffView(name, ws);
+        await diffView(name, ws, allWorkstreams);
         return;
       }
 
@@ -70,7 +72,7 @@ export function checkoutCommand() {
       if (ws.sessionId && choice === 1) {
         await sessionView(name, ws, state, true);
       } else {
-        await diffView(name, ws);
+        await diffView(name, ws, allWorkstreams);
       }
     });
 }
@@ -137,7 +139,7 @@ async function sessionView(
   }
 }
 
-async function diffView(name: string, ws: { worktreePath: string }) {
+async function diffView(name: string, ws: { worktreePath: string }, workstreams?: string[]) {
   const wt = new WorktreeManager();
 
   const diff = await wt.diffBranch(`ws/${name}`);
@@ -145,7 +147,7 @@ async function diffView(name: string, ws: { worktreePath: string }) {
     console.log("  (no changes)");
     return;
   }
-  await openDiffViewer(name, diff);
+  await openDiffViewer(name, diff, { workstreams });
 
   console.log("\n--- Add review comments (enter 'done' to finish) ---\n");
 

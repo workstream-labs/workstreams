@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "commander": "^13.1.0",
+    "critique": "^0.1.119",
     "yaml": "^2.7.0"
   },
   "devDependencies": {

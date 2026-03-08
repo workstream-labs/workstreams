@@ -72,7 +72,7 @@ export class WorktreeManager {
 
   async diffBranch(branch: string, baseBranch?: string): Promise<string> {
     const base = baseBranch ?? "HEAD";
-    const result = await $`git diff ${base}...${branch}`.quiet();
+    const result = await $`git diff --no-prefix ${base}...${branch}`.quiet();
     return result.stdout.toString();
   }
 }

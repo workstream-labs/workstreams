@@ -31,7 +31,8 @@ export function diffCommand() {
         }
         try {
           const diff = await wt.diffBranch(`ws/${n}`);
-          await openDiffViewer(n, diff);
+          const allWorkstreams = Object.keys(state.currentRun.workstreams);
+          await openDiffViewer(n, diff, { workstreams: allWorkstreams });
         } catch (e: any) {
           console.error(`Error: ${e.message}`);
           process.exit(1);
@@ -39,7 +40,6 @@ export function diffCommand() {
         return;
       }
 
-      // Multi-workstream or raw mode: print plain diff
       for (const n of names) {
         const ws = state.currentRun.workstreams[n];
         if (!ws) {
