@@ -36,7 +36,57 @@ export type DashboardAction =
   | { type: "resume-comments"; name: string }
   | { type: "quit" };
 
-type DashboardMode = "normal" | "search" | "prompt-input" | "help";
+interface ActionOption {
+  label: string;
+  description: string;
+  action: DashboardAction["type"] | "prompt-input";
+}
+
+function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
+  const options: ActionOption[] = [];
+
+  options.push({
+    label: "Open in editor",
+    description: "Create worktree if needed and open in your editor",
+    action: "editor",
+  });
+
+  if (entry.hasSession) {
+    options.push({
+      label: "Resume Claude session",
+      description: "Continue the previous interactive session",
+      action: "resume-session",
+    });
+  }
+
+  if (entry.hasWorktree && entry.filesChanged > 0) {
+    options.push({
+      label: "View diff & review",
+      description: "Browse changes and add review comments",
+      action: "diff",
+    });
+  }
+
+  if (entry.hasSession) {
+    options.push({
+      label: "Resume with new prompt",
+      description: "Send new instructions to the agent",
+      action: "prompt-input",
+    });
+  }
+
+  if (entry.commentCount > 0) {
+    options.push({
+      label: "Resume with comments",
+      description: "Send stored review comments to the agent",
+      action: "resume-comments",
+    });
+  }
+
+  return options;
+}
+
+type DashboardMode = "normal" | "search" | "prompt-input" | "help" | "action-picker";
 
 interface DashboardState {
   entries: WorkstreamEntry[];
@@ -46,6 +96,8 @@ interface DashboardState {
   mode: DashboardMode;
   searchQuery: string;
   promptInput: string;
+  actionPickerOptions: ActionOption[];
+  actionPickerSelected: number;
   termW: number;
   termH: number;
 }
@@ -125,43 +177,12 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number):
   const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
   const sel = isSelected ? C.selectedBg : "";
   const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
-  const cursor = isSelected ? `${A.brightCyan}\u25B6${selReset}` : " ";
 
-  // Line 1: cursor + status icon + name ... ahead/behind +/- age
-  const nameStr = truncate(entry.name, Math.max(10, cardW - 40));
-
-  let rightInfo = "";
-  let rightVisLen = 0;
-  if (entry.hasWorktree && (entry.ahead || entry.behind || entry.filesChanged)) {
-    const ab = entry.ahead || entry.behind
-      ? `${A.brightGreen}\u2191${entry.ahead}${selReset} ${A.brightRed}\u2193${entry.behind}${selReset}`
-      : "";
-    const abVis = entry.ahead || entry.behind ? `\u2191${entry.ahead} \u2193${entry.behind}` : "";
-    const stats = entry.filesChanged > 0
-      ? `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}-${entry.deletions}${selReset}`
-      : "";
-    const statsVis = entry.filesChanged > 0 ? `+${entry.additions} -${entry.deletions}` : "";
-    const age = entry.lastCommitAge ? truncate(entry.lastCommitAge, 10) : "";
-
-    const parts = [abVis, statsVis, age].filter(Boolean);
-    rightVisLen = parts.join("  ").length;
-    const colorParts = [ab, stats, age ? `${A.brightBlack}${age}${selReset}` : ""].filter(Boolean);
-    rightInfo = colorParts.join("  ");
-  } else if (!entry.hasWorktree) {
-    rightInfo = `${A.brightBlack}(no changes)${selReset}`;
-    rightVisLen = "(no changes)".length;
-  } else {
-    rightInfo = `${A.brightBlack}=${selReset}`;
-    rightVisLen = 1;
-  }
-
-  const nameVisLen = ` \u25B6 ${st.icon} ${stripAnsi(nameStr)}`.length;
-  const gap1 = Math.max(1, cardW - nameVisLen - rightVisLen - 2);
-
+  // Line 1: status icon + name
+  const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
   const line1 =
-    sel + ` ${cursor} ${st.color}${st.icon}${selReset}` +
-    (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`) +
-    " ".repeat(gap1) + rightInfo;
+    sel + `  ${st.color}${st.icon}${selReset}` +
+    (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`);
 
   // Line 2: prompt (dimmed, indented)
   const promptText = entry.prompt
@@ -169,48 +190,38 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number):
     : `${A.brightBlack}(no prompt)${selReset}`;
   const line2 = sel + `    ${A.dim}${promptText}${selReset}`;
 
-  // Line 3: session | comments | dirty | last commit
+  // Line 3: all metadata in one line — stats + resumable + comments + last commit
   const meta: string[] = [];
   const metaVis: string[] = [];
 
+  if (entry.hasWorktree && entry.filesChanged > 0) {
+    const stats = `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}−${entry.deletions}${selReset}`;
+    meta.push(stats);
+    metaVis.push(`+${entry.additions} −${entry.deletions}`);
+  }
+
   if (entry.hasSession) {
-    meta.push(`${A.brightGreen}session: yes${selReset}`);
-    metaVis.push("session: yes");
-  } else if (entry.hasWorktree) {
-    meta.push(`${A.brightBlack}no session${selReset}`);
-    metaVis.push("no session");
+    meta.push(`${A.brightGreen}resumable${selReset}`);
+    metaVis.push("resumable");
   }
 
   if (entry.commentCount > 0) {
     meta.push(`${A.brightYellow}${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}${selReset}`);
     metaVis.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
-  } else if (entry.hasWorktree) {
-    meta.push(`${A.brightBlack}0 comments${selReset}`);
-    metaVis.push("0 comments");
-  }
-
-  if (entry.hasWorktree) {
-    if (entry.isDirty) {
-      meta.push(`${A.brightYellow}dirty${selReset}`);
-      metaVis.push("dirty");
-    } else {
-      meta.push(`${A.brightBlack}clean${selReset}`);
-      metaVis.push("clean");
-    }
   }
 
   if (entry.lastCommitMsg && entry.hasWorktree) {
-    const maxMsg = cardW - 6 - metaVis.join("  |  ").length - 6;
+    const usedLen = metaVis.join("  ·  ").length;
+    const maxMsg = cardW - 6 - usedLen - (usedLen > 0 ? 5 : 0) - 2;
     if (maxMsg > 8) {
-      meta.push(`${A.dim}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
+      const age = entry.lastCommitAge ? `${entry.lastCommitAge} · ` : "";
+      meta.push(`${A.dim}${age}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
     }
-  } else if (!entry.hasWorktree && !entry.prompt) {
-    meta.push(`${A.brightBlack}no worktree${selReset}`);
   } else if (!entry.hasWorktree) {
     meta.push(`${A.brightBlack}no worktree${selReset}`);
   }
 
-  const sep = `${A.brightBlack}  |  ${selReset}`;
+  const sep = `${A.brightBlack}  ·  ${selReset}`;
   const line3 = sel + `    ${meta.join(sep)}`;
 
   return [line1, line2, line3];
@@ -291,42 +302,21 @@ function renderFooter(s: DashboardState): string {
     return moveTo(s.termH, 1) + C.footerBg + pad(`  ${hint}`, s.termW) + A.reset;
   }
 
-  const entryIdx = s.filteredIndices[s.selected];
-  const entry = s.entries[entryIdx];
-  if (!entry) {
-    return moveTo(s.termH, 1) + C.footerBg + " ".repeat(s.termW) + A.reset;
-  }
+  const items = [
+    `${A.brightWhite}enter${A.brightBlack} select`,
+    `${A.brightWhite}/${A.brightBlack} search`,
+    `${A.brightWhite}?${A.brightBlack} help`,
+    `${A.brightWhite}q${A.brightBlack} quit`,
+  ];
 
-  const sep = `${A.brightBlack}  \u2502  ${A.brightWhite}`;
-  const items: string[] = [];
-
-  // enter editor — always available
-  items.push(`${A.brightYellow}enter${A.brightWhite} editor`);
-
-  // d diff — only if worktree with changes
-  if (entry.hasWorktree && entry.filesChanged > 0) {
-    items.push(`${A.brightYellow}d${A.brightWhite} diff`);
-  }
-
-  // r resume — only if session exists
-  if (entry.hasSession) {
-    items.push(`${A.brightYellow}r${A.brightWhite} resume`);
-  }
-
-  // p prompt — only if session exists (resume with new prompt)
-  if (entry.hasSession) {
-    items.push(`${A.brightYellow}p${A.brightWhite} prompt`);
-  }
-
-  const help = C.footerBg + A.brightWhite + "  " + items.join(sep) + A.reset;
-  const quitHint = `${A.brightBlack}q quit${A.reset}`;
-  const helpVis = stripAnsi("  " + items.map(s => stripAnsi(s)).join("  |  "));
-  const quitVisLen = "q quit".length;
-  const gap = Math.max(1, s.termW - helpVis.length - quitVisLen - 4);
+  const sep = `  ${A.brightBlack}`;
+  const content = items.join(sep);
+  const contentVis = stripAnsi(items.map(i => stripAnsi(i)).join("  "));
+  const leftPad = Math.max(0, Math.floor((s.termW - contentVis.length) / 2));
 
   return moveTo(s.termH, 1) + C.footerBg +
-    help + C.footerBg + " ".repeat(gap) + quitHint +
-    C.footerBg + "  " + A.reset;
+    " ".repeat(leftPad) + A.brightBlack + content +
+    " ".repeat(Math.max(0, s.termW - leftPad - contentVis.length)) + A.reset;
 }
 
 // ─── Search overlay ──────────────────────────────────────────────────────────
@@ -360,11 +350,7 @@ function renderHelpOverlay(s: DashboardState): string {
     `${A.brightYellow}k${A.reset}/${A.brightYellow}\u2191${A.reset}      Select previous workstream`,
     `${A.brightYellow}g${A.reset}          Jump to first`,
     `${A.brightYellow}G${A.reset}          Jump to last`,
-    `${A.brightYellow}Enter${A.reset}      Open in editor`,
-    `${A.brightYellow}d${A.reset}          View diff`,
-    `${A.brightYellow}r${A.reset}          Resume Claude session`,
-    `${A.brightYellow}p${A.reset}          Resume with prompt`,
-    `${A.brightYellow}c${A.reset}          Resume with comments`,
+    `${A.brightYellow}Enter${A.reset}      Open action picker`,
     `${A.brightYellow}/${A.reset}          Search workstreams`,
     `${A.brightYellow}?${A.reset}          Toggle this help`,
     `${A.brightYellow}q${A.reset}/${A.brightYellow}Esc${A.reset}      Quit`,
@@ -394,6 +380,37 @@ function renderPromptModal(s: DashboardState): string {
   });
 }
 
+// ─── Action picker overlay ───────────────────────────────────────────────
+
+function renderActionPicker(s: DashboardState): string {
+  const entry = s.entries[s.filteredIndices[s.selected]];
+  if (!entry) return "";
+
+  const lines: string[] = [""];
+
+  for (let i = 0; i < s.actionPickerOptions.length; i++) {
+    const opt = s.actionPickerOptions[i];
+    const isSel = i === s.actionPickerSelected;
+
+    if (isSel) {
+      lines.push(`${A.brightCyan}\u276F${A.reset} ${A.bold}${A.brightWhite}${opt.label}${A.reset}`);
+    } else {
+      lines.push(`  ${A.white}${opt.label}${A.reset}`);
+    }
+    lines.push(`  ${A.dim}${opt.description}${A.reset}`);
+    lines.push("");
+  }
+
+  return renderModal({
+    title: entry.name,
+    lines,
+    width: 55,
+    termW: s.termW,
+    termH: s.termH,
+    footer: `${A.brightBlack}\u2191\u2193 select  enter confirm  esc back${A.reset}`,
+  });
+}
+
 // ─── Full render ─────────────────────────────────────────────────────────────
 
 function render(s: DashboardState): string {
@@ -405,6 +422,7 @@ function render(s: DashboardState): string {
   if (s.mode === "search") out += renderSearchBar(s);
   if (s.mode === "prompt-input") out += renderPromptModal(s);
   if (s.mode === "help") out += renderHelpOverlay(s);
+  if (s.mode === "action-picker") out += renderActionPicker(s);
 
   return out;
 }
@@ -451,6 +469,8 @@ export async function openDashboard(
     mode: "normal",
     searchQuery: "",
     promptInput: "",
+    actionPickerOptions: [],
+    actionPickerSelected: 0,
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
   };
@@ -495,6 +515,53 @@ export async function openDashboard(
       if (state.mode === "help") {
         state.mode = "normal";
         draw();
+        return;
+      }
+
+      // ─── Action picker mode ──────────────────────────────────────
+      if (state.mode === "action-picker") {
+        if (key === "\x1b" || key === "q") {
+          state.mode = "normal";
+          draw();
+          return;
+        }
+        if (key === "j" || key === "\x1b[B") {
+          if (state.actionPickerSelected < state.actionPickerOptions.length - 1) {
+            state.actionPickerSelected++;
+            draw();
+          }
+          return;
+        }
+        if (key === "k" || key === "\x1b[A") {
+          if (state.actionPickerSelected > 0) {
+            state.actionPickerSelected--;
+            draw();
+          }
+          return;
+        }
+        if (key === "\r") {
+          const entry = selectedEntry();
+          if (!entry) return;
+          const opt = state.actionPickerOptions[state.actionPickerSelected];
+          if (!opt) return;
+          if (opt.action === "prompt-input") {
+            state.mode = "prompt-input";
+            state.promptInput = "";
+            draw();
+            return;
+          }
+          if (opt.action === "quit") {
+            cleanup({ type: "quit" });
+            return;
+          }
+          cleanup({ type: opt.action, name: entry.name } as DashboardAction);
+          return;
+        }
+        if (key === "\x03") { // Ctrl+C
+          state.mode = "normal";
+          draw();
+          return;
+        }
         return;
       }
 
@@ -610,47 +677,14 @@ export async function openDashboard(
         return;
       }
 
-      // Enter — open editor
+      // Enter — open action picker
       if (key === "\r") {
         const entry = selectedEntry();
-        if (entry) cleanup({ type: "editor", name: entry.name });
-        return;
-      }
-
-      // d — diff
-      if (key === "d") {
-        const entry = selectedEntry();
-        if (entry && entry.hasWorktree && entry.filesChanged > 0) {
-          cleanup({ type: "diff", name: entry.name });
-        }
-        return;
-      }
-
-      // r — resume session
-      if (key === "r") {
-        const entry = selectedEntry();
-        if (entry && entry.hasSession) {
-          cleanup({ type: "resume-session", name: entry.name });
-        }
-        return;
-      }
-
-      // p — prompt input modal
-      if (key === "p") {
-        const entry = selectedEntry();
-        if (entry && entry.hasSession) {
-          state.mode = "prompt-input";
-          state.promptInput = "";
+        if (entry) {
+          state.actionPickerOptions = buildActionOptions(entry);
+          state.actionPickerSelected = 0;
+          state.mode = "action-picker";
           draw();
-        }
-        return;
-      }
-
-      // c — resume with comments
-      if (key === "c") {
-        const entry = selectedEntry();
-        if (entry && entry.commentCount > 0) {
-          cleanup({ type: "resume-comments", name: entry.name });
         }
         return;
       }
