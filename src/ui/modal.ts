@@ -78,11 +78,13 @@ export function renderModal(opts: ModalOptions): string {
 }
 
 export function renderInputModal(opts: InputModalOptions): string {
-  const innerW = Math.min(60, opts.termW - 4);
-  const totalW = innerW + 2;
-  const totalH = 5 + (opts.footer ? 2 : 0); // title + input + padding + bottom + footer
+  const innerW = Math.min(80, opts.termW - 4);
+  const textW = innerW - 4; // 2 padding each side
+  const textRows = 6;       // visible lines for input text
+  const contentRows = 1 + textRows + 1; // top pad + text + bottom pad
+  const totalH = 1 + contentRows + (opts.footer ? 2 : 0) + 1; // title + content + footer + bottom border
 
-  const startCol = Math.max(1, Math.floor((opts.termW - totalW) / 2) + 1);
+  const startCol = Math.max(1, Math.floor((opts.termW - (innerW + 2)) / 2) + 1);
   const startRow = Math.max(1, Math.floor((opts.termH - totalH) / 2) + 1);
 
   let out = "";
@@ -99,48 +101,102 @@ export function renderInputModal(opts: InputModalOptions): string {
     borderColor + "\u2500".repeat(titleRight) +
     "\u2510" + A.reset;
 
-  // Empty line
-  out += moveTo(startRow + 1, startCol) +
+  // Empty line above text
+  let row = startRow + 1;
+  out += moveTo(row, startCol) +
     borderColor + "\u2502" + A.reset +
     modalBg + " ".repeat(innerW) + A.reset +
     borderColor + "\u2502" + A.reset;
+  row++;
 
-  // Input line with cursor
-  const inputW = innerW - 4; // 2 padding + 2 for "> "
-  const displayVal = opts.value.length > inputW
-    ? opts.value.slice(opts.value.length - inputW)
-    : opts.value;
-  const inputLine = `${A.brightCyan}> ${A.reset}${A.brightWhite}${displayVal}${A.reset}`;
-  const cursorBlock = "\u2588"; // block cursor
-  const lineWithCursor = inputLine + A.brightCyan + cursorBlock + A.reset;
-  const visLen = 2 + displayVal.length + 1; // "> " + value + cursor
-  const trail = Math.max(0, innerW - visLen - 1);
+  // Wrap input value into lines of textW width
+  const val = opts.value;
+  const wrappedLines: string[] = [];
+  for (let i = 0; i < val.length; i += textW) {
+    wrappedLines.push(val.slice(i, i + textW));
+  }
+  if (wrappedLines.length === 0) wrappedLines.push("");
 
-  out += moveTo(startRow + 2, startCol) +
-    borderColor + "\u2502" + A.reset +
-    modalBg + " " + lineWithCursor + modalBg + " ".repeat(trail) + A.reset +
-    borderColor + "\u2502" + A.reset;
+  // Show the last textRows lines (scroll to cursor)
+  const visStart = Math.max(0, wrappedLines.length - textRows);
+  const cursorBlock = "\u2588";
 
-  // Empty line
-  out += moveTo(startRow + 3, startCol) +
+  for (let r = 0; r < textRows; r++) {
+    const li = visStart + r;
+    const isFirstVisible = r === 0 && visStart === 0;
+    const isLastLine = li === wrappedLines.length - 1;
+    const lineText = li < wrappedLines.length ? wrappedLines[li] : "";
+
+    let rendered: string;
+    if (isFirstVisible && r === 0) {
+      // First row gets the "> " prefix
+      if (isLastLine) {
+        rendered = `${A.brightCyan}> ${A.reset}${A.brightWhite}${lineText}${A.brightCyan}${cursorBlock}${A.reset}`;
+        const visLen = 2 + lineText.length + 1;
+        const trail = Math.max(0, innerW - visLen - 2);
+        out += moveTo(row, startCol) +
+          borderColor + "\u2502" + A.reset +
+          modalBg + " " + rendered + modalBg + " ".repeat(trail) + " " + A.reset +
+          borderColor + "\u2502" + A.reset;
+      } else {
+        rendered = `${A.brightCyan}> ${A.reset}${A.brightWhite}${lineText}${A.reset}`;
+        const visLen = 2 + lineText.length;
+        const trail = Math.max(0, innerW - visLen - 2);
+        out += moveTo(row, startCol) +
+          borderColor + "\u2502" + A.reset +
+          modalBg + " " + rendered + modalBg + " ".repeat(trail) + " " + A.reset +
+          borderColor + "\u2502" + A.reset;
+      }
+    } else if (isLastLine && li < wrappedLines.length) {
+      // Last line with cursor
+      rendered = `${A.brightWhite}${lineText}${A.brightCyan}${cursorBlock}${A.reset}`;
+      const visLen = 2 + lineText.length + 1; // indent + text + cursor
+      const trail = Math.max(0, innerW - visLen - 2);
+      out += moveTo(row, startCol) +
+        borderColor + "\u2502" + A.reset +
+        modalBg + "   " + rendered + modalBg + " ".repeat(trail) + " " + A.reset +
+        borderColor + "\u2502" + A.reset;
+    } else if (li < wrappedLines.length) {
+      // Middle wrapped line
+      rendered = `${A.brightWhite}${lineText}${A.reset}`;
+      const visLen = 2 + lineText.length;
+      const trail = Math.max(0, innerW - visLen - 2);
+      out += moveTo(row, startCol) +
+        borderColor + "\u2502" + A.reset +
+        modalBg + "   " + rendered + modalBg + " ".repeat(trail) + " " + A.reset +
+        borderColor + "\u2502" + A.reset;
+    } else {
+      // Empty row
+      out += moveTo(row, startCol) +
+        borderColor + "\u2502" + A.reset +
+        modalBg + " ".repeat(innerW) + A.reset +
+        borderColor + "\u2502" + A.reset;
+    }
+    row++;
+  }
+
+  // Empty line below text
+  out += moveTo(row, startCol) +
     borderColor + "\u2502" + A.reset +
     modalBg + " ".repeat(innerW) + A.reset +
     borderColor + "\u2502" + A.reset;
+  row++;
 
   // Footer
   if (opts.footer) {
-    out += moveTo(startRow + 4, startCol) +
+    out += moveTo(row, startCol) +
       borderColor + "\u251C" + "\u2500".repeat(innerW) + "\u2524" + A.reset;
-    out += moveTo(startRow + 5, startCol) +
+    row++;
+    out += moveTo(row, startCol) +
       borderColor + "\u2502" + A.reset +
       modalBg + pad(` ${A.brightBlack}${opts.footer}${A.reset}`, innerW) + A.reset +
       borderColor + "\u2502" + A.reset;
-    out += moveTo(startRow + 6, startCol) +
-      borderColor + "\u2514" + "\u2500".repeat(innerW) + "\u2518" + A.reset;
-  } else {
-    out += moveTo(startRow + 4, startCol) +
-      borderColor + "\u2514" + "\u2500".repeat(innerW) + "\u2518" + A.reset;
+    row++;
   }
+
+  // Bottom border
+  out += moveTo(row, startCol) +
+    borderColor + "\u2514" + "\u2500".repeat(innerW) + "\u2518" + A.reset;
 
   return out;
 }

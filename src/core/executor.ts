@@ -14,6 +14,33 @@ const COLOR_FAILED = "\x1b[31m";
 const COLOR_OTHER = "\x1b[90m";
 const COLOR_RESET = "\x1b[0m";
 const COLOR_BLUE = "\x1b[34m";
+const COLOR_YELLOW = "\x1b[33m";
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+class Spinner {
+  private interval: ReturnType<typeof setInterval> | null = null;
+  private frame = 0;
+  private label: string;
+
+  constructor(label: string) { this.label = label; }
+
+  start() {
+    this.write();
+    this.interval = setInterval(() => this.write(), 80);
+  }
+
+  stop(icon: string, color: string, message: string) {
+    if (this.interval) clearInterval(this.interval);
+    process.stdout.write(`\r\x1b[2K${color}${icon} ${this.label}: ${message}${COLOR_RESET}\n`);
+  }
+
+  private write() {
+    const char = SPINNER_FRAMES[this.frame % SPINNER_FRAMES.length];
+    process.stdout.write(`\r\x1b[2K${COLOR_YELLOW}${char}${COLOR_RESET} ${this.label}`);
+    this.frame++;
+  }
+}
 
 export class Executor {
   private config: WorkstreamConfig;
@@ -110,7 +137,8 @@ export class Executor {
     this.emit("node:running", name);
     await saveState(this.state);
 
-    console.log(`${COLOR_BLUE}▶ Starting: ${name}${COLOR_RESET}`);
+    const spinner = new Spinner(name);
+    spinner.start();
     await logLine(`Workstream "${name}" starting`);
 
     try {
@@ -155,7 +183,7 @@ export class Executor {
 
     const icon = ws.status === "success" ? "✓" : "✗";
     const color = ws.status === "success" ? COLOR_SUCCESS : COLOR_FAILED;
-    console.log(`${color}${icon} ${name}: ${ws.status}${COLOR_RESET}`);
+    spinner.stop(icon, color, ws.status);
 
     const eventType = ws.status === "success" ? "node:success" : "node:failed";
     this.emit(eventType, name, { exitCode: ws.exitCode, error: ws.error });
