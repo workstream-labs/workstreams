@@ -318,11 +318,6 @@ function renderFooter(s: DashboardState): string {
     items.push(`${A.brightYellow}p${A.brightWhite} prompt`);
   }
 
-  // c comments — only if comments stored
-  if (entry.commentCount > 0) {
-    items.push(`${A.brightYellow}c${A.brightWhite} comments (${entry.commentCount})`);
-  }
-
   const help = C.footerBg + A.brightWhite + "  " + items.join(sep) + A.reset;
   const quitHint = `${A.brightBlack}q quit${A.reset}`;
   const helpVis = stripAnsi("  " + items.map(s => stripAnsi(s)).join("  |  "));
