@@ -57,9 +57,11 @@ class ScrollAccel {
 }
 
 // --- Line map for cursor navigation ---
+// formatPatch strips @@ context text, so the renderer never renders hunk-header
+// lines. The lineMap must exclude them too or every hunk shifts indices by +1.
 
 interface LineInfo {
-  type: "context" | "add" | "remove" | "hunk-header";
+  type: "context" | "add" | "remove";
   oldLine?: number;
   newLine?: number;
 }
@@ -69,7 +71,6 @@ function parseDiffToLineMap(rawDiff: string): LineInfo[] {
   const map: LineInfo[] = [];
   for (const patch of patches) {
     for (const hunk of patch.hunks) {
-      map.push({ type: "hunk-header" });
       let old = hunk.oldStart, neu = hunk.newStart;
       for (const ln of hunk.lines) {
         const ch = ln[0];
@@ -81,6 +82,83 @@ function parseDiffToLineMap(rawDiff: string): LineInfo[] {
     }
   }
   return map;
+}
+
+interface RendererLineInfo {
+  side: "old" | "new";
+  lineType: "add" | "remove" | "context";
+  line: number | undefined;
+  lineContent: string | undefined;
+}
+
+// Query the renderer's own line data — single source of truth for gutter numbers.
+function queryRendererLine(
+  diffRef: React.RefObject<DiffRenderable | null>,
+  cursorLine: number,
+  viewMode: "unified" | "split",
+  preferSide?: "old" | "new",
+): RendererLineInfo | null {
+  const dr = diffRef.current as any;
+  if (!dr) return null;
+
+  const getContent = (side: any, idx: number): string | undefined => {
+    const content: string | undefined = side?.target?.content;
+    if (!content) return undefined;
+    return content.split("\n")[idx];
+  };
+
+  const signToType = (sign: string | undefined): "add" | "remove" | "context" =>
+    sign === "-" ? "remove" : sign === "+" ? "add" : "context";
+
+  if (viewMode === "unified") {
+    const left = dr.leftSide;
+    if (!left) return null;
+    const lineNum = left.getLineNumbers()?.get(cursorLine);
+    const sign = left.getLineSigns()?.get(cursorLine)?.after?.trim();
+    const lineType = signToType(sign);
+    const lineContent = getContent(left, cursorLine);
+    return { side: lineType === "remove" ? "old" : "new", lineType, line: lineNum, lineContent };
+  }
+
+  // Split view: left = old file, right = new file
+  // preferSide lets the user toggle which side to comment on
+  const left = dr.leftSide;
+  const right = dr.rightSide;
+  if (!left && !right) return null;
+  const leftNum = left?.getLineNumbers()?.get(cursorLine);
+  const rightNum = right?.getLineNumbers()?.get(cursorLine);
+  const leftSign = left?.getLineSigns()?.get(cursorLine)?.after?.trim();
+  const rightSign = right?.getLineSigns()?.get(cursorLine)?.after?.trim();
+  const hasLeft = leftNum !== undefined;
+  const hasRight = rightNum !== undefined;
+
+  if (preferSide === "new" && hasRight) return { side: "new", lineType: signToType(rightSign), line: rightNum, lineContent: getContent(right, cursorLine) };
+  if (preferSide === "old" && hasLeft) return { side: "old", lineType: signToType(leftSign), line: leftNum, lineContent: getContent(left, cursorLine) };
+  // Default: left first, then right, then context
+  if (hasLeft && leftSign === "-") return { side: "old", lineType: "remove", line: leftNum, lineContent: getContent(left, cursorLine) };
+  if (hasRight && rightSign === "+") return { side: "new", lineType: "add", line: rightNum, lineContent: getContent(right, cursorLine) };
+  return { side: "new", lineType: "context", line: rightNum ?? leftNum, lineContent: getContent(right ?? left, cursorLine) };
+}
+
+// Extract a window of diff lines around the cursor for comment context.
+function extractDiffContext(rawDiff: string, cursorLine: number, windowSize = 3): string | undefined {
+  const patches = parsePatch(rawDiff);
+  const allLines: string[] = [];
+  for (const patch of patches) {
+    for (const hunk of patch.hunks) {
+      for (const ln of hunk.lines) {
+        if (ln[0] === "\\") continue;
+        allLines.push(ln);
+      }
+    }
+  }
+  if (cursorLine < 0 || cursorLine >= allLines.length) return undefined;
+  const start = Math.max(0, cursorLine - windowSize);
+  const end = Math.min(allLines.length - 1, cursorLine + windowSize);
+  return allLines.slice(start, end + 1).map((ln, i) => {
+    const prefix = start + i === cursorLine ? "► " : "  ";
+    return prefix + ln;
+  }).join("\n");
 }
 
 // --- Status letter + color for file list ---
@@ -386,6 +464,13 @@ function CommentForm({
             <text fg={mutedColor}> delete</text>
           </>
         )}
+        {viewMode === "split" && (
+          <>
+            <text fg={mutedColor}>  ·  </text>
+            <text fg={textColor}>←→</text>
+            <text fg={mutedColor}> switch side</text>
+          </>
+        )}
       </box>
     </box>
   );
@@ -467,6 +552,9 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
   const commentTextRef = React.useRef("");
   const [commentSide, setCommentSide] = React.useState<"old" | "new">("new");
   const [commentFileLine, setCommentFileLine] = React.useState<number | undefined>();
+  const [commentLineContent, setCommentLineContent] = React.useState<string | undefined>();
+  const commentLineTypeRef = React.useRef<"add" | "remove" | "context" | undefined>();
+  const commentDiffContextRef = React.useRef<string | undefined>();
   const [comments, setComments] = React.useState<WorkstreamComments | null>(null);
   const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
   const [flashMessage, setFlashMessage] = React.useState<string | null>(null);
@@ -540,7 +628,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
     [comments, fileName],
   );
 
-  // Map commented lines to { lineMapIndex -> side } for per-panel gutter highlighting
+  // Map commented lines to { lineMapIndex -> side } for unified view gutter highlighting
   const commentedLineMap = React.useMemo(() => {
     const result = new Map<number, "old" | "new">();
     const annotated = fileComments.filter(c => c.line !== undefined);
@@ -566,18 +654,33 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
     if (!dr) return;
     dr.clearAllLineColors();
     const drAny = dr as any;
-    for (const [idx, side] of commentedLineMap) {
-      if (viewMode === "split") {
-        const panel = side === "old" ? drAny.leftSide : drAny.rightSide;
-        panel?.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
-      } else {
+    const annotated = fileComments.filter(c => c.line !== undefined);
+
+    if (viewMode === "split") {
+      // In split view, query the renderer's actual line numbers for correct indices
+      const leftNums: Map<number, number> | undefined = drAny.leftSide?.getLineNumbers();
+      const rightNums: Map<number, number> | undefined = drAny.rightSide?.getLineNumbers();
+      for (const c of annotated) {
+        const nums = c.side === "old" ? leftNums : rightNums;
+        const panel = c.side === "old" ? drAny.leftSide : drAny.rightSide;
+        if (!nums || !panel) continue;
+        for (const [idx, num] of nums) {
+          if (num === c.line) {
+            panel.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
+            break;
+          }
+        }
+      }
+    } else {
+      for (const [idx, side] of commentedLineMap) {
         dr.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
       }
     }
+
     if (cursorLine >= 0 && cursorLine < lineMap.length) {
       dr.setLineColor(cursorLine, { gutter: accentColor, content: accentColor + "33" });
     }
-  }, [cursorLine, lineMap, accentColor, commentedLineMap, commentMarkerColor, viewMode]);
+  }, [cursorLine, lineMap, accentColor, commentedLineMap, fileComments, commentMarkerColor, viewMode]);
 
   const handleCommentSubmit = async (text: string) => {
     if (!text.trim()) { setShowCommentForm(false); return; }
@@ -592,6 +695,9 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
         filePath: fileName,
         line: commentFileLine,
         side: commentSide,
+        lineType: commentLineTypeRef.current,
+        lineContent: commentLineContent,
+        diffContext: commentDiffContextRef.current,
         text: text.trim(),
         createdAt: new Date().toISOString(),
       };
@@ -676,6 +782,29 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
         handleCommentDelete();
         return;
       }
+      // Toggle comment side in split view with ←/→
+      if (viewMode === "split" && (key.name === "left" || key.name === "right")) {
+        const newSide = key.name === "left" ? "old" : "new";
+        if (newSide === commentSide) return;
+        const info = queryRendererLine(diffRef, cursorLine, viewMode, newSide);
+        if (!info || info.side !== newSide) return; // other side has no content
+        setCommentSide(info.side);
+        setCommentFileLine(info.line);
+        setCommentLineContent(info.lineContent);
+        commentLineTypeRef.current = info.lineType;
+        commentDiffContextRef.current = file ? extractDiffContext(file.rawDiff, cursorLine) : undefined;
+        setEditingCommentIndex(null);
+        commentTextRef.current = "";
+        // Check if there's an existing comment on this new side
+        const existingIdx = comments?.comments.findIndex(
+          c => c.filePath === fileName && c.line === info.line && c.side === info.side
+        ) ?? -1;
+        if (existingIdx >= 0) {
+          commentTextRef.current = comments!.comments[existingIdx].text;
+          setEditingCommentIndex(existingIdx);
+        }
+        return;
+      }
       return;
     }
 
@@ -748,41 +877,41 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
       return;
     }
 
-    // Open comment form — on added, removed, and context lines (not hunk headers)
+    // Open comment form on current line — query renderer for actual gutter number
     if (key.name === "c") {
-      const info = lineMap[cursorLine];
-      if (!info || info.type === "hunk-header") {
-        if (info?.type === "hunk-header") {
-          setFlashMessage("cannot comment on hunk headers");
-          setTimeout(() => setFlashMessage(null), 1500);
-        }
-        return;
-      }
+      let info = queryRendererLine(diffRef, cursorLine, viewMode);
+      if (!info) return;
 
-      let autoSide: "old" | "new";
-      let fileLine: number | undefined;
-      if (info.type === "remove") {
-        autoSide = "old";
-        fileLine = info.oldLine;
-      } else {
-        // "add" and "context" both use new side (GitHub convention)
-        autoSide = "new";
-        fileLine = info.newLine;
-      }
-
-      const existingIdx = comments?.comments.findIndex(
-        c => c.filePath === fileName && c.line === fileLine && c.side === autoSide
+      // In split view, check if the other side has an existing comment
+      let existingIdx = comments?.comments.findIndex(
+        c => c.filePath === fileName && c.line === info!.line && c.side === info!.side
       ) ?? -1;
+      if (existingIdx < 0 && viewMode === "split") {
+        const otherSide = info.side === "old" ? "new" : "old";
+        const otherInfo = queryRendererLine(diffRef, cursorLine, viewMode, otherSide);
+        if (otherInfo && otherInfo.side === otherSide) {
+          const otherIdx = comments?.comments.findIndex(
+            c => c.filePath === fileName && c.line === otherInfo.line && c.side === otherSide
+          ) ?? -1;
+          if (otherIdx >= 0) {
+            info = otherInfo;
+            existingIdx = otherIdx;
+          }
+        }
+      }
+
       if (existingIdx >= 0) {
-        const existing = comments!.comments[existingIdx];
-        commentTextRef.current = existing.text;
+        commentTextRef.current = comments!.comments[existingIdx].text;
         setEditingCommentIndex(existingIdx);
       } else {
         commentTextRef.current = "";
         setEditingCommentIndex(null);
       }
-      setCommentSide(autoSide);
-      setCommentFileLine(fileLine);
+      commentLineTypeRef.current = info.lineType;
+      commentDiffContextRef.current = file ? extractDiffContext(file.rawDiff, cursorLine) : undefined;
+      setCommentSide(info.side);
+      setCommentFileLine(info.line);
+      setCommentLineContent(info.lineContent);
       setShowCommentForm(true);
       return;
     }
