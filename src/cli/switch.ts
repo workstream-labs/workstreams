@@ -15,12 +15,8 @@ import {
   hasSession as hasTmuxSession,
   createSession,
   createWindow,
-  getPaneIds,
-  joinPane,
-  breakPane,
-  selectPaneRight,
+  respawnPane,
   selectPaneLeft,
-  killWindow,
   attachSession,
 } from "../core/tmux";
 
@@ -195,61 +191,40 @@ async function actionOpenEditor(name: string, state: any, config: any, editorOpt
   }
 }
 
-// ─── Action: Open new Claude session (interactive) ───────────────────────────
+// ─── Action: Open Claude in tmux split ────────────────────────────────────────
 
-async function actionOpenSession(name: string, ws: WorkstreamState, state: ProjectState) {
-  const proc = Bun.spawn(["claude", "--dangerously-skip-permissions"], {
-    cwd: ws.worktreePath,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  const exitCode = await proc.exited;
-  console.log(`\nReturned from Claude session for "${name}".`);
-
-  const { $ } = await import("bun");
-  const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
-  const changes = gitStatus?.stdout.toString().trim();
-  if (changes) {
-    await $`git -C ${ws.worktreePath} add -A`.quiet().catch(() => {});
-    await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
-  }
-
-  ws.status = exitCode === 0 ? "success" : "failed";
-  ws.finishedAt = new Date().toISOString();
-  await saveState(state);
-}
-
-// ─── Action: Resume Claude session (interactive) ─────────────────────────────
-
-async function actionResumeSession(name: string, ws: WorkstreamState, state: ProjectState) {
-  if (!ws.sessionId) {
-    console.error("Error: no session ID captured for this workstream.");
+async function actionOpenClaudeSplit(name: string, config: any, state: any): Promise<void> {
+  if (!await hasTmux()) {
+    console.error("tmux is required for Claude session view. Install with: brew install tmux");
     return;
   }
 
-  const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
-    cwd: ws.worktreePath,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const cwd = process.cwd();
 
-  const exitCode = await proc.exited;
-  console.log(`\nReturned from Claude session for "${name}".`);
-
-  const { $ } = await import("bun");
-  const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
-  const changes = gitStatus?.stdout.toString().trim();
-  if (changes) {
-    await $`git -C ${ws.worktreePath} add -A`.quiet().catch(() => {});
-    await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
+  // Create tmux session
+  if (!await hasTmuxSession("ws")) {
+    await createSession("ws");
   }
 
-  ws.status = exitCode === 0 ? "success" : "failed";
-  ws.finishedAt = new Date().toISOString();
-  await saveState(state);
+  // Build Claude command for the selected workstream
+  const ws = state?.currentRun?.workstreams?.[name];
+  const worktreePath = resolve(ws?.worktreePath ?? `.workstreams/trees/${name}`);
+  const claudeCmd = ws?.sessionId
+    ? `claude --dangerously-skip-permissions --resume ${ws.sessionId}`
+    : `claude --dangerously-skip-permissions`;
+
+  // Create dashboard window with sidebar on the left
+  const sidebarCmd = `bun run ${Bun.main} switch --tmux-sidebar --tmux-initial ${name}`;
+  Bun.spawnSync(["tmux", "new-window", "-t", "ws", "-n", "dashboard", "-c", cwd, sidebarCmd]);
+
+  // Split right pane (80%) with Claude
+  Bun.spawnSync(["tmux", "split-window", "-h", "-p", "82", "-t", "ws:dashboard", "-c", worktreePath, claudeCmd]);
+
+  // Focus sidebar (left pane)
+  await selectPaneLeft();
+
+  // Attach — blocks until user quits sidebar
+  await attachSession("ws:dashboard");
 }
 
 // ─── Action: View diff ───────────────────────────────────────────────────────
@@ -372,20 +347,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       return true; // loop back to dashboard
 
     case "attach-session":
-      // Handled by tmux sidebar mode — should not reach here in normal dashboard
-      return true;
-
-    case "open-session": {
-      const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionOpenSession(action.name, ws, state);
-      return false;
-    }
-
-    case "resume-session": {
-      const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeSession(action.name, ws, state);
-      return false;
-    }
+    case "open-session":
+    case "resume-session":
+      await actionOpenClaudeSplit(action.name, config, state);
+      return true; // loop back to dashboard after tmux exits
 
     case "resume-prompt": {
       const ws = state.currentRun?.workstreams?.[action.name];
@@ -403,90 +368,31 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
 // ─── Tmux sidebar mode ───────────────────────────────────────────────────────
 
-async function runTmuxSidebar(config: any, state: any): Promise<void> {
+async function runTmuxSidebar(config: any, state: any, initialName?: string): Promise<void> {
   const { $ } = await import("bun");
-  // Enable mouse (click to switch panes), hide status bar
-  await $`tmux set -g mouse on`.quiet().catch(() => {});
+  // Hide status bar, enable mouse, bind Tab to toggle panes
   await $`tmux set -g status off`.quiet().catch(() => {});
-  // Bind Tab to toggle between panes
+  await $`tmux set -g mouse on`.quiet().catch(() => {});
   await $`tmux bind -n Tab select-pane -t ws:dashboard.+`.quiet().catch(() => {});
 
   const entries = await buildEntries(config, state);
-  const paneIds = await getPaneIds("ws");
 
-  let currentAttachedPaneId: string | null = null;
-
-  // Track pane IDs we've created — stable through join/break
-  const createdPanes = new Map<string, string>();
-
-  const ensureClaudePane = async (name: string): Promise<string | null> => {
-    // Check our local cache first, then tmux, then state
-    let paneId = createdPanes.get(name) ?? paneIds.get(name) ?? state?.currentRun?.workstreams?.[name]?.tmuxPaneId;
-
-    if (!paneId) {
-      const ws = state?.currentRun?.workstreams?.[name];
-      const worktreePath = ws?.worktreePath ?? `.workstreams/trees/${name}`;
-      const { stat } = await import("fs/promises");
-      const hasWorktree = await stat(worktreePath).then(() => true).catch(() => false);
-      if (!hasWorktree) return null;
-
-      const claudeCmd = ws?.sessionId
-        ? `claude --dangerously-skip-permissions --resume ${ws.sessionId}`
-        : `claude --dangerously-skip-permissions`;
-
-      paneId = await createWindow("ws", name, worktreePath, claudeCmd);
-    }
-    createdPanes.set(name, paneId);
-    return paneId;
+  const buildClaudeCmd = (name: string): { cmd: string; cwd: string } => {
+    const ws = state?.currentRun?.workstreams?.[name];
+    const cwd = resolve(ws?.worktreePath ?? `.workstreams/trees/${name}`);
+    const cmd = ws?.sessionId
+      ? `claude --dangerously-skip-permissions --resume ${ws.sessionId}`
+      : `claude --dangerously-skip-permissions`;
+    return { cmd, cwd };
   };
 
-  const swapRightPane = async (paneId: string) => {
-    if (currentAttachedPaneId === paneId) return;
-    if (currentAttachedPaneId) {
-      await breakPane(currentAttachedPaneId);
-    }
-    try {
-      await joinPane(paneId, "ws:dashboard", 80);
-      currentAttachedPaneId = paneId;
-      // Force focus back to the sidebar (left pane) — tmux auto-focuses joined pane
-      await selectPaneLeft();
-    } catch {
-      currentAttachedPaneId = null;
-    }
-  };
+  await openSidebar(entries, async (name) => {
+    const { cmd, cwd } = buildClaudeCmd(name);
+    await respawnPane("ws:dashboard.1", cwd, cmd);
+    await selectPaneLeft();
+  }, initialName);
 
-  await openSidebar(entries, {
-    onNavigate: async (name) => {
-      const paneId = await ensureClaudePane(name);
-      if (paneId) await swapRightPane(paneId);
-    },
-    getActions: (entry) => {
-      const actions: { label: string; description: string }[] = [];
-      actions.push({ label: "Open in editor", description: "Open worktree in your editor" });
-      if (entry.hasWorktree && entry.filesChanged > 0) {
-        actions.push({ label: "View diff & review", description: "Browse changes and add review comments" });
-      }
-      if (entry.commentCount > 0) {
-        actions.push({ label: "Resume with comments", description: "Send stored review comments to agent" });
-      }
-      return actions;
-    },
-    onAction: async (name, label) => {
-      if (label === "Open in editor") {
-        await actionOpenEditor(name, state, config);
-      } else if (label === "View diff & review") {
-        await actionDiffReview(name, state);
-      } else if (label === "Resume with comments") {
-        const ws = state.currentRun?.workstreams?.[name];
-        if (ws) await actionResumeWithComments(name, ws, config, state);
-      }
-    },
-  });
-
-  // Cleanup: return the attached pane and unbind Tab
-  if (currentAttachedPaneId) {
-    await breakPane(currentAttachedPaneId);
-  }
+  // Cleanup
   await $`tmux kill-session -t ws`.quiet().catch(() => {});
 }
 
@@ -499,7 +405,8 @@ export function switchCommand() {
     .option("-e, --editor <editor>", "open directly in editor (skip dashboard)")
     .option("--no-editor", "don't open an editor, just print the path")
     .option("--tmux-sidebar", "internal: run as tmux sidebar pane")
-    .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean; tmuxSidebar?: boolean }) => {
+    .option("--tmux-initial <name>", "internal: initially selected workstream")
+    .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean; tmuxSidebar?: boolean; tmuxInitial?: string }) => {
       const noEditor = opts.editor_ === false;
       const directEditor = !!opts.editor;
 
@@ -513,7 +420,7 @@ export function switchCommand() {
 
       // Internal: tmux sidebar mode (runs inside left pane)
       if (opts.tmuxSidebar) {
-        await runTmuxSidebar(config, state);
+        await runTmuxSidebar(config, state, opts.tmuxInitial);
         return;
       }
 
@@ -553,34 +460,7 @@ export function switchCommand() {
         return;
       }
 
-      // Use tmux split layout when tmux is available
-      if (await hasTmux()) {
-        const { $ } = await import("bun");
-        const cwd = process.cwd();
-        const sidebarCmd = `bun run ${Bun.main} switch --tmux-sidebar`;
-
-        try {
-          // Create tmux session if it doesn't exist
-          if (!await hasTmuxSession("ws")) {
-            await createSession("ws");
-          }
-          // Create dashboard window with sidebar
-          await $`tmux new-window -t ws -n dashboard -c ${cwd} ${sidebarCmd}`.quiet();
-          // Attach to tmux — blocks until user detaches
-          await attachSession("ws:dashboard");
-        } catch {
-          // If tmux setup fails, fall back to normal dashboard
-          let loop = true;
-          while (loop) {
-            const entries = await buildEntries(config, state);
-            const action = await openDashboard(entries);
-            loop = await dispatchAction(action, state, config);
-          }
-        }
-        return;
-      }
-
-      // No tmux — use standard dashboard
+      // Dashboard loop: after diff/tmux, return to dashboard
       let loop = true;
       while (loop) {
         const entries = await buildEntries(config, state);

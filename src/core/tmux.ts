@@ -32,10 +32,10 @@ export async function createWindow(
   cwd: string,
   cmd?: string,
 ): Promise<string> {
-  const args = ["tmux", "new-window", "-t", session, "-n", name, "-c", cwd, "-P", "-F", "#{pane_id}"];
-  if (cmd) args.push(cmd);
-  const result = await $`${args}`.quiet();
-  return result.stdout.toString().trim();
+  const spawnArgs = ["tmux", "new-window", "-t", session, "-n", name, "-c", cwd, "-P", "-F", "#{pane_id}"];
+  if (cmd) spawnArgs.push(cmd);
+  const proc = Bun.spawnSync(spawnArgs);
+  return new TextDecoder().decode(proc.stdout).trim();
 }
 
 export async function sendPrompt(target: string, text: string): Promise<void> {
@@ -66,10 +66,15 @@ export async function breakPane(paneId: string): Promise<void> {
   }
 }
 
+export async function respawnPane(target: string, cwd: string, cmd: string): Promise<void> {
+  Bun.spawnSync(["tmux", "respawn-pane", "-k", "-t", target, "-c", cwd, cmd]);
+}
+
 export async function isPaneDead(paneId: string): Promise<boolean> {
   try {
     const result = await $`tmux list-panes -a -F #{pane_id}:#{pane_dead} -f #{==:#{pane_id},${paneId}}`.quiet();
     const line = result.stdout.toString().trim();
+    if (!line) return true; // pane not found = destroyed
     return line.endsWith(":1");
   } catch {
     return true;

@@ -189,7 +189,7 @@ export async function getBranchDiff(branch: string): Promise<string> {
 
 const HEADER_ROWS = 2;
 const FOOTER_ROWS = 1;
-const CARD_HEIGHT = 4; // 3 content lines + 1 blank separator
+const CARD_HEIGHT = 3; // 2 content lines + 1 blank separator
 
 // ─── Card rendering ─────────────────────────────────────────────────────────
 
@@ -210,44 +210,7 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number):
     : `${A.brightBlack}(no prompt)${selReset}`;
   const line2 = sel + `    ${A.dim}${promptText}${selReset}`;
 
-  // Line 3: all metadata in one line — stats + resumable + comments + last commit
-  const meta: string[] = [];
-  const metaVis: string[] = [];
-
-  if (entry.hasWorktree && entry.filesChanged > 0) {
-    const stats = `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}−${entry.deletions}${selReset}`;
-    meta.push(stats);
-    metaVis.push(`+${entry.additions} −${entry.deletions}`);
-  }
-
-  if (entry.status === "running" && entry.hasTmuxPane) {
-    meta.push(`${A.brightYellow}attachable${selReset}`);
-    metaVis.push("attachable");
-  } else if (entry.hasSession) {
-    meta.push(`${A.brightGreen}resumable${selReset}`);
-    metaVis.push("resumable");
-  }
-
-  if (entry.commentCount > 0) {
-    meta.push(`${A.brightYellow}${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}${selReset}`);
-    metaVis.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
-  }
-
-  if (entry.lastCommitMsg && entry.hasWorktree) {
-    const usedLen = metaVis.join("  ·  ").length;
-    const maxMsg = cardW - 6 - usedLen - (usedLen > 0 ? 5 : 0) - 2;
-    if (maxMsg > 8) {
-      const age = entry.lastCommitAge ? `${entry.lastCommitAge} · ` : "";
-      meta.push(`${A.dim}${age}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
-    }
-  } else if (!entry.hasWorktree) {
-    meta.push(`${A.brightBlack}no worktree${selReset}`);
-  }
-
-  const sep = `${A.brightBlack}  ·  ${selReset}`;
-  const line3 = sel + `    ${meta.join(sep)}`;
-
-  return [line1, line2, line3];
+  return [line1, line2];
 }
 
 // ─── Header ──────────────────────────────────────────────────────────────────
@@ -296,7 +259,7 @@ function renderCards(s: DashboardState): string {
     const isSelected = fi === s.selected;
     const cardLines = renderCard(entry, isSelected, s.termW - 2);
 
-    for (let r = 0; r < 3; r++) {
+    for (let r = 0; r < 2; r++) {
       const row = baseRow + r;
       const line = cardLines[r] ?? "";
       const bg = isSelected ? C.selectedBg : "";
@@ -305,7 +268,7 @@ function renderCards(s: DashboardState): string {
       out += moveTo(row, 1) + line + bg + " ".repeat(trail) + A.reset;
     }
     // Separator line (blank)
-    out += moveTo(baseRow + 3, 1) + " ".repeat(s.termW);
+    out += moveTo(baseRow + 2, 1) + " ".repeat(s.termW);
   }
 
   // Fill remaining rows

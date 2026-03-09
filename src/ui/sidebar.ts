@@ -1,32 +1,17 @@
 import { $ } from "bun";
 import {
-  A, C, bg256,
+  A, C,
   moveTo, clearScreen, hideCursor, showCursor,
   enterAltScreen, exitAltScreen,
   stripAnsi, truncate, STATUS_STYLE,
 } from "./ansi.js";
 import type { WorkstreamEntry } from "./workstream-picker.js";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface ActionOption {
-  label: string;
-  description: string;
-}
-
-export interface SidebarCallbacks {
-  onNavigate: (name: string) => Promise<void>;
-  getActions: (entry: WorkstreamEntry) => ActionOption[];
-  onAction: (name: string, label: string) => Promise<void>;
-}
-
-type SidebarMode = "normal" | "action-picker";
-
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 const CARD_H = 3;
 
-function renderNormal(
+function render(
   entries: WorkstreamEntry[],
   selected: number,
   attachedName: string | null,
@@ -84,52 +69,7 @@ function renderNormal(
   for (let r = used; r < termH - 1; r++) out += moveTo(r, 1) + " ".repeat(w);
 
   // Footer
-  const ft = `${A.brightWhite}\u2191\u2193${A.brightBlack} nav ${A.brightWhite}enter${A.brightBlack} act ${A.brightWhite}tab${A.brightBlack} \u21C6${A.reset}`;
-  out += moveTo(termH, 1) + C.footerBg + ` ${ft}` +
-    " ".repeat(Math.max(0, w - stripAnsi(ft).length - 1)) + A.reset;
-
-  return out;
-}
-
-function renderActionPicker(
-  entryName: string,
-  actions: ActionOption[],
-  pickerSelected: number,
-  termW: number,
-  termH: number,
-): string {
-  const w = termW;
-  let out = hideCursor() + clearScreen();
-
-  // Header — workstream name
-  const header = ` ${truncate(entryName, w - 2)}`;
-  out += moveTo(1, 1) + A.bgBrightBlack + A.bold + A.brightWhite +
-    header + " ".repeat(Math.max(0, w - stripAnsi(header).length)) + A.reset;
-  out += moveTo(2, 1) + A.brightBlack + "\u2500".repeat(w) + A.reset;
-
-  // Action list
-  let row = 4;
-  for (let i = 0; i < actions.length; i++) {
-    const isSel = i === pickerSelected;
-    const bg = isSel ? C.selectedBg : "";
-    const rs = isSel ? A.reset + C.selectedBg : A.reset;
-
-    const cursor = isSel ? `${A.brightCyan}\u276F${rs}` : " ";
-    const label = truncate(actions[i].label, w - 4);
-    const line1 = bg + ` ${cursor} ` +
-      (isSel ? `${A.bold}${A.brightWhite}${label}${rs}` : `${A.white}${label}${rs}`);
-
-    const l1v = stripAnsi(line1).length;
-    out += moveTo(row, 1) + line1 + bg + " ".repeat(Math.max(0, w - l1v)) + A.reset;
-    out += moveTo(row + 1, 1) + " ".repeat(w);
-    row += 2;
-  }
-
-  // Fill remaining
-  for (let r = row; r < termH - 1; r++) out += moveTo(r, 1) + " ".repeat(w);
-
-  // Footer
-  const ft = `${A.brightWhite}\u2191\u2193${A.brightBlack} nav  ${A.brightWhite}enter${A.brightBlack} ok  ${A.brightWhite}esc${A.brightBlack} back${A.reset}`;
+  const ft = `${A.brightWhite}\u2191\u2193${A.brightBlack} nav ${A.brightWhite}enter${A.brightBlack} open ${A.brightWhite}tab${A.brightBlack} \u21C6${A.reset}`;
   out += moveTo(termH, 1) + C.footerBg + ` ${ft}` +
     " ".repeat(Math.max(0, w - stripAnsi(ft).length - 1)) + A.reset;
 
@@ -140,15 +80,13 @@ function renderActionPicker(
 
 export async function openSidebar(
   entries: WorkstreamEntry[],
-  callbacks: SidebarCallbacks,
+  onSelect: (name: string) => Promise<void>,
+  initialName?: string,
 ): Promise<void> {
   if (entries.length === 0) return;
 
-  let mode: SidebarMode = "normal";
-  let selected = 0;
-  let attachedName: string | null = null;
-  let pickerActions: ActionOption[] = [];
-  let pickerSelected = 0;
+  let selected = initialName ? Math.max(0, entries.findIndex(e => e.name === initialName)) : 0;
+  let attachedName: string | null = initialName ?? null;
   let termW = process.stdout.columns ?? 30;
   let termH = process.stdout.rows ?? 40;
 
@@ -158,25 +96,9 @@ export async function openSidebar(
   stdout.write(enterAltScreen() + hideCursor());
 
   const draw = () => {
-    if (mode === "action-picker") {
-      const name = entries[selected]?.name ?? "";
-      stdout.write(renderActionPicker(name, pickerActions, pickerSelected, termW, termH));
-    } else {
-      stdout.write(renderNormal(entries, selected, attachedName, termW, termH));
-    }
+    stdout.write(render(entries, selected, attachedName, termW, termH));
   };
-
-  const showEntry = async (idx: number) => {
-    const entry = entries[idx];
-    if (entry) {
-      attachedName = entry.name;
-      draw();
-      await callbacks.onNavigate(entry.name);
-    }
-  };
-
-  // Show the first workstream immediately
-  await showEntry(0);
+  draw();
 
   const onResize = () => {
     termW = process.stdout.columns ?? 30;
@@ -200,56 +122,21 @@ export async function openSidebar(
     };
 
     const onData = async (key: string) => {
-      // ── Action picker mode ──────────────────────────────────────
-      if (mode === "action-picker") {
-        if (key === "\x1b" || key === "q" || key === "\x03") {
-          mode = "normal";
-          draw();
-          return;
-        }
-        if (key === "\x1b[B") {
-          if (pickerSelected < pickerActions.length - 1) pickerSelected++;
-          draw();
-          return;
-        }
-        if (key === "\x1b[A") {
-          if (pickerSelected > 0) pickerSelected--;
-          draw();
-          return;
-        }
-        if (key === "\r") {
-          const action = pickerActions[pickerSelected];
-          const entry = entries[selected];
-          if (action && entry) {
-            mode = "normal";
-            draw();
-            await callbacks.onAction(entry.name, action.label);
-            draw();
-          }
-          return;
-        }
-        return;
-      }
-
-      // ── Normal mode ─────────────────────────────────────────────
+      // Quit
       if (key === "q" || key === "\x1b" || key === "\x03") {
         cleanup();
         return;
       }
 
-      // Navigate — swap Claude session on the right
+      // Navigate
       if (key === "\x1b[B") {
-        if (selected < entries.length - 1) {
-          selected++;
-          await showEntry(selected);
-        }
+        if (selected < entries.length - 1) selected++;
+        draw();
         return;
       }
       if (key === "\x1b[A") {
-        if (selected > 0) {
-          selected--;
-          await showEntry(selected);
-        }
+        if (selected > 0) selected--;
+        draw();
         return;
       }
 
@@ -259,16 +146,13 @@ export async function openSidebar(
         return;
       }
 
-      // Enter — open inline action picker
+      // Enter — switch Claude session to selected workstream
       if (key === "\r") {
         const entry = entries[selected];
         if (entry) {
-          pickerActions = callbacks.getActions(entry);
-          if (pickerActions.length > 0) {
-            pickerSelected = 0;
-            mode = "action-picker";
-            draw();
-          }
+          attachedName = entry.name;
+          draw();
+          await onSelect(entry.name);
         }
         return;
       }
