@@ -7,6 +7,9 @@ export interface ReviewComment {
   filePath: string;
   line?: number;
   side?: "old" | "new";
+  lineType?: "add" | "remove" | "context";
+  lineContent?: string;
+  diffContext?: string;
   text: string;
   createdAt: string;
 }
@@ -55,17 +58,29 @@ export async function deleteComment(name: string, index: number): Promise<Workst
 export function formatCommentsAsPrompt(data: WorkstreamComments): string {
   if (data.comments.length === 0) return "";
 
-  const lines = data.comments.map((c) => {
+  const sections = data.comments.map((c, i) => {
+    const typeLabel = c.lineType === "add" ? "added" : c.lineType === "remove" ? "removed" : "unchanged";
     const loc = c.line
-      ? `${c.filePath}:${c.line}${c.side ? ` (${c.side})` : ""}`
+      ? `${c.filePath}:${c.line} (${typeLabel} line, ${c.side ?? "new"} side)`
       : c.filePath;
-    return `- **${loc}**: ${c.text}`;
+
+    const parts = [`### Comment ${i + 1}: ${loc}`, c.text];
+
+    if (c.diffContext) {
+      parts.push("Surrounding diff context:");
+      parts.push("```diff", c.diffContext, "```");
+    } else if (c.lineContent) {
+      parts.push(`Line: \`${c.lineContent}\``);
+    }
+
+    return parts.join("\n");
   });
 
   return [
-    "I have the following review comments on the changes you made:",
-    ...lines,
+    "I have the following review comments on the changes you made. Each comment includes the file, line number, whether the line was added/removed/unchanged, and the surrounding diff for context.",
     "",
-    "Please address each comment and make the necessary changes.",
+    ...sections,
+    "",
+    "Please address each comment. Use the diff context to understand what changed and apply the fix to the correct location in the current working tree.",
   ].join("\n");
 }
