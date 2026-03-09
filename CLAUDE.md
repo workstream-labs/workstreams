@@ -16,7 +16,7 @@ bun test tests/dag.test.ts  # run a single test file
 bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
-The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `status`, `list`, `diff`, `destroy`, `merge`, `checkout`, `resume`.
+The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `status`, `list`, `diff`, `destroy`, `merge`, `checkout`, `resume`, `switch`.
 
 ## workstream.yaml Config Format
 
@@ -56,9 +56,10 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `comments.ts` — Review comment storage in `.workstreams/comments/<name>.json`. Load, save, clear, and format comments as agent prompts.
 
 **CLI commands** (`src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `src/index.ts`.
-- `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`.
+- `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`. Skips prompt-less workstreams.
 - `checkout.ts` — `ws checkout <name>`: interactively resume a Claude session or view diff and add review comments.
 - `resume.ts` — `ws resume <name>`: re-run the agent hands-off with a new prompt (`-p`) or stored review comments (`--comments`). Clears stored comments on success.
+- `switch.ts` — `ws switch <name>`: switch to a workstream's worktree. Creates the worktree if it doesn't exist. Prints the absolute path for shell `cd`.
 - `merge.ts` — `ws merge [name]`: merge into the current branch. Supports `--squash` and `--no-cleanup`.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
 - `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches.

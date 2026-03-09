@@ -11,6 +11,7 @@ import { diffCommand } from "./cli/diff";
 import { mergeCommand } from "./cli/merge";
 import { checkoutCommand } from "./cli/checkout";
 import { resumeCommand } from "./cli/resume";
+import { switchCommand } from "./cli/switch";
 
 const program = new Command();
 
@@ -29,5 +30,6 @@ program.addCommand(diffCommand());
 program.addCommand(mergeCommand());
 program.addCommand(checkoutCommand());
 program.addCommand(resumeCommand());
+program.addCommand(switchCommand());
 
 program.parse();

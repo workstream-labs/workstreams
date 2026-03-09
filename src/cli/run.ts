@@ -49,6 +49,23 @@ export function runCommand() {
         process.exit(1);
       }
 
+      // Filter out prompt-less workstreams (workspace-only)
+      const runnableDefs = defsToRun.filter((w) => {
+        if (!w.prompt) {
+          if (name) {
+            console.error(`Error: workstream "${name}" has no prompt. Use \`ws switch ${name}\` to work in it manually.`);
+            process.exit(1);
+          }
+          return false;
+        }
+        return true;
+      });
+
+      if (runnableDefs.length === 0) {
+        console.log("No runnable workstreams (all are workspace-only with no prompts).");
+        return;
+      }
+
       // Persist initial run state before spawning background worker
       const runId = `run-${Date.now()}`;
       const run: RunState = {
@@ -56,7 +73,7 @@ export function runCommand() {
         startedAt: new Date().toISOString(),
         workstreams: {},
       };
-      for (const def of defsToRun) {
+      for (const def of runnableDefs) {
         run.workstreams[def.name] = {
           name: def.name,
           status: "pending",
@@ -81,8 +98,8 @@ export function runCommand() {
       });
       proc.unref();
 
-      const names = defsToRun.map((d) => d.name).join(", ");
-      console.log(`Started ${defsToRun.length} workstream(s) in the background: ${names}`);
+      const names = runnableDefs.map((d) => d.name).join(", ");
+      console.log(`Started ${runnableDefs.length} workstream(s) in the background: ${names}`);
       console.log(`  Use \`ws status\` to check progress.`);
       console.log(`  Use \`ws checkout <name>\` to inspect or resume a session.`);
     });

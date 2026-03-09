@@ -9,9 +9,9 @@ export function createCommand() {
   return new Command("create")
     .description("Add a new workstream to workstream.yaml")
     .argument("<name>", "workstream name")
-    .requiredOption("-p, --prompt <text>", "prompt for the agent")
+    .option("-p, --prompt <text>", "prompt for the agent")
     .option("--plan-first", "pause for review after planning phase")
-    .action(async (name: string, opts: { prompt: string; planFirst?: boolean }) => {
+    .action(async (name: string, opts: { prompt?: string; planFirst?: boolean }) => {
       const configFile = Bun.file("workstream.yaml");
       if (!(await configFile.exists())) {
         console.error(ERR_NO_CONFIG);
@@ -27,11 +27,15 @@ export function createCommand() {
       }
 
       raw.workstreams[name] = {
-        prompt: opts.prompt,
+        ...(opts.prompt ? { prompt: opts.prompt } : {}),
         ...(opts.planFirst ? { plan_first: true } : {}),
       };
 
       await Bun.write("workstream.yaml", stringify(raw));
-      console.log(MSG_ADDED(name));
+      if (opts.prompt) {
+        console.log(MSG_ADDED(name));
+      } else {
+        console.log(`Added workspace "${name}" to workstream.yaml (no prompt — use \`ws switch ${name}\` to work in it)`);
+      }
     });
 }
