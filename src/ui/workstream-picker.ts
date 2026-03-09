@@ -502,6 +502,7 @@ export async function openWorkstreamPicker(
 
   return new Promise<WorkstreamEntry | null>((resolve) => {
     const cleanup = (result: WorkstreamEntry | null) => {
+      stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
       process.stdout.off("resize", onResize);
@@ -509,7 +510,7 @@ export async function openWorkstreamPicker(
       resolve(result);
     };
 
-    stdin.on("data", async (key: string) => {
+    const onData = async (key: string) => {
       const contentH = state.termH - HEADER_ROWS - FOOTER_ROWS;
       const maxScroll = Math.max(0, state.entries.length - contentH);
       const diffViewH = contentH - 3;
@@ -582,6 +583,8 @@ export async function openWorkstreamPicker(
         draw();
         return;
       }
-    });
+    };
+
+    stdin.on("data", onData);
   });
 }

@@ -101,7 +101,7 @@ export function runCommand() {
       const names = runnableDefs.map((d) => d.name).join(", ");
       console.log(`Started ${runnableDefs.length} workstream(s) in the background: ${names}`);
       console.log(`  Use \`ws status\` to check progress.`);
-      console.log(`  Use \`ws checkout <name>\` to inspect or resume a session.`);
+      console.log(`  Use \`ws switch <name>\` to inspect or resume a session.`);
     });
 }
 
