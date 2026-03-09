@@ -24,6 +24,7 @@ export interface WorkstreamEntry {
   additions: number;
   deletions: number;
   hasSession: boolean;
+  hasTmuxPane: boolean;
   commentCount: number;
   isDirty: boolean;
 }
@@ -31,6 +32,8 @@ export interface WorkstreamEntry {
 export type DashboardAction =
   | { type: "editor"; name: string }
   | { type: "diff"; name: string }
+  | { type: "attach-session"; name: string }
+  | { type: "open-session"; name: string }
   | { type: "resume-session"; name: string }
   | { type: "resume-prompt"; name: string; prompt: string }
   | { type: "resume-comments"; name: string }
@@ -44,6 +47,7 @@ interface ActionOption {
 
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   const options: ActionOption[] = [];
+  const isRunning = entry.status === "running";
 
   options.push({
     label: "Open in editor",
@@ -51,11 +55,27 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "editor",
   });
 
-  if (entry.hasSession) {
+  if (isRunning && entry.hasTmuxPane) {
+    options.push({
+      label: "Attach to session",
+      description: "Open the running Claude Code session",
+      action: "attach-session",
+    });
+  }
+
+  if (!isRunning && entry.hasSession) {
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
       action: "resume-session",
+    });
+  }
+
+  if (!isRunning && !entry.hasSession && entry.hasWorktree) {
+    options.push({
+      label: "Open Claude session",
+      description: "Start a new interactive Claude session in the worktree",
+      action: "open-session",
     });
   }
 
@@ -67,7 +87,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasSession) {
+  if (!isRunning && entry.hasSession) {
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -75,7 +95,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.commentCount > 0) {
+  if (!isRunning && entry.commentCount > 0) {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
@@ -200,7 +220,10 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number):
     metaVis.push(`+${entry.additions} −${entry.deletions}`);
   }
 
-  if (entry.hasSession) {
+  if (entry.status === "running" && entry.hasTmuxPane) {
+    meta.push(`${A.brightYellow}attachable${selReset}`);
+    metaVis.push("attachable");
+  } else if (entry.hasSession) {
     meta.push(`${A.brightGreen}resumable${selReset}`);
     metaVis.push("resumable");
   }

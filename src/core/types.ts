@@ -38,6 +38,8 @@ export interface WorkstreamState {
   logFile: string;
   sessionId?: string;
   planFirst?: boolean;
+  tmuxSession?: string;
+  tmuxPaneId?: string;
 }
 
 export interface RunState {

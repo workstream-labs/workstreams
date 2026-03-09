@@ -1,5 +1,10 @@
 import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
+import {
+  createWindow,
+  sendPrompt,
+  isPaneDead,
+} from "./tmux";
 
 const PLAN_PHASE_SUFFIX = [
   "",
@@ -12,6 +17,12 @@ const PLAN_PHASE_SUFFIX = [
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
+  codex: ["--full-auto"],
+  aider: ["--yes"],
+};
+
+const TMUX_AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
+  claude: ["--dangerously-skip-permissions", "--verbose"],
   codex: ["--full-auto"],
   aider: ["--yes"],
 };
@@ -180,6 +191,48 @@ export class AgentAdapter {
       await appendLog(`\n---\n[${timestamp()}] Agent error: ${e.message}\n`);
       throw new AgentError(`Agent failed: ${e.message}`);
     }
+  }
+
+  async runInTmux(options: AgentRunOptions & {
+    tmuxSession: string;
+    windowName: string;
+  }): Promise<AgentResult & { tmuxPaneId: string }> {
+    const { workDir, prompt, agentConfig, tmuxSession, windowName, planFirst } = options;
+
+    const cmd = agentConfig.command.split("/").pop() ?? agentConfig.command;
+    const tmuxFlags = agentConfig.acceptAll === false
+      ? []
+      : (TMUX_AUTO_ACCEPT_FLAGS[cmd] ?? []);
+
+    const effectivePrompt = planFirst ? prompt + PLAN_PHASE_SUFFIX : prompt;
+
+    // Build the claude command — launch interactive, no -p flag
+    const claudeCmd = [
+      agentConfig.command,
+      ...tmuxFlags,
+      ...(agentConfig.args ?? []),
+    ].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
+
+    // Create tmux window with interactive Claude
+    const paneId = await createWindow(tmuxSession, windowName, workDir, claudeCmd);
+
+    // Wait for Claude to initialize
+    await Bun.sleep(2000);
+
+    // Send the prompt via tmux paste-buffer
+    await sendPrompt(`${tmuxSession}:${windowName}`, effectivePrompt);
+
+    // Poll for completion — check if the pane's process has exited
+    let dead = false;
+    while (!dead) {
+      await Bun.sleep(5000);
+      dead = await isPaneDead(paneId);
+    }
+
+    // Auto-commit after completion
+    await this.autoCommit(workDir, async () => {}, () => new Date().toISOString());
+
+    return { exitCode: 0, sessionId: undefined, tmuxPaneId: paneId };
   }
 
   private async autoCommit(

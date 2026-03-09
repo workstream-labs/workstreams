@@ -8,6 +8,7 @@ import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
 import { saveState } from "./state";
 import type { EventBus } from "./events";
+import { hasTmux, createSession } from "./tmux";
 
 const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
@@ -53,6 +54,7 @@ export class Executor {
   private aborted = false;
   private runningProcs: Set<string> = new Set();
   private worktreeLock: Promise<void> = Promise.resolve();
+  private useTmux = false;
 
   constructor(
     config: WorkstreamConfig,
@@ -84,6 +86,17 @@ export class Executor {
   async execute(): Promise<void> {
     this.setupSignalHandlers();
     this.emit("run:start", undefined, { runId: this.run.runId });
+
+    // Check if tmux is available and agent is claude
+    const agentCmd = this.config.agent.command.split("/").pop() ?? this.config.agent.command;
+    if (agentCmd === "claude" && await hasTmux()) {
+      try {
+        await createSession("ws");
+        this.useTmux = true;
+      } catch {
+        this.useTmux = false;
+      }
+    }
 
     // Ensure log directory exists and clear old log files
     const { unlink, mkdir } = await import("fs/promises");
@@ -150,25 +163,44 @@ export class Executor {
       await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
 
       await logLine("Launching agent...");
-      const result = await this.agent.run({
-        workDir: ws.worktreePath,
-        prompt: node.def.prompt,
-        logFile: ws.logFile,
-        agentConfig: this.config.agent,
-        planFirst: ws.planFirst,
-        onSessionId: async (id) => {
-          ws.sessionId = id;
-          await saveState(this.state);
-          await logLine(`Session ID captured: ${id}`);
-        },
-      });
 
-      ws.exitCode = result.exitCode;
-      if (result.sessionId) ws.sessionId = result.sessionId;
-      ws.status = result.exitCode === 0 ? "success" : "failed";
-      if (result.exitCode !== 0) {
-        ws.error = `Agent exited with code ${result.exitCode}`;
-        await logLine(`FAILED: ${ws.error}`);
+      if (this.useTmux) {
+        const result = await this.agent.runInTmux({
+          workDir: ws.worktreePath,
+          prompt: node.def.prompt,
+          logFile: ws.logFile,
+          agentConfig: this.config.agent,
+          planFirst: ws.planFirst,
+          tmuxSession: "ws",
+          windowName: name,
+        });
+
+        ws.tmuxSession = "ws";
+        ws.tmuxPaneId = result.tmuxPaneId;
+        ws.exitCode = result.exitCode;
+        ws.status = result.exitCode === 0 ? "success" : "failed";
+        await saveState(this.state);
+      } else {
+        const result = await this.agent.run({
+          workDir: ws.worktreePath,
+          prompt: node.def.prompt,
+          logFile: ws.logFile,
+          agentConfig: this.config.agent,
+          planFirst: ws.planFirst,
+          onSessionId: async (id) => {
+            ws.sessionId = id;
+            await saveState(this.state);
+            await logLine(`Session ID captured: ${id}`);
+          },
+        });
+
+        ws.exitCode = result.exitCode;
+        if (result.sessionId) ws.sessionId = result.sessionId;
+        ws.status = result.exitCode === 0 ? "success" : "failed";
+        if (result.exitCode !== 0) {
+          ws.error = `Agent exited with code ${result.exitCode}`;
+          await logLine(`FAILED: ${ws.error}`);
+        }
       }
     } catch (e: any) {
       ws.status = "failed";
