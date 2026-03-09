@@ -1,6 +1,6 @@
 // Full-featured diff viewer for workstreams, built on critique's DiffView component.
-// Layout matches: header (← file +N-N →), scrollable diff, footer (prev/next/keybindings),
-// optional workstream tabs. Supports syntax highlighting, theme picker, file picker,
+// Two-panel layout: file list on the left, scrollable diff on the right.
+// Supports syntax highlighting, theme picker, file picker,
 // split/unified view, vim-style scroll, and mouse. Inline commenting with c key.
 
 import "critique/dist/patch-terminal-dimensions.js";
@@ -27,6 +27,7 @@ import {
   stripSubmoduleHeaders,
   getFileName,
   getOldFileName,
+  getFileStatus,
   countChanges,
   getViewMode,
   detectFiletype,
@@ -80,6 +81,183 @@ function parseDiffToLineMap(rawDiff: string): LineInfo[] {
     }
   }
   return map;
+}
+
+// --- Status letter + color for file list ---
+
+const STATUS_LETTER: Record<string, string> = {
+  added: "A",
+  deleted: "D",
+  modified: "M",
+  renamed: "R",
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  added: "#2d8a47",
+  deleted: "#c53b53",
+  modified: "#e5c07b",
+  renamed: "#00b8d9",
+};
+
+// --- FileListItem ---
+
+interface FileListItemProps {
+  file: ProcessedFile;
+  selected: boolean;
+  focused: boolean;
+  accentColor: string;
+  textColor: string;
+  mutedColor: string;
+  commentCount: number;
+  stripPrefix: (p: string) => string;
+  width: number;
+}
+
+function FileListItem({
+  file,
+  selected,
+  focused,
+  accentColor,
+  textColor,
+  mutedColor,
+  commentCount,
+  stripPrefix,
+  width,
+}: FileListItemProps): React.ReactElement {
+  const fileName = stripPrefix(getFileName(file));
+  const status = getFileStatus(file);
+  const letter = STATUS_LETTER[status] ?? "?";
+  const letterColor = STATUS_COLOR[status] ?? mutedColor;
+  const { additions, deletions } = countChanges(file.hunks);
+
+  const parts = fileName.split("/");
+  const basename = parts.pop() ?? fileName;
+  const dir = parts.length > 0 ? parts.join("/") + "/" : "";
+
+  const stats = `+${additions}-${deletions}`;
+  const commentBadge = commentCount > 0 ? `${commentCount}` : "";
+
+  // Cursor indicator
+  const cursor = selected ? "▶" : " ";
+  const cursorColor = selected && focused ? accentColor : mutedColor;
+
+  // Background tint for selected row
+  const bgColor = selected
+    ? focused ? accentColor + "22" : "#264F7822"
+    : undefined;
+
+  return (
+    <box
+      height={1}
+      style={{
+        flexDirection: "row",
+        backgroundColor: bgColor,
+        paddingLeft: 1,
+        width,
+      }}
+    >
+      <text fg={cursorColor}>{cursor} </text>
+      <text fg={letterColor}>{letter} </text>
+      <box style={{ flexGrow: 1, flexDirection: "row", overflow: "hidden" }}>
+        <text fg={mutedColor}>{dir}</text>
+        <text fg={textColor} bold={selected}>{basename}</text>
+      </box>
+      {commentCount > 0 && (
+        <>
+          <text fg={mutedColor}> ○ </text>
+          <text fg="#e5c07b">{commentBadge} </text>
+        </>
+      )}
+      <text fg="#2d8a47">+{additions}</text>
+      <text fg="#c53b53">-{deletions}</text>
+      <text> </text>
+    </box>
+  );
+}
+
+// --- FileListPanel ---
+
+interface FileListPanelProps {
+  files: ProcessedFile[];
+  fileIndex: number;
+  focused: boolean;
+  accentColor: string;
+  textColor: string;
+  mutedColor: string;
+  comments: WorkstreamComments | null;
+  stripPrefix: (p: string) => string;
+  scrollboxRef: React.RefObject<ScrollBoxRenderable | null>;
+  bg: string;
+}
+
+const FILE_PANEL_WIDTH = 34;
+
+function FileListPanel({
+  files,
+  fileIndex,
+  focused,
+  accentColor,
+  textColor,
+  mutedColor,
+  comments,
+  stripPrefix,
+  scrollboxRef,
+  bg,
+}: FileListPanelProps): React.ReactElement {
+  const commentCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!comments) return counts;
+    for (const c of comments.comments) {
+      counts.set(c.filePath, (counts.get(c.filePath) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
+
+  return (
+    <box
+      width={FILE_PANEL_WIDTH}
+      style={{
+        flexShrink: 0,
+        flexDirection: "column",
+        borderStyle: "single",
+        border: ["right"],
+        borderColor: focused ? accentColor : mutedColor,
+      }}
+    >
+      <box style={{ paddingLeft: 1, flexShrink: 0 }}>
+        <text fg={textColor} bold>Files ({files.length})</text>
+      </box>
+      <scrollbox
+        ref={scrollboxRef}
+        scrollY
+        focused={false}
+        style={{
+          flexGrow: 1,
+          rootOptions: { backgroundColor: bg, border: false },
+          contentOptions: { minHeight: 0 },
+          scrollbarOptions: {
+            showArrows: false,
+            trackOptions: { foregroundColor: mutedColor, backgroundColor: bg },
+          },
+        }}
+      >
+        {files.map((f, i) => (
+          <FileListItem
+            key={i}
+            file={f}
+            selected={i === fileIndex}
+            focused={focused}
+            accentColor={accentColor}
+            textColor={textColor}
+            mutedColor={mutedColor}
+            commentCount={commentCounts.get(stripPrefix(getFileName(f))) ?? 0}
+            stripPrefix={stripPrefix}
+            width={FILE_PANEL_WIDTH - 2}
+          />
+        ))}
+      </scrollbox>
+    </box>
+  );
 }
 
 // --- DiffWithCursor: inlines DiffView color setup and exposes a ref for cursor highlight ---
@@ -261,16 +439,19 @@ interface DiffAppProps {
   files: ProcessedFile[];
   currentWorkstream?: string;
   workstreams?: string[];
+  returnLabel?: string;
 }
 
-function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps): React.ReactElement {
+function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: DiffAppProps): React.ReactElement {
   const [fileIndex, setFileIndex] = React.useState(0);
+  const [focusPanel, setFocusPanel] = React.useState<"files" | "diff">("files");
   const [showFilePicker, setShowFilePicker] = React.useState(false);
   const [showThemePicker, setShowThemePicker] = React.useState(false);
   const [previewTheme, setPreviewTheme] = React.useState<string | null>(null);
   const [viewOverride, setViewOverride] = React.useState<"split" | "unified" | null>(null);
   const [scrollAccel] = React.useState(() => new ScrollAccel());
   const scrollboxRef = React.useRef<ScrollBoxRenderable | null>(null);
+  const fileListScrollboxRef = React.useRef<ScrollBoxRenderable | null>(null);
   const lastKeyRef = React.useRef<{ key: string; time: number } | null>(null);
   const renderer = useRenderer();
   const { width } = useTerminalDimensions();
@@ -300,10 +481,19 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
   const commentMarkerColor = "#e5c07b";
 
   const file = files[fileIndex];
-  const hasPrev = fileIndex > 0;
-  const hasNext = fileIndex < files.length - 1;
-  const arrowColor = (active: boolean) => active ? textColor : mutedColor;
-  const fileName = file ? getFileName(file) : "";
+  const stripPrefix = (p: string) => p.replace(/^[ab]\//, "");
+  const fileName = file ? stripPrefix(getFileName(file)) : "";
+
+  // Total stats across all files
+  const { totalAdditions, totalDeletions } = React.useMemo(() => {
+    let add = 0, del = 0;
+    for (const f of files) {
+      const s = countChanges(f.hunks);
+      add += s.additions;
+      del += s.deletions;
+    }
+    return { totalAdditions: add, totalDeletions: del };
+  }, [files]);
 
   // Per-file line map for cursor navigation
   const lineMap = React.useMemo(
@@ -311,9 +501,10 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
     [file],
   );
 
-  // Compute viewMode here so handleCommentSubmit can close over it
+  // Compute viewMode — subtract file panel width from available width for auto mode
   const { additions, deletions } = file ? countChanges(file.hunks) : { additions: 0, deletions: 0 };
-  const viewMode = viewOverride ?? getViewMode(additions, deletions, width);
+  const diffPanelWidth = Math.max(40, width - FILE_PANEL_WIDTH);
+  const viewMode = viewOverride ?? getViewMode(additions, deletions, diffPanelWidth);
 
   const refreshComments = React.useCallback(async () => {
     const data = await loadComments(name);
@@ -356,7 +547,6 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
     if (annotated.length === 0) return result;
     lineMap.forEach((info, idx) => {
       for (const c of annotated) {
-        // Match by line type + line number — side disambiguates when old/new share the same number
         if (info.type === "add" && info.newLine === c.line && c.side !== "old") {
           result.set(idx, "new");
         } else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") {
@@ -375,7 +565,6 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
     const drAny = dr as any;
     for (const [idx, side] of commentedLineMap) {
       if (viewMode === "split") {
-        // Color only the relevant panel to avoid showing the marker on the blank opposite side
         const panel = side === "old" ? drAny.leftSide : drAny.rightSide;
         panel?.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
       } else {
@@ -426,6 +615,43 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
     setTimeout(() => setFlashMessage(null), 1500);
   };
 
+  const scrollCursorIntoView = (line: number) => {
+    const sb = scrollboxRef.current;
+    if (!sb) return;
+    keyboardScrollRef.current = true;
+    const viewportH = sb.viewport.height;
+    const top = sb.scrollTop;
+    const bottom = top + viewportH;
+    const margin = 2;
+    if (line < top + margin) {
+      sb.scrollTo(Math.max(0, line - margin));
+    } else if (line >= bottom - margin) {
+      sb.scrollTo(line - viewportH + margin + 1);
+    }
+    setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+  };
+
+  const scrollFileIntoView = (idx: number) => {
+    const sb = fileListScrollboxRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    const top = sb.scrollTop;
+    if (idx < top + 1) sb.scrollTo(Math.max(0, idx - 1));
+    else if (idx >= top + viewportH - 1) sb.scrollTo(idx - viewportH + 2);
+  };
+
+  const scrollDiffToTop = () => {
+    keyboardScrollRef.current = true;
+    scrollboxRef.current?.scrollTo(0);
+    setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+  };
+
+  const selectFile = (idx: number) => {
+    setFileIndex(idx);
+    scrollFileIntoView(idx);
+    scrollDiffToTop();
+  };
+
   useKeyboard((key: any) => {
     if (showFilePicker || showThemePicker) {
       if (key.name === "escape") {
@@ -450,6 +676,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
       return;
     }
 
+    // Global keys
     if (key.name === "escape" || key.name === "q") { renderer.destroy(); return; }
     if (key.ctrl && key.name === "z") { renderer.console.toggle(); return; }
     if (key.ctrl && key.name === "p") { setShowFilePicker(true); return; }
@@ -459,21 +686,62 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
       return;
     }
 
-    // Cursor navigation — ↑/↓ and j/k both always move the line cursor
+    // Panel focus switching
+    if (key.name === "tab") {
+      setFocusPanel((p) => p === "files" ? "diff" : "files");
+      return;
+    }
+
+    // --- File list panel keys ---
+    if (focusPanel === "files") {
+      if (key.name === "j" || key.name === "down") {
+        const next = Math.min(fileIndex + 1, files.length - 1);
+        selectFile(next);
+        return;
+      }
+      if (key.name === "k" || key.name === "up") {
+        const prev = Math.max(fileIndex - 1, 0);
+        selectFile(prev);
+        return;
+      }
+      if (key.name === "g" && key.shift) {
+        selectFile(files.length - 1);
+        return;
+      }
+      if (key.name === "g" && !key.shift && !key.ctrl) {
+        const now = Date.now();
+        if (lastKeyRef.current?.key === "g" && now - lastKeyRef.current.time < 300) {
+          selectFile(0);
+          lastKeyRef.current = null;
+        } else {
+          lastKeyRef.current = { key: "g", time: now };
+        }
+        return;
+      }
+      if (key.name === "l" || key.name === "return") {
+        setFocusPanel("diff");
+        return;
+      }
+      return;
+    }
+
+    // --- Diff panel keys ---
+    if (key.name === "h") {
+      setFocusPanel("files");
+      return;
+    }
+
+    // Cursor navigation
     if (key.name === "j" || key.name === "down") {
       const next = Math.min(cursorLine + 1, lineMap.length - 1);
       setCursorLine(next);
-      keyboardScrollRef.current = true;
-      scrollboxRef.current?.scrollTo(next);
-      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+      scrollCursorIntoView(next);
       return;
     }
     if (key.name === "k" || key.name === "up") {
       const prev = Math.max(cursorLine - 1, 0);
       setCursorLine(prev);
-      keyboardScrollRef.current = true;
-      scrollboxRef.current?.scrollTo(prev);
-      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+      scrollCursorIntoView(prev);
       return;
     }
 
@@ -482,7 +750,6 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
       const info = lineMap[cursorLine];
       if (!info || (info.type !== "add" && info.type !== "remove")) return;
 
-      // Side is always determined by line type — consistent across unified and split
       const autoSide: "old" | "new" = info.type === "add" ? "new" : "old";
       const fileLine = info.type === "add" ? info.newLine : info.oldLine;
 
@@ -503,28 +770,15 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
       return;
     }
 
-    const scrollToTop = () => {
-      keyboardScrollRef.current = true;
-      scrollboxRef.current?.scrollTo(0);
-      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
-    };
-
-    if (key.name === "right") {
-      if (hasNext) { setFileIndex((i) => i + 1); scrollToTop(); }
-      return;
-    }
-    if (key.name === "left") {
-      if (hasPrev) { setFileIndex((i) => i - 1); scrollToTop(); }
-      return;
-    }
-
     const sb = scrollboxRef.current;
     if (sb) {
       if (key.name === "g" && key.shift) { sb.scrollBy(1, "content"); return; }
       if (key.name === "g" && !key.shift && !key.ctrl) {
         const now = Date.now();
         if (lastKeyRef.current?.key === "g" && now - lastKeyRef.current.time < 300) {
-          sb.scrollTo(0); lastKeyRef.current = null;
+          sb.scrollTo(0);
+          setCursorLine(0);
+          lastKeyRef.current = null;
         } else {
           lastKeyRef.current = { key: "g", time: now };
         }
@@ -547,14 +801,14 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
     );
   }
 
-  const oldFileName = file ? getOldFileName(file) : undefined;
+  const rawOldFileName = file ? getOldFileName(file) : undefined;
+  const oldFileName = rawOldFileName ? stripPrefix(rawOldFileName) : undefined;
   const filetype = fileName ? detectFiletype(fileName) : undefined;
 
-  const fileOptions = files.map((f, idx) => ({
-    title: getFileName(f),
-    value: String(idx),
-    keywords: getFileName(f).split("/"),
-  }));
+  const fileOptions = files.map((f, idx) => {
+    const name = stripPrefix(getFileName(f));
+    return { title: name, value: String(idx), keywords: name.split("/") };
+  });
 
   const themeOpts = themeNames.map((n: string) => ({ title: n, value: n }));
 
@@ -590,8 +844,8 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
             options={fileOptions}
             selectedValues={[String(fileIndex)]}
             onChange={(v: string) => {
-              setFileIndex(parseInt(v, 10));
-              scrollboxRef.current?.scrollTo(0);
+              const idx = parseInt(v, 10);
+              selectFile(idx);
               setShowFilePicker(false);
             }}
             onEscape={() => setShowFilePicker(false)}
@@ -602,7 +856,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
         </box>
       )}
 
-      {/* Header: ← filename +N -N → */}
+      {/* Header */}
       {showNormalUI && (
         <box
           style={{
@@ -614,86 +868,121 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
             paddingBottom: 1,
           }}
         >
-          <text fg={arrowColor(hasPrev)}>← </text>
-          <box style={{ flexGrow: 1, flexDirection: "row", justifyContent: "center" }}>
-            {oldFileName ? (
-              <>
-                <text fg={mutedColor}>{oldFileName} → </text>
-                <text fg={textColor}><b>{fileName}</b></text>
-              </>
-            ) : (
-              <text fg={textColor}><b>{fileName}</b></text>
-            )}
-            <text fg="#2d8a47"> +{additions}</text>
-            <text fg="#c53b53">-{deletions}</text>
-          </box>
-          <text fg={arrowColor(hasNext)}> →</text>
+          <text fg={accentColor}>ws diff: </text>
+          <text fg={textColor} bold>{name}</text>
+          <box style={{ flexGrow: 1 }} />
+          <text fg={mutedColor}>{files.length} files </text>
+          <text fg="#2d8a47">+{totalAdditions} </text>
+          <text fg="#c53b53">-{totalDeletions}</text>
         </box>
       )}
 
-      {/* Diff content */}
-      <scrollbox
-        ref={scrollboxRef}
-        scrollY
-        scrollAcceleration={scrollAccel}
-        style={{
-          flexGrow: 1,
-          flexShrink: 1,
-          rootOptions: { backgroundColor: bg, border: false },
-          contentOptions: { minHeight: 0 },
-          scrollbarOptions: {
-            showArrows: false,
-            trackOptions: { foregroundColor: mutedColor, backgroundColor: bg },
-          },
-        }}
-        focused={showNormalUI && !showCommentForm}
-      >
-        {file && (
-          <DiffWithCursor
-            diff={file.rawDiff ?? ""}
-            view={viewMode}
-            filetype={filetype}
-            themeName={activeTheme}
-            diffRef={diffRef}
-          />
-        )}
-      </scrollbox>
-
-      {/* Flash confirmation */}
-      {showNormalUI && flashMessage && (
-        <box style={{ flexDirection: "row", justifyContent: "center", paddingBottom: 1 }}>
-          <text fg="#2d8a47">{flashMessage}</text>
-        </box>
-      )}
-
-      {/* Comment form — matches split panel width (50%) or full-width in unified */}
-      {showNormalUI && showCommentForm && (
-        <box style={{ flexDirection: "row", width: "100%", flexShrink: 0 }}>
-          {/* Left spacer: pushes form to the right panel in split-new */}
-          {viewMode === "split" && commentSide === "new"
-            ? <box style={{ width: "50%" }} />
-            : null}
-          <CommentForm
-            key={editingCommentIndex !== null ? `edit-${editingCommentIndex}` : "new"}
-            fileName={fileName}
-            fileLine={commentFileLine}
-            side={commentSide}
-            viewMode={viewMode}
-            onTextChange={(v) => { commentTextRef.current = v; }}
-            onCancel={() => setShowCommentForm(false)}
+      {/* Two-panel body: file list + diff */}
+      <box style={{ flexDirection: "row", flexGrow: 1, flexShrink: 1 }}>
+        {/* File list panel */}
+        {showNormalUI && (
+          <FileListPanel
+            files={files}
+            fileIndex={fileIndex}
+            focused={focusPanel === "files"}
+            accentColor={accentColor}
             textColor={textColor}
             mutedColor={mutedColor}
+            comments={comments}
+            stripPrefix={stripPrefix}
+            scrollboxRef={fileListScrollboxRef}
             bg={bg}
-            style={{ width: viewMode === "split" ? "50%" : "100%" }}
-            initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
-            isEditing={editingCommentIndex !== null}
           />
-          {/* Right spacer: pushes form to the left panel in split-old */}
-          {viewMode === "split" && commentSide === "old"
-            ? <box style={{ width: "50%" }} />
-            : null}
+        )}
+
+        {/* Diff panel (right side) */}
+        <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1 }}>
+          {/* Current file name sub-header */}
+          {showNormalUI && (
+            <box
+              style={{
+                flexShrink: 0,
+                flexDirection: "row",
+                paddingLeft: 1,
+                paddingRight: 1,
+              }}
+            >
+              {oldFileName && oldFileName !== fileName ? (
+                <>
+                  <text fg={mutedColor}>{oldFileName} → </text>
+                  <text fg={textColor} bold>{fileName}</text>
+                </>
+              ) : (
+                <text fg={textColor} bold>{fileName}</text>
+              )}
+              <text fg="#2d8a47"> +{additions}</text>
+              <text fg="#c53b53">-{deletions}</text>
+            </box>
+          )}
+
+          {/* Diff scrollbox */}
+          <scrollbox
+            ref={scrollboxRef}
+            scrollY
+            scrollAcceleration={scrollAccel}
+            style={{
+              flexGrow: 1,
+              flexShrink: 1,
+              rootOptions: { backgroundColor: bg, border: false },
+              contentOptions: { minHeight: 0 },
+              scrollbarOptions: {
+                showArrows: false,
+                trackOptions: { foregroundColor: mutedColor, backgroundColor: bg },
+              },
+            }}
+            focused={false}
+          >
+            {file && (
+              <DiffWithCursor
+                diff={file.rawDiff ?? ""}
+                view={viewMode}
+                filetype={filetype}
+                themeName={activeTheme}
+                diffRef={diffRef}
+              />
+            )}
+          </scrollbox>
+
+          {/* Flash confirmation — inside diff panel */}
+          {showNormalUI && flashMessage && (
+            <box style={{ flexDirection: "row", justifyContent: "center", paddingBottom: 1, flexShrink: 0 }}>
+              <text fg="#2d8a47">{flashMessage}</text>
+            </box>
+          )}
+
+          {/* Comment form — inside diff panel */}
+          {showNormalUI && showCommentForm && (
+            <box style={{ flexDirection: "row", width: "100%", flexShrink: 0 }}>
+              {viewMode === "split" && commentSide === "new"
+                ? <box style={{ width: "50%" }} />
+                : null}
+              <CommentForm
+                key={editingCommentIndex !== null ? `edit-${editingCommentIndex}` : "new"}
+                fileName={fileName}
+                fileLine={commentFileLine}
+                side={commentSide}
+                viewMode={viewMode}
+                onTextChange={(v) => { commentTextRef.current = v; }}
+                onCancel={() => setShowCommentForm(false)}
+                textColor={textColor}
+                mutedColor={mutedColor}
+                bg={bg}
+                style={{ width: viewMode === "split" ? "50%" : "100%" }}
+                initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
+                isEditing={editingCommentIndex !== null}
+              />
+              {viewMode === "split" && commentSide === "old"
+                ? <box style={{ width: "50%" }} />
+                : null}
+            </box>
+          )}
         </box>
-      )}
+      </box>
 
       {/* Footer */}
       {showNormalUI && (
@@ -702,38 +991,30 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
             flexShrink: 0,
             flexDirection: "row",
             alignItems: "center",
+            justifyContent: "center",
             paddingTop: 1,
             paddingLeft: 1,
             paddingRight: 1,
           }}
         >
-          {/* Left: prev */}
-          <box style={{ flexGrow: 1, flexBasis: 0, flexDirection: "row", alignItems: "center" }}>
-            <text fg={arrowColor(hasPrev)}>←</text>
-            <text fg={hasPrev ? textColor : mutedColor}> prev</text>
-          </box>
-
-          {/* Center: keybindings */}
-          <box style={{ flexDirection: "row", alignItems: "center" }}>
-            <text fg={textColor}>q</text>
-            <text fg={mutedColor}> quit  </text>
-            <text fg={textColor}>ctrl p</text>
-            <text fg={mutedColor}> files ({fileIndex + 1}/{files.length})  </text>
-            <text fg={textColor}>↑↓</text>
-            <text fg={mutedColor}> cursor  </text>
-            <text fg={textColor}>c</text>
-            <text fg={mutedColor}> comment  </text>
-            <text fg={textColor}>s</text>
-            <text fg={mutedColor}> {viewMode}  </text>
-            <text fg={textColor}>t</text>
-            <text fg={mutedColor}> theme</text>
-          </box>
-
-          {/* Right: next */}
-          <box style={{ flexGrow: 1, flexBasis: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }}>
-            <text fg={hasNext ? textColor : mutedColor}>next </text>
-            <text fg={arrowColor(hasNext)}>→</text>
-          </box>
+          <text fg={textColor}>q</text>
+          <text fg={mutedColor}> {returnLabel ?? "quit"}  </text>
+          <text fg={textColor}>Tab</text>
+          <text fg={mutedColor}> panel  </text>
+          <text fg={textColor}>↑↓</text>
+          <text fg={mutedColor}> {focusPanel === "files" ? "select file" : "cursor"}  </text>
+          {focusPanel === "diff" && (
+            <>
+              <text fg={textColor}>c</text>
+              <text fg={mutedColor}> comment  </text>
+            </>
+          )}
+          <text fg={textColor}>s</text>
+          <text fg={mutedColor}> {viewMode}  </text>
+          <text fg={textColor}>t</text>
+          <text fg={mutedColor}> theme  </text>
+          <text fg={textColor}>ctrl p</text>
+          <text fg={mutedColor}> search</text>
         </box>
       )}
 
@@ -766,6 +1047,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps):
 
 export interface DiffViewerOptions {
   workstreams?: string[];
+  returnLabel?: string;
 }
 
 export async function openDiffViewer(
@@ -797,6 +1079,7 @@ export async function openDiffViewer(
         files={files}
         currentWorkstream={name}
         workstreams={options?.workstreams}
+        returnLabel={options?.returnLabel}
       />
     );
   });

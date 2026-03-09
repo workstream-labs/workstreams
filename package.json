@@ -7,11 +7,18 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "postinstall": "rm -rf node_modules/critique/node_modules"
   },
   "dependencies": {
     "commander": "^13.1.0",
-    "yaml": "^2.7.0"
+    "yaml": "^2.7.0",
+    "critique": "0.1.122",
+    "react": "^19.2.0",
+    "@opentuah/core": "0.1.97",
+    "@opentuah/react": "0.1.97",
+    "diff": "^8.0.2",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/bun": "latest"
