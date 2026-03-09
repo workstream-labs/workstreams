@@ -60,14 +60,20 @@ function validateConfig(raw: any): WorkstreamConfig {
     }
     names.add(name);
 
-    if (!def || typeof def !== "object") {
+    // Handle bare entries like `fix-auth:` (YAML parses value as null)
+    if (def === null || def === undefined) {
+      defs.push({ name });
+      continue;
+    }
+
+    if (typeof def !== "object") {
       throw new ConfigError(`Workstream "${name}" must be an object`);
     }
 
     const d = def as Record<string, any>;
 
-    if (!d.prompt || typeof d.prompt !== "string") {
-      throw new ConfigError(`Workstream "${name}": prompt is required`);
+    if (d.prompt !== undefined && typeof d.prompt !== "string") {
+      throw new ConfigError(`Workstream "${name}": prompt must be a string`);
     }
 
     defs.push({

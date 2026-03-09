@@ -15,7 +15,7 @@ export interface AgentConfig {
 
 export interface WorkstreamDef {
   name: string;
-  prompt: string;
+  prompt?: string;
   baseBranch?: string;
   planFirst?: boolean;
 }
@@ -52,6 +52,7 @@ export interface ProjectState {
   rootDir: string;
   currentRun?: RunState;
   history: RunState[];
+  defaultEditor?: string;
 }
 
 export type EventType =

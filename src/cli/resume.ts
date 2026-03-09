@@ -2,16 +2,15 @@ import { Command } from "commander";
 import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { AgentAdapter } from "../core/agent";
-import { prompt, promptChoice } from "../core/prompt";
 import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/comments";
 import type { AgentConfig, WorkstreamState } from "../core/types";
 
 export function resumeCommand() {
   return new Command("resume")
-    .description("Resume a workstream with new instructions or review comments")
+    .description("Resume a workstream with new instructions or review comments (non-interactive)")
     .argument("<name>", "workstream name")
-    .option("-p, --prompt <text>", "prompt text to send (non-interactive)")
-    .option("--comments", "use stored review comments (non-interactive)")
+    .option("-p, --prompt <text>", "prompt text to send")
+    .option("--comments", "use stored review comments")
     .action(async (name: string, opts: { prompt?: string; comments?: boolean }) => {
       const state = await loadState();
       if (!state?.currentRun) {
@@ -38,24 +37,9 @@ export function resumeCommand() {
       } else if (opts.comments) {
         resumePrompt = await getCommentsPrompt(name);
       } else {
-        // Interactive mode
-        const choice = await promptChoice(`Resume "${name}":`, [
-          "Resume with a new prompt",
-          "Resume with stored review comments",
-        ]);
-
-        if (choice === 1) {
-          resumePrompt = await prompt("Enter prompt: ");
-          if (!resumePrompt) {
-            console.log("No prompt provided. Aborting.");
-            return;
-          }
-        } else if (choice === 2) {
-          resumePrompt = await getCommentsPrompt(name);
-        } else {
-          console.log("Invalid choice.");
-          return;
-        }
+        console.log(`Usage: ws resume ${name} -p "text"  or  ws resume ${name} --comments`);
+        console.log(`Use "ws switch ${name}" for interactive mode.`);
+        return;
       }
 
       if (!resumePrompt) return;
@@ -67,7 +51,7 @@ export function resumeCommand() {
 async function getCommentsPrompt(name: string): Promise<string | undefined> {
   const data = await loadComments(name);
   if (data.comments.length === 0) {
-    console.error(`No stored comments for "${name}". Use 'ws checkout ${name}' to add comments.`);
+    console.error(`No stored comments for "${name}". Use "ws switch ${name}" to add comments.`);
     return undefined;
   }
   const formatted = formatCommentsAsPrompt(data);

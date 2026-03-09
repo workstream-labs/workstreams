@@ -38,7 +38,7 @@ workstreams:
     expect(loadConfig(tmpPath)).rejects.toThrow("agent.command");
   });
 
-  it("rejects missing prompt", async () => {
+  it("allows missing prompt (workspace-only node)", async () => {
     const { loadConfig } = await import("../src/core/config");
     const yaml = `
 agent:
@@ -49,7 +49,9 @@ workstreams:
 `;
     const tmpPath = "/tmp/test-ws-no-prompt.yaml";
     await Bun.write(tmpPath, yaml);
-    expect(loadConfig(tmpPath)).rejects.toThrow("prompt is required");
+    const config = await loadConfig(tmpPath);
+    expect(config.workstreams[0].name).toBe("foo");
+    expect(config.workstreams[0].prompt).toBeUndefined();
   });
 
   it("rejects duplicate names", async () => {

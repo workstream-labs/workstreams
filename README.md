@@ -30,7 +30,7 @@ ws status
 ws diff add-tests
 
 # 5. Review and iterate
-ws checkout add-tests    # view diff, add review comments, or resume Claude session
+ws switch add-tests      # pick an action: editor, resume, diff, etc.
 ws resume add-tests --comments   # send comments back to the agent
 
 # 6. Merge when satisfied
@@ -103,24 +103,29 @@ ws run add-tests    # run just one
 ws run --dry-run    # show what would run
 ```
 
-### `ws status`
-
-Show the status of all workstreams in the current run.
-
 ### `ws list`
 
-List workstreams defined in `workstream.yaml`.
+List all workstreams with status, sync info, diff stats, duration, and last commit.
 
 ### `ws diff [name]`
 
 Show the git diff for a workstream's branch. Without a name, shows diffs for all workstreams.
 
-### `ws checkout <name>`
+### `ws switch [name]`
 
-Interactively inspect a workstream. Presents a menu:
+Switch to a workstream and pick an action. Without a name, opens an interactive TUI picker showing all workstreams with diff previews. After selecting a workstream (or passing one by name), presents an action menu:
 
-1. **Resume Claude session** — drops you into the live Claude session (interactive, no auto-accept). Requires a captured session ID from a prior `ws run`.
-2. **View diff and add comments** — shows the diff and lets you add file-level review comments (file path, optional line number, comment text). Comments are saved to `.workstreams/comments/<name>.json`.
+- **Open in editor** — creates the worktree if needed and opens it in your editor
+- **Resume Claude session** — drops you into the live Claude session (interactive). Requires a captured session ID from a prior `ws run`.
+- **View diff & review** — browse changes and add review comments
+- **Resume with new prompt** — send new instructions to the agent (hands-off)
+- **Resume with review comments** — send stored review comments to the agent
+
+```bash
+ws switch              # interactive workstream picker
+ws switch add-tests    # go straight to action picker
+ws switch add-tests -e cursor   # open directly in Cursor (skip action picker)
+```
 
 ### `ws resume <name>`
 
@@ -151,15 +156,15 @@ ws destroy --all -y        # skip confirmation
 ## Workflow
 
 ```
-ws init → ws create → ws run → ws status/diff → ws checkout → ws resume → ws merge
+ws init → ws create → ws run → ws status/diff → ws switch → ws resume → ws merge
                                     ↑                              |
                                     └──────── iterate ─────────────┘
 ```
 
 1. **Define** workstreams with prompts describing the work
 2. **Run** them in parallel — each agent works in its own worktree
-3. **Review** the results with `ws diff` and `ws checkout`
-4. **Iterate** using `ws checkout` (interactive session) or `ws resume` (send comments/new prompt)
+3. **Review** the results with `ws diff` and `ws switch`
+4. **Iterate** using `ws switch` (editor, interactive session, review) or `ws resume` (send comments/new prompt hands-off)
 5. **Merge** when satisfied
 
 ## Project Structure
