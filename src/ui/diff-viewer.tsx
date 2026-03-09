@@ -682,7 +682,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
     if (key.ctrl && key.name === "p") { setShowFilePicker(true); return; }
     if (key.name === "t") { setShowThemePicker(true); return; }
     if (key.name === "s") {
-      setViewOverride((v) => v === "split" ? "unified" : v === "unified" ? null : "split");
+      setViewOverride(viewMode === "split" ? "unified" : "split");
       return;
     }
 
