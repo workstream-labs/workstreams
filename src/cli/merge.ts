@@ -41,6 +41,19 @@ export function mergeCommand() {
         }
       }
 
+      // Check for unresolved conflicts before doing anything
+      const unmerged = (await $`git diff --name-only --diff-filter=U`.quiet()).stdout.toString().trim();
+      if (unmerged) {
+        const files = unmerged.split("\n");
+        console.error(`\x1b[31mError: unresolved conflicts from a previous merge:\x1b[0m`);
+        for (const f of files) console.error(`  ${f}`);
+        console.error(`\n  Resolve them, then commit:`);
+        console.error(`    git add ${files.join(" ")} && git commit`);
+        console.error(`  Or abort the previous merge:`);
+        console.error(`    git merge --abort`);
+        process.exit(1);
+      }
+
       // Get current branch; switch to target if specified
       const currentBranch = (await $`git rev-parse --abbrev-ref HEAD`.quiet()).stdout.toString().trim();
       const targetBranch = into ?? currentBranch;
@@ -57,32 +70,45 @@ export function mergeCommand() {
         const branch = `ws/${n}`;
         console.log(`\x1b[34mMerging ${branch} into ${targetBranch}...\x1b[0m`);
 
-        try {
-          if (opts?.squash) {
-            await $`git merge --squash ${branch}`.quiet();
-            await $`git commit -m ${"ws: " + n}`.quiet();
-          } else {
-            await $`git merge ${branch} -m ${"ws: merge " + n}`.quiet();
-          }
-          console.log(`\x1b[32m✓ Merged ${n}\x1b[0m`);
+        const mergeResult = opts?.squash
+          ? await $`git merge --squash ${branch}`.nothrow()
+          : await $`git merge ${branch} -m ${"ws: merge " + n}`.nothrow();
 
-          // Cleanup worktree and branch
-          if (opts?.cleanup !== false) {
-            const treePath = `.workstreams/trees/${n}`;
-            await $`git worktree remove ${treePath} --force`.quiet().catch(() => {});
-            await $`git branch -D ${branch}`.quiet().catch(() => {});
-            console.log(`  Cleaned up worktree and branch`);
-          }
-        } catch (e: any) {
-          const stderr = e.stderr?.toString() ?? e.message;
+        if (mergeResult.exitCode !== 0) {
+          const stderr = mergeResult.stderr.toString();
           if (stderr.includes("CONFLICT")) {
             console.error(`\x1b[31m✗ Merge conflict in ${n}\x1b[0m`);
             console.error(`  Resolve conflicts and run: git commit`);
             console.error(`  Or abort with: git merge --abort`);
             process.exit(1);
           }
-          console.error(`\x1b[31m✗ Failed to merge ${n}: ${stderr}\x1b[0m`);
+          if (stderr.includes("untracked working tree files would be overwritten")) {
+            const files = stderr
+              .split("\n")
+              .filter((l: string) => l.startsWith("\t"))
+              .map((l: string) => l.trim());
+            console.error(`\x1b[31m✗ Untracked files in ${targetBranch} would be overwritten:\x1b[0m`);
+            for (const f of files) console.error(`  ${f}`);
+            console.error(`\n  Commit or stash them first:`);
+            console.error(`    git add ${files.join(" ")} && git commit -m "wip"`);
+            console.error(`  Then retry: ws merge ${n}${into ? " " + into : ""}`);
+            process.exit(1);
+          }
+          console.error(`\x1b[31m✗ Failed to merge ${n}: ${stderr || mergeResult.stdout.toString()}\x1b[0m`);
           process.exit(1);
+        }
+
+        if (opts?.squash) {
+          await $`git commit -m ${"ws: " + n}`.quiet();
+        }
+        console.log(`\x1b[32m✓ Merged ${n}\x1b[0m`);
+
+        // Cleanup worktree and branch
+        if (opts?.cleanup !== false) {
+          const treePath = `.workstreams/trees/${n}`;
+          await $`git worktree remove ${treePath} --force`.quiet().catch(() => {});
+          await $`git branch -D ${branch}`.quiet().catch(() => {});
+          console.log(`  Cleaned up worktree and branch`);
         }
       }
 

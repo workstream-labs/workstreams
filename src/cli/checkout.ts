@@ -52,20 +52,36 @@ export function checkoutCommand() {
       }
 
       // Completed (success or failed)
+      const { $ } = await import("bun");
+      const worktreeActive = ws.worktreePath &&
+        (await $`git worktree list --porcelain`.quiet().then(r =>
+          r.stdout.toString().includes(ws.worktreePath)
+        ).catch(() => false));
+
       const choices: string[] = [];
       if (ws.sessionId) choices.push("Resume Claude session (interactive)");
       choices.push("View diff and add review comments");
+      if (worktreeActive) {
+        choices.push(`Open worktree directory: cd ${ws.worktreePath}`);
+      } else {
+        choices.push(`Switch to branch (git checkout ${ws.branch})`);
+      }
 
       const allWorkstreams = Object.keys(state.currentRun.workstreams);
-
-      if (choices.length === 1) {
-        await diffView(name, ws, allWorkstreams);
-        return;
-      }
 
       const choice = await promptChoice(`Checkout "${name}":`, choices);
       if (choice === -1) {
         console.log("Invalid choice.");
+        return;
+      }
+
+      const switchChoice = choices.length;
+      if (choice === switchChoice) {
+        if (worktreeActive) {
+          console.log(`\nRun this to enter the worktree:\n\n  cd ${ws.worktreePath}\n`);
+        } else {
+          await $`git checkout ${ws.branch}`;
+        }
         return;
       }
 
@@ -142,7 +158,12 @@ async function sessionView(
 async function diffView(name: string, ws: { worktreePath: string }, workstreams?: string[]) {
   const wt = new WorktreeManager();
 
-  const diff = await wt.diffBranch(`ws/${name}`);
+  // Committed branch diff + any uncommitted changes still in the worktree
+  const [branchDiff, uncommittedDiff] = await Promise.all([
+    wt.diffBranch(`ws/${name}`),
+    wt.diff(name),
+  ]);
+  const diff = branchDiff + uncommittedDiff;
   if (!diff.trim()) {
     console.log("  (no changes)");
     return;
