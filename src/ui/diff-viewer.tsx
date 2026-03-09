@@ -551,6 +551,9 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
           result.set(idx, "new");
         } else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") {
           result.set(idx, "old");
+        } else if (info.type === "context") {
+          if (info.newLine === c.line && c.side === "new") result.set(idx, "new");
+          else if (info.oldLine === c.line && c.side === "old") result.set(idx, "old");
         }
       }
     });
@@ -745,13 +748,27 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
       return;
     }
 
-    // Open comment form — only on added (+) or removed (-) lines
+    // Open comment form — on added, removed, and context lines (not hunk headers)
     if (key.name === "c") {
       const info = lineMap[cursorLine];
-      if (!info || (info.type !== "add" && info.type !== "remove")) return;
+      if (!info || info.type === "hunk-header") {
+        if (info?.type === "hunk-header") {
+          setFlashMessage("cannot comment on hunk headers");
+          setTimeout(() => setFlashMessage(null), 1500);
+        }
+        return;
+      }
 
-      const autoSide: "old" | "new" = info.type === "add" ? "new" : "old";
-      const fileLine = info.type === "add" ? info.newLine : info.oldLine;
+      let autoSide: "old" | "new";
+      let fileLine: number | undefined;
+      if (info.type === "remove") {
+        autoSide = "old";
+        fileLine = info.oldLine;
+      } else {
+        // "add" and "context" both use new side (GitHub convention)
+        autoSide = "new";
+        fileLine = info.newLine;
+      }
 
       const existingIdx = comments?.comments.findIndex(
         c => c.filePath === fileName && c.line === fileLine && c.side === autoSide
@@ -972,7 +989,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
                 textColor={textColor}
                 mutedColor={mutedColor}
                 bg={bg}
-                style={{ width: viewMode === "split" ? "50%" : "100%" }}
+                style={viewMode === "split" ? { flexGrow: 1, flexShrink: 1 } : { width: "100%" }}
                 initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
                 isEditing={editingCommentIndex !== null}
               />
