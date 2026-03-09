@@ -2,29 +2,7 @@ import { Command } from "commander";
 import { loadConfig } from "../core/config";
 import { loadState } from "../core/state";
 import { getBranchInfo, getDiffStats } from "../ui/workstream-picker.js";
-
-const A = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  brightBlack: "\x1b[90m",
-  brightGreen: "\x1b[92m",
-  brightRed: "\x1b[91m",
-  brightYellow: "\x1b[93m",
-  brightCyan: "\x1b[96m",
-  brightBlue: "\x1b[94m",
-  white: "\x1b[37m",
-};
-
-const STATUS_STYLE: Record<string, { color: string; icon: string }> = {
-  success: { color: A.brightGreen, icon: "✓" },
-  failed: { color: A.brightRed, icon: "✗" },
-  running: { color: A.brightYellow, icon: "●" },
-  pending: { color: A.brightBlack, icon: "○" },
-  queued: { color: A.brightCyan, icon: "◉" },
-  waiting: { color: A.brightYellow, icon: "⏸" },
-  workspace: { color: A.brightBlue, icon: "◇" },
-};
+import { A, STATUS_STYLE } from "../ui/ansi.js";
 
 // Column widths
 const COL = {

@@ -4,9 +4,8 @@ import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { AgentAdapter } from "../core/agent";
-import { prompt as promptText } from "../core/prompt";
 import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/comments";
-import { openWorkstreamPicker, getBranchInfo, getDiffStats, type WorkstreamEntry } from "../ui/workstream-picker.js";
+import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import type { AgentConfig, ProjectState, WorkstreamState } from "../core/types";
@@ -57,7 +56,6 @@ async function resolveEditor(explicit?: string, saved?: string): Promise<string 
   if (installed.length === 0) return null;
   if (installed.length === 1) return installed[0];
 
-  // Use choice picker for editor selection
   const options: ChoiceOption[] = installed.map((cmd) => ({
     label: EDITORS[cmd]?.label ?? cmd,
     description: cmd,
@@ -69,14 +67,15 @@ async function resolveEditor(explicit?: string, saved?: string): Promise<string 
 
 async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]> {
   const { stat } = await import("fs/promises");
+  const { $ } = await import("bun");
   const entries: WorkstreamEntry[] = [];
 
-  for (const def of config.workstreams) {
+  // Build all entries in parallel
+  const promises = config.workstreams.map(async (def: any) => {
     const branch = `ws/${def.name}`;
     const worktreePath = `.workstreams/trees/${def.name}`;
     const hasWorktree = await stat(worktreePath).then(() => true).catch(() => false);
 
-    // Get status from state
     let status = "workspace";
     if (state?.currentRun?.workstreams?.[def.name]) {
       status = state.currentRun.workstreams[def.name].status;
@@ -86,15 +85,24 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
 
     let branchInfo = { ahead: 0, behind: 0, lastCommitAge: "", lastCommitMsg: "" };
     let diffStats = { filesChanged: 0, additions: 0, deletions: 0 };
+    let isDirty = false;
 
     if (hasWorktree) {
-      [branchInfo, diffStats] = await Promise.all([
+      const [bi, ds, dirtyResult] = await Promise.all([
         getBranchInfo(branch),
         getDiffStats(branch),
+        $`git -C ${worktreePath} status --porcelain`.quiet().catch(() => null),
       ]);
+      branchInfo = bi;
+      diffStats = ds;
+      isDirty = !!(dirtyResult?.stdout.toString().trim());
     }
 
-    entries.push({
+    const hasSession = !!state?.currentRun?.workstreams?.[def.name]?.sessionId;
+    const commentsData = await loadComments(def.name);
+    const commentCount = commentsData.comments.length;
+
+    return {
       name: def.name,
       branch,
       status,
@@ -102,7 +110,15 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
       hasWorktree,
       ...branchInfo,
       ...diffStats,
-    });
+      hasSession,
+      commentCount,
+      isDirty,
+    } as WorkstreamEntry;
+  });
+
+  // Preserve order
+  for (const def of config.workstreams) {
+    entries.push(await promises[config.workstreams.indexOf(def)]);
   }
 
   return entries;
@@ -180,7 +196,6 @@ async function actionResumeSession(name: string, ws: WorkstreamState, state: Pro
   const exitCode = await proc.exited;
   console.log(`\nReturned from Claude session for "${name}".`);
 
-  // Auto-commit and update status
   const { $ } = await import("bun");
   const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
   const changes = gitStatus?.stdout.toString().trim();
@@ -195,7 +210,7 @@ async function actionResumeSession(name: string, ws: WorkstreamState, state: Pro
   console.log(`Status updated to: ${ws.status}`);
 }
 
-// ─── Action: View diff & review ──────────────────────────────────────────────
+// ─── Action: View diff ───────────────────────────────────────────────────────
 
 async function actionDiffReview(name: string, state: any) {
   const wt = new WorktreeManager();
@@ -209,21 +224,16 @@ async function actionDiffReview(name: string, state: any) {
     return;
   }
 
-  const workstreams = state.currentRun
-    ? Object.keys(state.currentRun.workstreams)
-    : undefined;
-  await openDiffViewer(name, diff, { workstreams });
+  await openDiffViewer(name, diff, {
+    returnLabel: "back to dashboard",
+    workstreams: Object.keys(state.currentRun?.workstreams ?? {}),
+  });
 }
 
 // ─── Action: Resume with new prompt (hands-off) ─────────────────────────────
 
-async function actionResumeWithPrompt(name: string, ws: WorkstreamState, config: any, state: any) {
-  const text = await promptText("Enter prompt: ");
-  if (!text) {
-    console.log("No prompt provided. Aborting.");
-    return;
-  }
-  await runResume(name, ws, config.agent, text, state);
+async function actionResumeWithPrompt(name: string, prompt: string, ws: WorkstreamState, config: any, state: any) {
+  await runResume(name, ws, config.agent, prompt, state);
 }
 
 // ─── Action: Resume with review comments ─────────────────────────────────────
@@ -304,63 +314,39 @@ async function runResume(
   console.log(`${color}${name}: ${ws.status}\x1b[0m`);
 }
 
-// ─── Action picker ───────────────────────────────────────────────────────────
+// ─── Dispatch dashboard action ───────────────────────────────────────────────
 
-async function showActionPicker(name: string, state: any, config: any) {
-  const ws: WorkstreamState | undefined = state.currentRun?.workstreams?.[name];
-  const { stat } = await import("fs/promises");
-  const worktreePath = `.workstreams/trees/${name}`;
-  const hasWorktree = await stat(worktreePath).then(() => true).catch(() => false);
-  const hasSession = !!ws?.sessionId;
-  const commentsData = await loadComments(name);
-  const hasComments = commentsData.comments.length > 0;
+async function dispatchAction(action: DashboardAction, state: any, config: any): Promise<boolean> {
+  switch (action.type) {
+    case "quit":
+      return false;
 
-  // Build contextual actions
-  type Action = { option: ChoiceOption; run: () => Promise<void> };
-  const actions: Action[] = [];
+    case "editor":
+      await actionOpenEditor(action.name, state, config);
+      return false;
 
-  // 1. Open in editor — always available
-  actions.push({
-    option: { label: "Open in editor", description: "Create worktree if needed and open in your editor" },
-    run: () => actionOpenEditor(name, state, config),
-  });
+    case "diff":
+      await actionDiffReview(action.name, state);
+      return true; // loop back to dashboard
 
-  // 2. Resume Claude session — only if sessionId exists
-  if (hasSession) {
-    actions.push({
-      option: { label: "Resume Claude session", description: "Interactive session resume" },
-      run: () => actionResumeSession(name, ws!, state),
-    });
+    case "resume-session": {
+      const ws = state.currentRun?.workstreams?.[action.name];
+      if (ws) await actionResumeSession(action.name, ws, state);
+      return false;
+    }
+
+    case "resume-prompt": {
+      const ws = state.currentRun?.workstreams?.[action.name];
+      if (ws) await actionResumeWithPrompt(action.name, action.prompt, ws, config, state);
+      return false;
+    }
+
+    case "resume-comments": {
+      const ws = state.currentRun?.workstreams?.[action.name];
+      if (ws) await actionResumeWithComments(action.name, ws, config, state);
+      return false;
+    }
   }
-
-  // 3. View diff & review — only if worktree exists
-  if (hasWorktree) {
-    actions.push({
-      option: { label: "View diff & review", description: "Browse changes and add review comments" },
-      run: () => actionDiffReview(name, state),
-    });
-  }
-
-  // 4. Resume with new prompt — only if sessionId exists
-  if (hasSession) {
-    actions.push({
-      option: { label: "Resume with new prompt", description: "Send new instructions to the agent" },
-      run: () => actionResumeWithPrompt(name, ws!, config, state),
-    });
-  }
-
-  // 5. Resume with review comments — only if comments exist
-  if (hasComments) {
-    actions.push({
-      option: { label: "Resume with review comments", description: `${commentsData.comments.length} comment(s) stored` },
-      run: () => actionResumeWithComments(name, ws!, config, state),
-    });
-  }
-
-  const choice = await openChoicePicker(`ws switch ${name}`, actions.map((a) => a.option));
-  if (choice === null) return;
-
-  await actions[choice].run();
 }
 
 // ─── Command ─────────────────────────────────────────────────────────────────
@@ -368,8 +354,8 @@ async function showActionPicker(name: string, state: any, config: any) {
 export function switchCommand() {
   return new Command("switch")
     .description("Switch to a workstream — pick an action (editor, resume, diff, etc.)")
-    .argument("[name]", "workstream name (interactive picker if omitted)")
-    .option("-e, --editor <editor>", "open directly in editor (skip action picker)")
+    .argument("[name]", "workstream name (interactive dashboard if omitted)")
+    .option("-e, --editor <editor>", "open directly in editor (skip dashboard)")
     .option("--no-editor", "don't open an editor, just print the path")
     .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean }) => {
       const noEditor = opts.editor_ === false;
@@ -383,7 +369,7 @@ export function switchCommand() {
 
       const config = await loadConfig("workstream.yaml");
 
-      // If -e flag or --no-editor, go directly to editor flow (old behavior)
+      // If -e flag or --no-editor, go directly to editor flow
       if (name && (directEditor || noEditor)) {
         const absPath = await ensureWorktree(name, state, config);
         console.log(`Switched to ws/${name} at ${absPath}`);
@@ -402,28 +388,29 @@ export function switchCommand() {
         return;
       }
 
-      // If name provided, go straight to action picker
+      // If name provided, open editor directly (shortcut)
       if (name) {
         const def = config.workstreams.find((w: any) => w.name === name);
         if (!def) {
           console.error(`Error: workstream "${name}" not found in workstream.yaml`);
           process.exit(1);
         }
-        await showActionPicker(name, state, config);
+        await actionOpenEditor(name, state, config);
         return;
       }
 
-      // No name — open interactive workstream picker first
+      // No name — open interactive dashboard
       if (config.workstreams.length === 0) {
         console.log("No workstreams defined. Add one with: ws create <name>");
         return;
       }
 
-      const entries = await buildEntries(config, state);
-      const selected = await openWorkstreamPicker(entries);
-
-      if (!selected) return; // user pressed q
-
-      await showActionPicker(selected.name, state, config);
+      // Dashboard loop: after diff viewer, return to dashboard
+      let loop = true;
+      while (loop) {
+        const entries = await buildEntries(config, state);
+        const action = await openDashboard(entries);
+        loop = await dispatchAction(action, state, config);
+      }
     });
 }

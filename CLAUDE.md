@@ -16,7 +16,7 @@ bun test tests/dag.test.ts  # run a single test file
 bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
-The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `status`, `list`, `diff`, `destroy`, `merge`, `resume`, `switch`.
+The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `diff`, `destroy`, `merge`, `resume`, `switch`.
 
 ## workstream.yaml Config Format
 
@@ -58,9 +58,18 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 **CLI commands** (`src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `src/index.ts`.
 - `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`. Skips prompt-less workstreams.
 - `resume.ts` — `ws resume <name>`: non-interactive resume with a new prompt (`-p`) or stored review comments (`--comments`). Clears stored comments on success.
-- `switch.ts` — `ws switch [name]`: two-step interactive flow — pick workstream (TUI picker), then pick action (editor, resume session, view diff, resume with prompt/comments). Supports `-e` for direct editor open.
+- `switch.ts` — `ws switch [name]`: 2-screen flow: (1) `openDashboard` single-screen dashboard with 3-line workstream cards, inline hotkey actions (`Enter`=editor, `d`=diff, `r`=resume, `p`=prompt modal, `c`=comments), fuzzy search (`/`), help overlay (`?`), context-sensitive footer. Returns `DashboardAction`. (2) `openDiffViewer` for browsing changes (returns to dashboard on quit). Supports `-e` for direct editor open, auto-detects and persists the user's preferred editor in state.
 - `merge.ts` — `ws merge [name]`: merge into the current branch. Supports `--squash` and `--no-cleanup`.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
 - `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches.
+
+**TUI layer** (`src/ui/`): All TUI components use raw ANSI escape sequences directly — no external TUI library. They enter the alternate screen, set raw mode, and handle terminal resize.
+- `ansi.ts` — Shared ANSI utilities: color constants (`A`, `C`), `bg256`/`fg256`, cursor/screen helpers, `stripAnsi`, `truncate`, `pad`, `STATUS_STYLE`. Used by all UI files and `list.ts`.
+- `fuzzy.ts` — Simple multi-term AND matching: `fuzzyFilter(items, query, getText)` returns matching indices.
+- `modal.ts` — Reusable modal overlay renderer: `renderModal(opts)` and `renderInputModal(opts)` using Unicode box-drawing, centered on screen.
+- `choice-picker.ts` — `openChoicePicker(title, options)`: modal overlay picker. Returns selected index or `null`. Keys: `j`/`k`/arrows navigate, `enter` confirm, `q`/`ESC` cancel.
+- `workstream-picker.ts` — `openDashboard(entries)`: single-screen dashboard with 3-line card layout, search/prompt/help modals. Returns `DashboardAction`. Also exports `getBranchInfo`, `getDiffStats`, `getBranchDiff` git helpers. `WorkstreamEntry` includes `hasSession`, `commentCount`, `isDirty`.
+- `diff-viewer.ts` — `openDiffViewer(name, rawDiff, options?)`: full-screen diff browser with file list panel + diff panel. Supports unified and side-by-side modes, word-level LCS diff highlighting. Optional `returnLabel` shown in footer. Keys: `Tab`/`h`/`l` switch focus, `t` toggle unified/side-by-side, `n`/`p` next/prev file, `j`/`k` scroll, `g`/`G` top/bottom, `d`/`u` half-page.
+- `diff-parser.ts` — Pure parser: `parseDiff(raw)` converts raw `git diff` output into `ParsedDiff` (files -> hunks -> lines with old/new line numbers and type).
 
 **State directory:** `.workstreams/` (gitignored) contains `state.json`, `trees/` (git worktrees), `logs/` (per-workstream log files), and `comments/` (review comments per workstream).

@@ -1,71 +1,12 @@
 import { $ } from "bun";
-import { parseDiff, fileStat, type FileDiff } from "./diff-parser.js";
-
-// ─── ANSI helpers ────────────────────────────────────────────────────────────
-
-const ESC = "\x1b";
-const CSI = ESC + "[";
-
-const A = {
-  reset: CSI + "0m",
-  bold: CSI + "1m",
-  dim: CSI + "2m",
-  italic: CSI + "3m",
-  black: CSI + "30m",
-  red: CSI + "31m",
-  green: CSI + "32m",
-  yellow: CSI + "33m",
-  blue: CSI + "34m",
-  magenta: CSI + "35m",
-  cyan: CSI + "36m",
-  white: CSI + "37m",
-  brightBlack: CSI + "90m",
-  brightRed: CSI + "91m",
-  brightGreen: CSI + "92m",
-  brightYellow: CSI + "93m",
-  brightBlue: CSI + "94m",
-  brightMagenta: CSI + "95m",
-  brightCyan: CSI + "96m",
-  brightWhite: CSI + "97m",
-  bgBlack: CSI + "40m",
-  bgBrightBlack: CSI + "100m",
-};
-
-const bg256 = (n: number) => `\x1b[48;5;${n}m`;
-const fg256 = (n: number) => `\x1b[38;5;${n}m`;
-
-const C = {
-  selectedBg: bg256(24),
-  footerBg: bg256(235),
-  addLineBg: bg256(22),
-  delLineBg: bg256(52),
-  hunkBg: bg256(17),
-  hunkAt: fg256(67),
-  hunkCtx: fg256(110),
-  scrollTrack: fg256(240),
-};
-
-function moveTo(row: number, col: number) { return `${CSI}${row};${col}H`; }
-function clearScreen() { return CSI + "2J" + moveTo(1, 1); }
-function hideCursor() { return ESC + "[?25l"; }
-function showCursor() { return ESC + "[?25h"; }
-function enterAltScreen() { return ESC + "[?1049h"; }
-function exitAltScreen() { return ESC + "[?1049l"; }
-
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
-function truncate(s: string, width: number): string {
-  if (s.length <= width) return s;
-  return s.slice(0, width - 1) + "…";
-}
-
-function pad(str: string, width: number): string {
-  const len = stripAnsi(str).length;
-  if (len >= width) return str;
-  return str + " ".repeat(width - len);
-}
+import {
+  A, C, bg256, fg256,
+  moveTo, clearScreen, hideCursor, showCursor,
+  enterAltScreen, exitAltScreen,
+  stripAnsi, truncate, pad, STATUS_STYLE,
+} from "./ansi.js";
+import { fuzzyFilter } from "./fuzzy.js";
+import { renderModal, renderInputModal } from "./modal.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,22 +18,36 @@ export interface WorkstreamEntry {
   hasWorktree: boolean;
   ahead: number;
   behind: number;
-  lastCommitAge: string;  // "3h ago", "2d ago", etc.
+  lastCommitAge: string;
   lastCommitMsg: string;
   filesChanged: number;
   additions: number;
   deletions: number;
+  hasSession: boolean;
+  commentCount: number;
+  isDirty: boolean;
 }
 
-interface State {
+export type DashboardAction =
+  | { type: "editor"; name: string }
+  | { type: "diff"; name: string }
+  | { type: "resume-session"; name: string }
+  | { type: "resume-prompt"; name: string; prompt: string }
+  | { type: "resume-comments"; name: string }
+  | { type: "quit" };
+
+type DashboardMode = "normal" | "search" | "prompt-input" | "help";
+
+interface DashboardState {
   entries: WorkstreamEntry[];
-  selected: number;
-  scroll: number;
-  diffScroll: number;
-  diffLines: string[];
+  filteredIndices: number[];
+  selected: number;          // index into filteredIndices
+  scroll: number;            // first visible card index (into filteredIndices)
+  mode: DashboardMode;
+  searchQuery: string;
+  promptInput: string;
   termW: number;
   termH: number;
-  loading: boolean;
 }
 
 // ─── Git helpers ─────────────────────────────────────────────────────────────
@@ -106,17 +61,14 @@ export async function getBranchInfo(branch: string): Promise<{
   const defaults = { ahead: 0, behind: 0, lastCommitAge: "", lastCommitMsg: "" };
 
   try {
-    // Ahead/behind relative to HEAD (main working tree)
     const abResult = await $`git rev-list --left-right --count HEAD...${branch}`.quiet();
     const parts = abResult.stdout.toString().trim().split(/\s+/);
     const behind = parseInt(parts[0], 10) || 0;
     const ahead = parseInt(parts[1], 10) || 0;
 
-    // Last commit message
     const msgResult = await $`git log -1 --format=%s ${branch}`.quiet();
     const lastCommitMsg = msgResult.stdout.toString().trim();
 
-    // Last commit age
     const dateResult = await $`git log -1 --format=%cr ${branch}`.quiet();
     const lastCommitAge = dateResult.stdout.toString().trim();
 
@@ -137,7 +89,6 @@ export async function getDiffStats(branch: string): Promise<{
     const lines = output.split("\n");
     if (lines.length === 0) return { filesChanged: 0, additions: 0, deletions: 0 };
 
-    // Last line is summary: " N files changed, X insertions(+), Y deletions(-)"
     const summary = lines[lines.length - 1];
     const filesMatch = summary.match(/(\d+) files? changed/);
     const addMatch = summary.match(/(\d+) insertions?\(\+\)/);
@@ -162,308 +113,351 @@ export async function getBranchDiff(branch: string): Promise<string> {
   }
 }
 
-// ─── Layout ──────────────────────────────────────────────────────────────────
+// ─── Layout constants ────────────────────────────────────────────────────────
 
-const LIST_PANEL_WIDTH = 50;
 const HEADER_ROWS = 2;
 const FOOTER_ROWS = 1;
+const CARD_HEIGHT = 4; // 3 content lines + 1 blank separator
 
-// ─── Status styling ─────────────────────────────────────────────────────────
+// ─── Card rendering ─────────────────────────────────────────────────────────
 
-const STATUS_STYLE: Record<string, { color: string; icon: string }> = {
-  success: { color: A.brightGreen, icon: "✓" },
-  failed: { color: A.brightRed, icon: "✗" },
-  running: { color: A.brightYellow, icon: "●" },
-  pending: { color: A.brightBlack, icon: "○" },
-  queued: { color: A.cyan, icon: "◉" },
-  waiting: { color: A.brightYellow, icon: "⏸" },
-  workspace: { color: A.brightBlue, icon: "◇" },
-};
+function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number): string[] {
+  const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
+  const sel = isSelected ? C.selectedBg : "";
+  const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
+  const cursor = isSelected ? `${A.brightCyan}\u25B6${selReset}` : " ";
 
-// ─── Rendering ───────────────────────────────────────────────────────────────
+  // Line 1: cursor + status icon + name ... ahead/behind +/- age
+  const nameStr = truncate(entry.name, Math.max(10, cardW - 40));
 
-function renderHeader(s: State): string {
-  const title = `${A.bold}${A.brightWhite} ws switch${A.reset}`;
-  const count = `${A.brightBlack}${s.entries.length} workstream${s.entries.length !== 1 ? "s" : ""}${A.reset}`;
-  const keys = `${A.brightBlack}↑↓ select  │  → preview  │  enter open  │  q quit${A.reset}`;
+  let rightInfo = "";
+  let rightVisLen = 0;
+  if (entry.hasWorktree && (entry.ahead || entry.behind || entry.filesChanged)) {
+    const ab = entry.ahead || entry.behind
+      ? `${A.brightGreen}\u2191${entry.ahead}${selReset} ${A.brightRed}\u2193${entry.behind}${selReset}`
+      : "";
+    const abVis = entry.ahead || entry.behind ? `\u2191${entry.ahead} \u2193${entry.behind}` : "";
+    const stats = entry.filesChanged > 0
+      ? `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}-${entry.deletions}${selReset}`
+      : "";
+    const statsVis = entry.filesChanged > 0 ? `+${entry.additions} -${entry.deletions}` : "";
+    const age = entry.lastCommitAge ? truncate(entry.lastCommitAge, 10) : "";
 
-  const row1 = ` ${title}  ${count}${"  "}${keys} `;
+    const parts = [abVis, statsVis, age].filter(Boolean);
+    rightVisLen = parts.join("  ").length;
+    const colorParts = [ab, stats, age ? `${A.brightBlack}${age}${selReset}` : ""].filter(Boolean);
+    rightInfo = colorParts.join("  ");
+  } else if (!entry.hasWorktree) {
+    rightInfo = `${A.brightBlack}(no changes)${selReset}`;
+    rightVisLen = "(no changes)".length;
+  } else {
+    rightInfo = `${A.brightBlack}=${selReset}`;
+    rightVisLen = 1;
+  }
 
-  const listSeg = LIST_PANEL_WIDTH - 1;
-  const diffSeg = s.termW - LIST_PANEL_WIDTH;
-  const divider =
-    A.brightBlack + "─".repeat(listSeg) + "┬" + "─".repeat(diffSeg) + A.reset;
+  const nameVisLen = ` \u25B6 ${st.icon} ${stripAnsi(nameStr)}`.length;
+  const gap1 = Math.max(1, cardW - nameVisLen - rightVisLen - 2);
+
+  const line1 =
+    sel + ` ${cursor} ${st.color}${st.icon}${selReset}` +
+    (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`) +
+    " ".repeat(gap1) + rightInfo;
+
+  // Line 2: prompt (dimmed, indented)
+  const promptText = entry.prompt
+    ? truncate(entry.prompt, cardW - 6)
+    : `${A.brightBlack}(no prompt)${selReset}`;
+  const line2 = sel + `    ${A.dim}${promptText}${selReset}`;
+
+  // Line 3: session | comments | dirty | last commit
+  const meta: string[] = [];
+  const metaVis: string[] = [];
+
+  if (entry.hasSession) {
+    meta.push(`${A.brightGreen}session: yes${selReset}`);
+    metaVis.push("session: yes");
+  } else if (entry.hasWorktree) {
+    meta.push(`${A.brightBlack}no session${selReset}`);
+    metaVis.push("no session");
+  }
+
+  if (entry.commentCount > 0) {
+    meta.push(`${A.brightYellow}${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}${selReset}`);
+    metaVis.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
+  } else if (entry.hasWorktree) {
+    meta.push(`${A.brightBlack}0 comments${selReset}`);
+    metaVis.push("0 comments");
+  }
+
+  if (entry.hasWorktree) {
+    if (entry.isDirty) {
+      meta.push(`${A.brightYellow}dirty${selReset}`);
+      metaVis.push("dirty");
+    } else {
+      meta.push(`${A.brightBlack}clean${selReset}`);
+      metaVis.push("clean");
+    }
+  }
+
+  if (entry.lastCommitMsg && entry.hasWorktree) {
+    const maxMsg = cardW - 6 - metaVis.join("  |  ").length - 6;
+    if (maxMsg > 8) {
+      meta.push(`${A.dim}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
+    }
+  } else if (!entry.hasWorktree && !entry.prompt) {
+    meta.push(`${A.brightBlack}no worktree${selReset}`);
+  } else if (!entry.hasWorktree) {
+    meta.push(`${A.brightBlack}no worktree${selReset}`);
+  }
+
+  const sep = `${A.brightBlack}  |  ${selReset}`;
+  const line3 = sel + `    ${meta.join(sep)}`;
+
+  return [line1, line2, line3];
+}
+
+// ─── Header ──────────────────────────────────────────────────────────────────
+
+function renderHeader(s: DashboardState): string {
+  const count = s.filteredIndices.length;
+  const total = s.entries.length;
+  const countStr = count === total
+    ? `${A.brightBlack}${total} workstream${total !== 1 ? "s" : ""}`
+    : `${A.brightBlack}${count}/${total} workstreams`;
+
+  const title = `${A.bold}${A.brightWhite} ws switch${A.reset}  ${countStr}${A.reset}`;
+  const hints = `${A.brightBlack}/ search  ? help  q quit${A.reset}`;
+
+  const titleVis = ` ws switch  ` + (count === total ? `${total} workstream${total !== 1 ? "s" : ""}` : `${count}/${total} workstreams`);
+  const hintsVis = "/ search  ? help  q quit";
+  const gap = Math.max(1, s.termW - titleVis.length - hintsVis.length - 2);
+
+  const row1 = ` ${title}` + " ".repeat(gap) + hints + " ";
+  const divider = A.brightBlack + "\u2500".repeat(s.termW) + A.reset;
 
   return moveTo(1, 1) + A.bgBrightBlack + A.brightWhite + pad(row1, s.termW) + A.reset + "\n" + divider;
 }
 
-function renderListPanel(s: State): string {
+// ─── Cards ───────────────────────────────────────────────────────────────────
+
+function renderCards(s: DashboardState): string {
   const contentH = s.termH - HEADER_ROWS - FOOTER_ROWS;
-  const panelW = LIST_PANEL_WIDTH - 1;
+  const visibleCards = Math.floor(contentH / CARD_HEIGHT);
   let out = "";
 
-  for (let i = 0; i < contentH; i++) {
-    const idx = s.scroll + i;
-    const entry = s.entries[idx];
-    const row = HEADER_ROWS + 1 + i;
+  for (let vi = 0; vi < visibleCards; vi++) {
+    const fi = s.scroll + vi; // index into filteredIndices
+    const baseRow = HEADER_ROWS + 1 + vi * CARD_HEIGHT;
 
-    if (!entry) {
-      out += moveTo(row, 1) + " ".repeat(panelW) + A.brightBlack + "│" + A.reset;
-      continue;
-    }
-
-    const selected = idx === s.selected;
-    const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
-
-    // Build the line content
-    const nameStr = truncate(entry.name, panelW - 24);
-    const aheadBehind = entry.ahead || entry.behind
-      ? `${A.brightGreen}↑${entry.ahead}${A.reset} ${A.brightRed}↓${entry.behind}${A.reset}`
-      : `${A.brightBlack}  =${A.reset}`;
-    const abVis = entry.ahead || entry.behind
-      ? `↑${entry.ahead} ↓${entry.behind}`
-      : "  =";
-    const age = entry.lastCommitAge
-      ? truncate(entry.lastCommitAge, 10)
-      : "";
-
-    // Stats
-    const stats = entry.filesChanged > 0
-      ? `${A.brightGreen}+${entry.additions}${A.reset} ${A.brightRed}-${entry.deletions}${A.reset}`
-      : "";
-    const statsVis = entry.filesChanged > 0
-      ? `+${entry.additions} -${entry.deletions}`
-      : "";
-
-    const nameVis = stripAnsi(nameStr);
-    const fixedRight = abVis + "  " + age;
-    const gap = Math.max(1, panelW - 4 - nameVis.length - fixedRight.length);
-
-    let line: string;
-    if (selected) {
-      const cursor = `${A.brightCyan}▶${A.reset}`;
-      line =
-        C.selectedBg + ` ${cursor}${C.selectedBg} ${st.color}${st.icon}${A.reset}` +
-        C.selectedBg + A.bold + A.brightWhite + ` ${nameStr}` + A.reset +
-        C.selectedBg + " ".repeat(gap) +
-        aheadBehind + C.selectedBg + "  " +
-        A.brightBlack + age + A.reset;
-      const lineVis = ` ▶ ${st.icon} ${nameVis}` + " ".repeat(gap) + fixedRight;
-      const trailing = Math.max(0, panelW - lineVis.length);
-      line += C.selectedBg + " ".repeat(trailing) + A.reset;
-    } else {
-      line =
-        `  ${st.color}${st.icon}${A.reset}` +
-        ` ${A.white}${nameStr}${A.reset}` +
-        " ".repeat(gap) +
-        aheadBehind + "  " +
-        A.brightBlack + age + A.reset;
-      const lineVis = `  ${st.icon} ${nameVis}` + " ".repeat(gap) + fixedRight;
-      const trailing = Math.max(0, panelW - lineVis.length);
-      line += " ".repeat(trailing);
-    }
-
-    out += moveTo(row, 1) + line + A.brightBlack + "│" + A.reset;
-  }
-
-  return out;
-}
-
-function buildDiffPreview(rawDiff: string, panelW: number): string[] {
-  if (!rawDiff.trim()) return [A.brightBlack + "  (no changes)" + A.reset];
-
-  const parsed = parseDiff(rawDiff);
-  const lines: string[] = [];
-
-  // Summary line
-  let totalAdd = 0, totalDel = 0;
-  for (const f of parsed.files) {
-    const st = fileStat(f);
-    totalAdd += st.added;
-    totalDel += st.deleted;
-  }
-  lines.push(
-    A.bold + A.brightWhite +
-    ` ${parsed.files.length} file${parsed.files.length !== 1 ? "s" : ""} ` +
-    A.brightGreen + `+${totalAdd} ` +
-    A.brightRed + `-${totalDel}` +
-    A.reset
-  );
-  lines.push("");
-
-  for (const file of parsed.files) {
-    const st = fileStat(file);
-    const statusIcon = file.status === "A" ? A.brightGreen + "✚" :
-                       file.status === "D" ? A.brightRed + "✖" :
-                       A.brightYellow + "●";
-    lines.push(
-      ` ${statusIcon}${A.reset} ${A.bold}${file.path}${A.reset} ` +
-      `${A.brightGreen}+${st.added}${A.reset} ${A.brightRed}-${st.deleted}${A.reset}`
-    );
-
-    if (file.binary) {
-      lines.push(A.brightBlack + "    Binary file" + A.reset);
-      continue;
-    }
-
-    const contentW = panelW - 4;
-    for (const hunk of file.hunks) {
-      // Hunk header
-      const m = hunk.header.match(/^(@@ [^@]+ @@)(.*)?$/);
-      const atPart = m ? m[1] : hunk.header;
-      const ctxPart = m ? (m[2] ?? "") : "";
-      lines.push(
-        C.hunkBg + "  " + C.hunkAt + atPart + A.reset +
-        C.hunkBg + C.hunkCtx + ctxPart + A.reset +
-        C.hunkBg + " ".repeat(Math.max(0, contentW - stripAnsi(atPart + ctxPart).length)) + A.reset
-      );
-
-      for (const dl of hunk.lines) {
-        const content = truncate(dl.content, contentW - 2);
-        const trail = Math.max(0, contentW - content.length - 1);
-        if (dl.type === "add") {
-          lines.push(C.addLineBg + A.brightGreen + "  +" + content + " ".repeat(trail) + A.reset);
-        } else if (dl.type === "del") {
-          lines.push(C.delLineBg + A.brightRed + "  -" + content + " ".repeat(trail) + A.reset);
-        } else {
-          lines.push(A.dim + "   " + content + A.reset);
-        }
+    if (fi >= s.filteredIndices.length) {
+      // Empty rows
+      for (let r = 0; r < CARD_HEIGHT; r++) {
+        out += moveTo(baseRow + r, 1) + " ".repeat(s.termW);
       }
+      continue;
     }
-    lines.push("");
+
+    const entryIdx = s.filteredIndices[fi];
+    const entry = s.entries[entryIdx];
+    const isSelected = fi === s.selected;
+    const cardLines = renderCard(entry, isSelected, s.termW - 2);
+
+    for (let r = 0; r < 3; r++) {
+      const row = baseRow + r;
+      const line = cardLines[r] ?? "";
+      const bg = isSelected ? C.selectedBg : "";
+      const visLen = stripAnsi(line).length;
+      const trail = Math.max(0, s.termW - visLen);
+      out += moveTo(row, 1) + line + bg + " ".repeat(trail) + A.reset;
+    }
+    // Separator line (blank)
+    out += moveTo(baseRow + 3, 1) + " ".repeat(s.termW);
   }
 
-  return lines;
-}
-
-function renderDiffPanel(s: State): string {
-  const contentH = s.termH - HEADER_ROWS - FOOTER_ROWS;
-  const panelX = LIST_PANEL_WIDTH + 1;
-  const panelW = s.termW - LIST_PANEL_WIDTH;
-  const innerW = panelW - 1;
-  let out = "";
-
-  const entry = s.entries[s.selected];
-
-  if (s.loading) {
-    const msg = A.brightBlack + "  Loading diff..." + A.reset;
-    out += moveTo(HEADER_ROWS + 1, panelX) + pad(msg, panelW);
-    for (let r = 1; r < contentH; r++) {
-      out += moveTo(HEADER_ROWS + 1 + r, panelX) + " ".repeat(panelW);
-    }
-    return out;
-  }
-
-  // Header: branch name + stats
-  if (entry) {
-    const stats = entry.filesChanged > 0
-      ? `  ${A.brightGreen}+${entry.additions}${A.reset} ${A.brightRed}-${entry.deletions}${A.reset}  ${A.brightBlack}${entry.filesChanged} file${entry.filesChanged !== 1 ? "s" : ""}${A.reset}`
-      : "";
-    const header = A.bold + A.brightCyan + ` ${entry.branch}` + A.reset + stats;
-    out += moveTo(HEADER_ROWS + 1, panelX) + pad(header, panelW);
-
-    // Second line: last commit
-    if (entry.lastCommitMsg) {
-      const commitLine = `${A.brightBlack} ${entry.lastCommitAge}  ${A.dim}${truncate(entry.lastCommitMsg, innerW - 20)}${A.reset}`;
-      out += moveTo(HEADER_ROWS + 2, panelX) + pad(commitLine, panelW);
-    } else {
-      out += moveTo(HEADER_ROWS + 2, panelX) + " ".repeat(panelW);
-    }
-
-    // Prompt if present
-    const promptLine = entry.prompt
-      ? `${A.brightBlack} ${truncate(entry.prompt, innerW - 2)}${A.reset}`
-      : "";
-    out += moveTo(HEADER_ROWS + 3, panelX) + pad(promptLine, panelW);
-  }
-
-  // Diff content
-  const diffStartRow = HEADER_ROWS + 4;
-  const viewH = contentH - 3;
-  const visible = s.diffLines.slice(s.diffScroll, s.diffScroll + viewH);
-
-  // Scrollbar
-  const total = s.diffLines.length;
-  const hasScroll = total > viewH;
-  const thumbH = hasScroll ? Math.max(1, Math.round((viewH / total) * viewH)) : viewH;
-  const thumbTop = hasScroll && total > viewH
-    ? Math.round((s.diffScroll / (total - viewH)) * (viewH - thumbH))
-    : 0;
-
-  for (let i = 0; i < viewH; i++) {
-    const row = diffStartRow + i;
-    out += moveTo(row, panelX);
-    if (i < visible.length) {
-      const raw = visible[i];
-      const vis = stripAnsi(raw);
-      const trailing = Math.max(0, innerW - vis.length);
-      out += raw + " ".repeat(trailing);
-    } else {
-      out += " ".repeat(innerW);
-    }
-    if (hasScroll) {
-      const inThumb = i >= thumbTop && i < thumbTop + thumbH;
-      out += C.scrollTrack + (inThumb ? "█" : "│") + A.reset;
-    } else {
-      out += " ";
-    }
+  // Fill remaining rows
+  const usedRows = visibleCards * CARD_HEIGHT;
+  for (let r = usedRows; r < contentH; r++) {
+    out += moveTo(HEADER_ROWS + 1 + r, 1) + " ".repeat(s.termW);
   }
 
   return out;
 }
 
-function renderFooter(s: State): string {
-  const entry = s.entries[s.selected];
-  const sep = A.brightBlack + "  │  " + A.brightWhite;
+// ─── Footer ──────────────────────────────────────────────────────────────────
 
-  const items = [
-    `${A.brightYellow}↑↓${A.brightWhite} select`,
-    `${A.brightYellow}jk${A.brightWhite} scroll diff`,
-    `${A.brightYellow}enter${A.brightWhite} open`,
-    `${A.brightYellow}q${A.brightWhite} quit`,
+function renderFooter(s: DashboardState): string {
+  if (s.filteredIndices.length === 0) {
+    const hint = `${A.brightBlack}No matching workstreams${A.reset}`;
+    return moveTo(s.termH, 1) + C.footerBg + pad(`  ${hint}`, s.termW) + A.reset;
+  }
+
+  const entryIdx = s.filteredIndices[s.selected];
+  const entry = s.entries[entryIdx];
+  if (!entry) {
+    return moveTo(s.termH, 1) + C.footerBg + " ".repeat(s.termW) + A.reset;
+  }
+
+  const sep = `${A.brightBlack}  \u2502  ${A.brightWhite}`;
+  const items: string[] = [];
+
+  // enter editor — always available
+  items.push(`${A.brightYellow}enter${A.brightWhite} editor`);
+
+  // d diff — only if worktree with changes
+  if (entry.hasWorktree && entry.filesChanged > 0) {
+    items.push(`${A.brightYellow}d${A.brightWhite} diff`);
+  }
+
+  // r resume — only if session exists
+  if (entry.hasSession) {
+    items.push(`${A.brightYellow}r${A.brightWhite} resume`);
+  }
+
+  // p prompt — only if session exists (resume with new prompt)
+  if (entry.hasSession) {
+    items.push(`${A.brightYellow}p${A.brightWhite} prompt`);
+  }
+
+  // c comments — only if comments stored
+  if (entry.commentCount > 0) {
+    items.push(`${A.brightYellow}c${A.brightWhite} comments (${entry.commentCount})`);
+  }
+
+  const help = C.footerBg + A.brightWhite + "  " + items.join(sep) + A.reset;
+  const quitHint = `${A.brightBlack}q quit${A.reset}`;
+  const helpVis = stripAnsi("  " + items.map(s => stripAnsi(s)).join("  |  "));
+  const quitVisLen = "q quit".length;
+  const gap = Math.max(1, s.termW - helpVis.length - quitVisLen - 4);
+
+  return moveTo(s.termH, 1) + C.footerBg +
+    help + C.footerBg + " ".repeat(gap) + quitHint +
+    C.footerBg + "  " + A.reset;
+}
+
+// ─── Search overlay ──────────────────────────────────────────────────────────
+
+function renderSearchBar(s: DashboardState): string {
+  const barW = Math.min(50, s.termW - 4);
+  const col = Math.floor((s.termW - barW) / 2) + 1;
+  const row = 3; // just below header
+
+  const inputW = barW - 6; // "/ " + cursor + padding
+  const displayVal = s.searchQuery.length > inputW
+    ? s.searchQuery.slice(s.searchQuery.length - inputW)
+    : s.searchQuery;
+  const cursor = "\u2588";
+
+  const bg = bg256(237);
+  const line =
+    bg + ` ${A.brightCyan}/${A.reset}${bg} ${A.brightWhite}${displayVal}${A.brightCyan}${cursor}${A.reset}`;
+  const visLen = 2 + 1 + displayVal.length + 1; // "/ " + val + cursor
+  const trail = Math.max(0, barW - visLen);
+
+  return moveTo(row, col) + line + bg + " ".repeat(trail) + A.reset;
+}
+
+// ─── Help overlay ────────────────────────────────────────────────────────────
+
+function renderHelpOverlay(s: DashboardState): string {
+  const lines = [
+    "",
+    `${A.brightYellow}j${A.reset}/${A.brightYellow}\u2193${A.reset}      Select next workstream`,
+    `${A.brightYellow}k${A.reset}/${A.brightYellow}\u2191${A.reset}      Select previous workstream`,
+    `${A.brightYellow}g${A.reset}          Jump to first`,
+    `${A.brightYellow}G${A.reset}          Jump to last`,
+    `${A.brightYellow}Enter${A.reset}      Open in editor`,
+    `${A.brightYellow}d${A.reset}          View diff`,
+    `${A.brightYellow}r${A.reset}          Resume Claude session`,
+    `${A.brightYellow}p${A.reset}          Resume with prompt`,
+    `${A.brightYellow}c${A.reset}          Resume with comments`,
+    `${A.brightYellow}/${A.reset}          Search workstreams`,
+    `${A.brightYellow}?${A.reset}          Toggle this help`,
+    `${A.brightYellow}q${A.reset}/${A.brightYellow}Esc${A.reset}      Quit`,
+    "",
   ];
 
-  const help = C.footerBg + A.brightWhite + "  " + items.join(sep) + "  " + A.reset;
-  return moveTo(s.termH, 1) + C.footerBg + pad(help, s.termW) + A.reset;
+  return renderModal({
+    title: "Keyboard Shortcuts",
+    lines,
+    width: 44,
+    termW: s.termW,
+    termH: s.termH,
+    footer: `${A.brightBlack}Press any key to dismiss${A.reset}`,
+  });
 }
 
-function render(s: State): string {
-  return (
-    hideCursor() +
-    clearScreen() +
+// ─── Prompt modal ────────────────────────────────────────────────────────────
+
+function renderPromptModal(s: DashboardState): string {
+  return renderInputModal({
+    title: "Enter prompt",
+    value: s.promptInput,
+    cursorPos: s.promptInput.length,
+    termW: s.termW,
+    termH: s.termH,
+    footer: "Enter submit  |  Esc cancel",
+  });
+}
+
+// ─── Full render ─────────────────────────────────────────────────────────────
+
+function render(s: DashboardState): string {
+  let out = hideCursor() + clearScreen() +
     renderHeader(s) +
-    renderListPanel(s) +
-    renderDiffPanel(s) +
-    renderFooter(s)
-  );
+    renderCards(s) +
+    renderFooter(s);
+
+  if (s.mode === "search") out += renderSearchBar(s);
+  if (s.mode === "prompt-input") out += renderPromptModal(s);
+  if (s.mode === "help") out += renderHelpOverlay(s);
+
+  return out;
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// ─── Scroll helpers ──────────────────────────────────────────────────────────
 
-export async function openWorkstreamPicker(
+function visibleCards(s: DashboardState): number {
+  const contentH = s.termH - HEADER_ROWS - FOOTER_ROWS;
+  return Math.floor(contentH / CARD_HEIGHT);
+}
+
+function clampScroll(s: DashboardState): void {
+  const vc = visibleCards(s);
+  if (s.selected < s.scroll) s.scroll = s.selected;
+  if (s.selected >= s.scroll + vc) s.scroll = s.selected - vc + 1;
+  s.scroll = Math.max(0, Math.min(s.scroll, Math.max(0, s.filteredIndices.length - vc)));
+}
+
+function refilter(s: DashboardState): void {
+  s.filteredIndices = fuzzyFilter(
+    s.entries,
+    s.searchQuery,
+    (e) => `${e.name} ${e.prompt ?? ""} ${e.status}`,
+  );
+  s.selected = Math.min(s.selected, Math.max(0, s.filteredIndices.length - 1));
+  clampScroll(s);
+}
+
+// ─── Main entry ──────────────────────────────────────────────────────────────
+
+export async function openDashboard(
   entries: WorkstreamEntry[],
-): Promise<WorkstreamEntry | null> {
+): Promise<DashboardAction> {
   if (entries.length === 0) {
     console.log("No workstreams found.");
-    return null;
+    return { type: "quit" };
   }
 
-  // Preload diff for the first entry
-  const panelW = (process.stdout.columns ?? 120) - LIST_PANEL_WIDTH - 1;
-  let currentDiff = "";
-  if (entries[0].hasWorktree) {
-    currentDiff = await getBranchDiff(entries[0].branch);
-  }
-
-  const state: State = {
+  const state: DashboardState = {
     entries,
+    filteredIndices: entries.map((_, i) => i),
     selected: 0,
     scroll: 0,
-    diffScroll: 0,
-    diffLines: buildDiffPreview(currentDiff, panelW),
+    mode: "normal",
+    searchQuery: "",
+    promptInput: "",
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
-    loading: false,
   };
 
   const stdin = process.stdin;
@@ -477,6 +471,7 @@ export async function openWorkstreamPicker(
   const onResize = () => {
     state.termW = process.stdout.columns ?? 120;
     state.termH = process.stdout.rows ?? 40;
+    clampScroll(state);
     draw();
   };
   process.stdout.on("resize", onResize);
@@ -485,23 +480,8 @@ export async function openWorkstreamPicker(
   stdin.resume();
   stdin.setEncoding("utf8");
 
-  const loadDiff = async (idx: number) => {
-    const entry = state.entries[idx];
-    const pw = state.termW - LIST_PANEL_WIDTH - 1;
-    if (entry.hasWorktree) {
-      state.loading = true;
-      draw();
-      const raw = await getBranchDiff(entry.branch);
-      state.diffLines = buildDiffPreview(raw, pw);
-      state.loading = false;
-    } else {
-      state.diffLines = [A.brightBlack + "  (no worktree — use enter to create)" + A.reset];
-    }
-    state.diffScroll = 0;
-  };
-
-  return new Promise<WorkstreamEntry | null>((resolve) => {
-    const cleanup = (result: WorkstreamEntry | null) => {
+  return new Promise<DashboardAction>((resolve) => {
+    const cleanup = (result: DashboardAction) => {
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
@@ -510,76 +490,217 @@ export async function openWorkstreamPicker(
       resolve(result);
     };
 
-    const onData = async (key: string) => {
-      const contentH = state.termH - HEADER_ROWS - FOOTER_ROWS;
-      const maxScroll = Math.max(0, state.entries.length - contentH);
-      const diffViewH = contentH - 3;
-      const maxDiffScroll = Math.max(0, state.diffLines.length - diffViewH);
+    const selectedEntry = (): WorkstreamEntry | undefined => {
+      if (state.filteredIndices.length === 0) return undefined;
+      return state.entries[state.filteredIndices[state.selected]];
+    };
+
+    const onData = (key: string) => {
+      // ─── Help mode ────────────────────────────────────────────────
+      if (state.mode === "help") {
+        state.mode = "normal";
+        draw();
+        return;
+      }
+
+      // ─── Prompt input mode ────────────────────────────────────────
+      if (state.mode === "prompt-input") {
+        if (key === "\x1b") { // Esc
+          state.mode = "normal";
+          state.promptInput = "";
+          draw();
+          return;
+        }
+        if (key === "\r") { // Enter
+          const entry = selectedEntry();
+          const prompt = state.promptInput.trim();
+          if (entry && prompt) {
+            cleanup({ type: "resume-prompt", name: entry.name, prompt });
+          } else {
+            state.mode = "normal";
+            state.promptInput = "";
+            draw();
+          }
+          return;
+        }
+        if (key === "\x7f" || key === "\b") { // Backspace
+          state.promptInput = state.promptInput.slice(0, -1);
+          draw();
+          return;
+        }
+        if (key === "\x03") { // Ctrl+C
+          state.mode = "normal";
+          state.promptInput = "";
+          draw();
+          return;
+        }
+        // Printable characters
+        if (key.length === 1 && key.charCodeAt(0) >= 32) {
+          state.promptInput += key;
+          draw();
+          return;
+        }
+        // Multi-byte characters (e.g. pasted text)
+        if (key.length > 1 && !key.startsWith("\x1b")) {
+          state.promptInput += key;
+          draw();
+          return;
+        }
+        return;
+      }
+
+      // ─── Search mode ──────────────────────────────────────────────
+      if (state.mode === "search") {
+        if (key === "\x1b") { // Esc — clear search
+          state.searchQuery = "";
+          state.mode = "normal";
+          refilter(state);
+          draw();
+          return;
+        }
+        if (key === "\r") { // Enter — accept filter
+          state.mode = "normal";
+          draw();
+          return;
+        }
+        if (key === "\x7f" || key === "\b") { // Backspace
+          state.searchQuery = state.searchQuery.slice(0, -1);
+          refilter(state);
+          draw();
+          return;
+        }
+        if (key === "\x03") { // Ctrl+C
+          state.searchQuery = "";
+          state.mode = "normal";
+          refilter(state);
+          draw();
+          return;
+        }
+        // Arrow keys navigate within search
+        if (key === "\x1b[B" || key === "\x1b[A") {
+          if (key === "\x1b[B" && state.selected < state.filteredIndices.length - 1) {
+            state.selected++;
+          } else if (key === "\x1b[A" && state.selected > 0) {
+            state.selected--;
+          }
+          clampScroll(state);
+          draw();
+          return;
+        }
+        // Printable
+        if (key.length === 1 && key.charCodeAt(0) >= 32) {
+          state.searchQuery += key;
+          refilter(state);
+          draw();
+          return;
+        }
+        if (key.length > 1 && !key.startsWith("\x1b")) {
+          state.searchQuery += key;
+          refilter(state);
+          draw();
+          return;
+        }
+        return;
+      }
+
+      // ─── Normal mode ──────────────────────────────────────────────
 
       // Quit
-      if (key === "q" || key === "\x03" || key === "\x1b") {
-        cleanup(null);
+      if (key === "q" || key === "\x03") {
+        cleanup({ type: "quit" });
+        return;
+      }
+      if (key === "\x1b") {
+        cleanup({ type: "quit" });
         return;
       }
 
-      // Enter — select
+      // Enter — open editor
       if (key === "\r") {
-        cleanup(state.entries[state.selected]);
+        const entry = selectedEntry();
+        if (entry) cleanup({ type: "editor", name: entry.name });
         return;
       }
 
-      // Up/down — move selection
-      if (key === "\x1b[A" || key === "K") { // Up arrow or shift-K
+      // d — diff
+      if (key === "d") {
+        const entry = selectedEntry();
+        if (entry && entry.hasWorktree && entry.filesChanged > 0) {
+          cleanup({ type: "diff", name: entry.name });
+        }
+        return;
+      }
+
+      // r — resume session
+      if (key === "r") {
+        const entry = selectedEntry();
+        if (entry && entry.hasSession) {
+          cleanup({ type: "resume-session", name: entry.name });
+        }
+        return;
+      }
+
+      // p — prompt input modal
+      if (key === "p") {
+        const entry = selectedEntry();
+        if (entry && entry.hasSession) {
+          state.mode = "prompt-input";
+          state.promptInput = "";
+          draw();
+        }
+        return;
+      }
+
+      // c — resume with comments
+      if (key === "c") {
+        const entry = selectedEntry();
+        if (entry && entry.commentCount > 0) {
+          cleanup({ type: "resume-comments", name: entry.name });
+        }
+        return;
+      }
+
+      // / — search
+      if (key === "/") {
+        state.mode = "search";
+        state.searchQuery = "";
+        draw();
+        return;
+      }
+
+      // ? — help
+      if (key === "?") {
+        state.mode = "help";
+        draw();
+        return;
+      }
+
+      // Navigation
+      if (key === "j" || key === "\x1b[B") {
+        if (state.selected < state.filteredIndices.length - 1) {
+          state.selected++;
+          clampScroll(state);
+        }
+        draw();
+        return;
+      }
+      if (key === "k" || key === "\x1b[A") {
         if (state.selected > 0) {
           state.selected--;
-          if (state.selected < state.scroll) state.scroll = state.selected;
-          await loadDiff(state.selected);
+          clampScroll(state);
         }
         draw();
         return;
       }
-      if (key === "\x1b[B" || key === "J") { // Down arrow or shift-J
-        if (state.selected < state.entries.length - 1) {
-          state.selected++;
-          if (state.selected >= state.scroll + contentH) state.scroll = state.selected - contentH + 1;
-          await loadDiff(state.selected);
-        }
-        draw();
-        return;
-      }
-
-      // j/k — scroll diff
-      if (key === "j") {
-        state.diffScroll = Math.min(state.diffScroll + 1, maxDiffScroll);
-        draw();
-        return;
-      }
-      if (key === "k") {
-        state.diffScroll = Math.max(state.diffScroll - 1, 0);
-        draw();
-        return;
-      }
-
-      // g/G — top/bottom of diff
       if (key === "g") {
-        state.diffScroll = 0;
+        state.selected = 0;
+        clampScroll(state);
         draw();
         return;
       }
       if (key === "G") {
-        state.diffScroll = maxDiffScroll;
-        draw();
-        return;
-      }
-
-      // d/u — half-page scroll diff
-      if (key === "d") {
-        state.diffScroll = Math.min(state.diffScroll + Math.floor(diffViewH / 2), maxDiffScroll);
-        draw();
-        return;
-      }
-      if (key === "u") {
-        state.diffScroll = Math.max(state.diffScroll - Math.floor(diffViewH / 2), 0);
+        state.selected = Math.max(0, state.filteredIndices.length - 1);
+        clampScroll(state);
         draw();
         return;
       }
