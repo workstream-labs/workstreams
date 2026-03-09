@@ -6,6 +6,7 @@ const COMMENTS_DIR = ".workstreams/comments";
 export interface ReviewComment {
   filePath: string;
   line?: number;
+  side?: "old" | "new";
   text: string;
   createdAt: string;
 }
@@ -43,11 +44,21 @@ export async function clearComments(name: string): Promise<void> {
   } catch {}
 }
 
+export async function deleteComment(name: string, index: number): Promise<WorkstreamComments> {
+  const data = await loadComments(name);
+  data.comments.splice(index, 1);
+  data.updatedAt = new Date().toISOString();
+  await saveComments(data);
+  return data;
+}
+
 export function formatCommentsAsPrompt(data: WorkstreamComments): string {
   if (data.comments.length === 0) return "";
 
   const lines = data.comments.map((c) => {
-    const loc = c.line ? `${c.filePath}:${c.line}` : c.filePath;
+    const loc = c.line
+      ? `${c.filePath}:${c.line}${c.side ? ` (${c.side})` : ""}`
+      : c.filePath;
     return `- **${loc}**: ${c.text}`;
   });
 

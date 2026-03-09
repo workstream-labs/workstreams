@@ -1,7 +1,7 @@
 // Full-featured diff viewer for workstreams, built on critique's DiffView component.
 // Layout matches: header (← file +N-N →), scrollable diff, footer (prev/next/keybindings),
 // optional workstream tabs. Supports syntax highlighting, theme picker, file picker,
-// split/unified view, vim-style scroll, and mouse.
+// split/unified view, vim-style scroll, and mouse. Inline commenting with c key.
 
 import "critique/dist/patch-terminal-dimensions.js";
 
@@ -10,7 +10,9 @@ import {
   createCliRenderer,
   addDefaultParsers,
   MacOSScrollAccel,
+  SyntaxStyle,
   type ScrollBoxRenderable,
+  type DiffRenderable,
 } from "@opentuah/core";
 import {
   createRoot,
@@ -19,7 +21,6 @@ import {
   useRenderer,
 } from "@opentuah/react";
 import { parsePatch, formatPatch } from "diff";
-import { DiffView } from "critique/dist/components/diff-view.js";
 import {
   processFiles,
   parseGitDiffFiles,
@@ -31,10 +32,16 @@ import {
   detectFiletype,
   type ParsedFile,
 } from "critique/dist/diff-utils.js";
-import { getResolvedTheme, themeNames, rgbaToHex } from "critique/dist/themes.js";
+import { getResolvedTheme, getSyntaxTheme, themeNames, rgbaToHex } from "critique/dist/themes.js";
 import { useAppStore } from "critique/dist/store.js";
 import Dropdown from "critique/dist/dropdown.js";
 import parsersConfig from "critique/dist/parsers-config.js";
+import {
+  loadComments,
+  saveComments,
+  type ReviewComment,
+  type WorkstreamComments,
+} from "../core/comments";
 
 let parsersRegistered = false;
 
@@ -48,13 +55,215 @@ class ScrollAccel {
   reset() { this.inner.reset(); }
 }
 
+// --- Line map for cursor navigation ---
+
+interface LineInfo {
+  type: "context" | "add" | "remove" | "hunk-header";
+  oldLine?: number;
+  newLine?: number;
+}
+
+function parseDiffToLineMap(rawDiff: string): LineInfo[] {
+  const patches = parsePatch(rawDiff);
+  const map: LineInfo[] = [];
+  for (const patch of patches) {
+    for (const hunk of patch.hunks) {
+      map.push({ type: "hunk-header" });
+      let old = hunk.oldStart, neu = hunk.newStart;
+      for (const ln of hunk.lines) {
+        const ch = ln[0];
+        if (ch === " ") map.push({ type: "context", oldLine: old++, newLine: neu++ });
+        else if (ch === "-") map.push({ type: "remove", oldLine: old++ });
+        else if (ch === "+") map.push({ type: "add", newLine: neu++ });
+        // '\' no-newline marker: skip
+      }
+    }
+  }
+  return map;
+}
+
+// --- DiffWithCursor: inlines DiffView color setup and exposes a ref for cursor highlight ---
+
+interface DiffWithCursorProps {
+  diff: string;
+  view: "unified" | "split";
+  filetype?: string;
+  themeName: string;
+  diffRef: React.RefObject<DiffRenderable | null>;
+}
+
+function DiffWithCursor({ diff, view, filetype, themeName, diffRef }: DiffWithCursorProps): React.ReactElement {
+  const resolvedTheme = React.useMemo(() => getResolvedTheme(themeName), [themeName]);
+  const syntaxStyle = React.useMemo(() => SyntaxStyle.fromStyles(getSyntaxTheme(themeName)), [themeName]);
+  const colors = React.useMemo(() => ({
+    text: rgbaToHex(resolvedTheme.text),
+    bgPanel: rgbaToHex(resolvedTheme.backgroundPanel),
+    diffAddedBg: rgbaToHex(resolvedTheme.diffAddedBg),
+    diffRemovedBg: rgbaToHex(resolvedTheme.diffRemovedBg),
+    diffLineNumber: rgbaToHex(resolvedTheme.diffLineNumber),
+    diffAddedLineNumberBg: rgbaToHex(resolvedTheme.diffAddedLineNumberBg),
+    diffRemovedLineNumberBg: rgbaToHex(resolvedTheme.diffRemovedLineNumberBg),
+  }), [resolvedTheme]);
+
+  return (
+    <box style={{ backgroundColor: colors.bgPanel }}>
+      <diff
+        ref={diffRef}
+        diff={diff}
+        view={view}
+        fg={colors.text}
+        filetype={filetype}
+        syntaxStyle={syntaxStyle}
+        showLineNumbers={true}
+        wrapMode="word"
+        addedBg={colors.diffAddedBg}
+        removedBg={colors.diffRemovedBg}
+        contextBg={colors.bgPanel}
+        addedContentBg={colors.diffAddedBg}
+        removedContentBg={colors.diffRemovedBg}
+        contextContentBg={colors.bgPanel}
+        lineNumberFg={colors.diffLineNumber}
+        lineNumberBg={colors.bgPanel}
+        addedLineNumberBg={colors.diffAddedLineNumberBg}
+        removedLineNumberBg={colors.diffRemovedLineNumberBg}
+        selectionBg="#264F78"
+        selectionFg="#FFFFFF"
+      />
+    </box>
+  );
+}
+
+// --- CommentForm ---
+
+interface CommentFormProps {
+  fileName: string;
+  fileLine?: number;
+  side: "old" | "new";
+  viewMode: "unified" | "split";
+  onTextChange: (v: string) => void;
+  onCancel: () => void;
+  textColor: string;
+  mutedColor: string;
+  bg: string;
+  style?: any;
+  initialValue?: string;
+  isEditing?: boolean;
+}
+
+function CommentForm({
+  fileName,
+  fileLine,
+  side,
+  viewMode,
+  onTextChange,
+  textColor,
+  mutedColor,
+  bg,
+  style,
+  initialValue,
+  isEditing,
+}: CommentFormProps): React.ReactElement {
+  const loc = fileLine !== undefined ? `${fileName}:${fileLine}` : fileName;
+  return (
+    <box
+      style={{
+        flexShrink: 0,
+        minHeight: 10,
+        borderStyle: "single",
+        borderColor: mutedColor,
+        marginLeft: 1,
+        marginRight: 1,
+        marginBottom: 1,
+        padding: 1,
+        flexDirection: "column",
+        ...style,
+      }}
+    >
+      <box style={{ flexDirection: "row" }}>
+        <text fg={mutedColor}>{isEditing ? "editing comment on " : "commenting on "}</text>
+        <text fg={textColor}>{loc}</text>
+        {viewMode === "split" && (
+          <>
+            <text fg={mutedColor}>  side: </text>
+            <text fg={textColor}>{side === "old" ? "◀ old" : "new ▶"}</text>
+          </>
+        )}
+      </box>
+      <textarea
+        placeholder="Write a comment..."
+        initialValue={initialValue}
+        focused={true}
+        onInput={onTextChange}
+        style={{ marginTop: 1, minHeight: 3, backgroundColor: bg }}
+      />
+      <box style={{ flexDirection: "row", marginTop: 1 }}>
+        <text fg={textColor}>ctrl+s</text>
+        <text fg={mutedColor}> {isEditing ? "update" : "submit"}  ·  </text>
+        <text fg={textColor}>esc</text>
+        <text fg={mutedColor}> cancel</text>
+        {isEditing && (
+          <>
+            <text fg={mutedColor}>  ·  </text>
+            <text fg="#c53b53">ctrl+d</text>
+            <text fg={mutedColor}> delete</text>
+          </>
+        )}
+      </box>
+    </box>
+  );
+}
+
+// --- CommentsPanel ---
+
+interface CommentsPanelProps {
+  fileComments: ReviewComment[];
+  textColor: string;
+  mutedColor: string;
+}
+
+function CommentsPanel({
+  fileComments,
+  textColor,
+  mutedColor,
+}: CommentsPanelProps): React.ReactElement {
+  return (
+    <box
+      style={{
+        flexShrink: 0,
+        maxHeight: 6,
+        marginLeft: 1,
+        marginRight: 1,
+        marginBottom: 1,
+        borderStyle: "single",
+        borderColor: mutedColor,
+        flexDirection: "column",
+        padding: 1,
+      }}
+    >
+      {fileComments.map((c, i) => (
+        <box key={i} style={{ flexDirection: "row" }}>
+          <text fg={mutedColor}>{"  "}</text>
+          <text fg={c.line !== undefined ? textColor : mutedColor}>
+            {c.line !== undefined ? String(c.line) : "—"}
+          </text>
+          <text fg={mutedColor}>{c.side ? ` (${c.side})` : " "} · </text>
+          <text fg={textColor}>{c.text}</text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+// --- DiffApp ---
+
 interface DiffAppProps {
+  name: string;
   files: ProcessedFile[];
   currentWorkstream?: string;
   workstreams?: string[];
 }
 
-function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React.ReactElement {
+function DiffApp({ name, files, currentWorkstream, workstreams }: DiffAppProps): React.ReactElement {
   const [fileIndex, setFileIndex] = React.useState(0);
   const [showFilePicker, setShowFilePicker] = React.useState(false);
   const [showThemePicker, setShowThemePicker] = React.useState(false);
@@ -66,17 +275,156 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
   const renderer = useRenderer();
   const { width } = useTerminalDimensions();
 
+  // Cursor
+  const [cursorLine, setCursorLine] = React.useState(0);
+  const diffRef = React.useRef<DiffRenderable | null>(null);
+  // True while a keyboard/programmatic scroll is in flight — suppresses scroll→cursor sync
+  const keyboardScrollRef = React.useRef(false);
+
+  // Comment state
+  const [showCommentForm, setShowCommentForm] = React.useState(false);
+  const commentTextRef = React.useRef("");
+  const [commentSide, setCommentSide] = React.useState<"old" | "new">("new");
+  const [commentFileLine, setCommentFileLine] = React.useState<number | undefined>();
+  const [comments, setComments] = React.useState<WorkstreamComments | null>(null);
+  const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
+  const [flashMessage, setFlashMessage] = React.useState<string | null>(null);
+
   const themeName = useAppStore((s: { themeName: string }) => s.themeName);
   const activeTheme = previewTheme ?? themeName;
   const resolvedTheme = getResolvedTheme(activeTheme);
   const bg = resolvedTheme.background;
   const textColor = rgbaToHex(resolvedTheme.text);
   const mutedColor = rgbaToHex(resolvedTheme.textMuted);
+  const accentColor = "#00b8d9";
+  const commentMarkerColor = "#e5c07b";
 
   const file = files[fileIndex];
   const hasPrev = fileIndex > 0;
   const hasNext = fileIndex < files.length - 1;
   const arrowColor = (active: boolean) => active ? textColor : mutedColor;
+  const fileName = file ? getFileName(file) : "";
+
+  // Per-file line map for cursor navigation
+  const lineMap = React.useMemo(
+    () => file ? parseDiffToLineMap(file.rawDiff) : [],
+    [file],
+  );
+
+  // Compute viewMode here so handleCommentSubmit can close over it
+  const { additions, deletions } = file ? countChanges(file.hunks) : { additions: 0, deletions: 0 };
+  const viewMode = viewOverride ?? getViewMode(additions, deletions, width);
+
+  const refreshComments = React.useCallback(async () => {
+    const data = await loadComments(name);
+    setComments(data);
+  }, [name]);
+
+  React.useEffect(() => { refreshComments(); }, [refreshComments]);
+
+  // Reset cursor and edit state when navigating to a different file
+  React.useEffect(() => {
+    setCursorLine(0);
+    diffRef.current?.clearAllLineColors();
+    setEditingCommentIndex(null);
+  }, [fileIndex]);
+
+  // Sync cursor to trackpad/mouse scroll — skip when keyboard initiated the scroll
+  React.useEffect(() => {
+    const sb = scrollboxRef.current;
+    if (!sb) return;
+    const handler = ({ position }: { position: number }) => {
+      if (keyboardScrollRef.current) return;
+      const line = Math.round(position);
+      if (line >= 0 && line < lineMap.length) {
+        setCursorLine(line);
+      }
+    };
+    sb.on("change", handler);
+    return () => { sb.off("change", handler); };
+  }, [lineMap]);
+
+  const fileComments = React.useMemo(
+    () => comments?.comments.filter(c => c.filePath === fileName) ?? [],
+    [comments, fileName],
+  );
+
+  // Map commented lines to { lineMapIndex -> side } for per-panel gutter highlighting
+  const commentedLineMap = React.useMemo(() => {
+    const result = new Map<number, "old" | "new">();
+    const annotated = fileComments.filter(c => c.line !== undefined);
+    if (annotated.length === 0) return result;
+    lineMap.forEach((info, idx) => {
+      for (const c of annotated) {
+        // Match by line type + line number — side disambiguates when old/new share the same number
+        if (info.type === "add" && info.newLine === c.line && c.side !== "old") {
+          result.set(idx, "new");
+        } else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") {
+          result.set(idx, "old");
+        }
+      }
+    });
+    return result;
+  }, [fileComments, lineMap]);
+
+  // Apply cursor highlight and comment markers whenever relevant state changes
+  React.useEffect(() => {
+    const dr = diffRef.current;
+    if (!dr) return;
+    dr.clearAllLineColors();
+    const drAny = dr as any;
+    for (const [idx, side] of commentedLineMap) {
+      if (viewMode === "split") {
+        // Color only the relevant panel to avoid showing the marker on the blank opposite side
+        const panel = side === "old" ? drAny.leftSide : drAny.rightSide;
+        panel?.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
+      } else {
+        dr.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
+      }
+    }
+    if (cursorLine >= 0 && cursorLine < lineMap.length) {
+      dr.setLineColor(cursorLine, { gutter: accentColor, content: accentColor + "33" });
+    }
+  }, [cursorLine, lineMap, accentColor, commentedLineMap, commentMarkerColor, viewMode]);
+
+  const handleCommentSubmit = async (text: string) => {
+    if (!text.trim()) { setShowCommentForm(false); return; }
+    const current = comments ?? { workstream: name, comments: [], updatedAt: new Date().toISOString() };
+    let updated: WorkstreamComments;
+    if (editingCommentIndex !== null) {
+      const updatedList = [...current.comments];
+      updatedList[editingCommentIndex] = { ...updatedList[editingCommentIndex], text: text.trim() };
+      updated = { ...current, comments: updatedList };
+    } else {
+      const newComment: ReviewComment = {
+        filePath: fileName,
+        line: commentFileLine,
+        side: commentSide,
+        text: text.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      updated = { ...current, comments: [...current.comments, newComment] };
+    }
+    await saveComments(updated);
+    await refreshComments();
+    setShowCommentForm(false);
+    setEditingCommentIndex(null);
+    setFlashMessage("✔ comment saved");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleCommentDelete = async () => {
+    if (editingCommentIndex === null) return;
+    const current = comments ?? { workstream: name, comments: [], updatedAt: new Date().toISOString() };
+    const updatedList = [...current.comments];
+    updatedList.splice(editingCommentIndex, 1);
+    await saveComments({ ...current, comments: updatedList });
+    await refreshComments();
+    setShowCommentForm(false);
+    setEditingCommentIndex(null);
+    setFlashMessage("✔ comment deleted");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
 
   useKeyboard((key: any) => {
     if (showFilePicker || showThemePicker) {
@@ -84,6 +432,20 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
         setShowFilePicker(false);
         setShowThemePicker(false);
         setPreviewTheme(null);
+      }
+      return;
+    }
+
+    // Comment form: handle submit, cancel, and side-toggle; everything else goes to textarea
+    if (showCommentForm) {
+      if (key.name === "escape") { setShowCommentForm(false); return; }
+      if (key.ctrl && key.name === "s") {
+        handleCommentSubmit(commentTextRef.current);
+        return;
+      }
+      if (key.ctrl && key.name === "d" && editingCommentIndex !== null) {
+        handleCommentDelete();
+        return;
       }
       return;
     }
@@ -97,7 +459,55 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
       return;
     }
 
-    const scrollToTop = () => scrollboxRef.current?.scrollTo(0);
+    // Cursor navigation — ↑/↓ and j/k both always move the line cursor
+    if (key.name === "j" || key.name === "down") {
+      const next = Math.min(cursorLine + 1, lineMap.length - 1);
+      setCursorLine(next);
+      keyboardScrollRef.current = true;
+      scrollboxRef.current?.scrollTo(next);
+      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+      return;
+    }
+    if (key.name === "k" || key.name === "up") {
+      const prev = Math.max(cursorLine - 1, 0);
+      setCursorLine(prev);
+      keyboardScrollRef.current = true;
+      scrollboxRef.current?.scrollTo(prev);
+      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+      return;
+    }
+
+    // Open comment form — only on added (+) or removed (-) lines
+    if (key.name === "c") {
+      const info = lineMap[cursorLine];
+      if (!info || (info.type !== "add" && info.type !== "remove")) return;
+
+      // Side is always determined by line type — consistent across unified and split
+      const autoSide: "old" | "new" = info.type === "add" ? "new" : "old";
+      const fileLine = info.type === "add" ? info.newLine : info.oldLine;
+
+      const existingIdx = comments?.comments.findIndex(
+        c => c.filePath === fileName && c.line === fileLine && c.side === autoSide
+      ) ?? -1;
+      if (existingIdx >= 0) {
+        const existing = comments!.comments[existingIdx];
+        commentTextRef.current = existing.text;
+        setEditingCommentIndex(existingIdx);
+      } else {
+        commentTextRef.current = "";
+        setEditingCommentIndex(null);
+      }
+      setCommentSide(autoSide);
+      setCommentFileLine(fileLine);
+      setShowCommentForm(true);
+      return;
+    }
+
+    const scrollToTop = () => {
+      keyboardScrollRef.current = true;
+      scrollboxRef.current?.scrollTo(0);
+      setTimeout(() => { keyboardScrollRef.current = false; }, 100);
+    };
 
     if (key.name === "right") {
       if (hasNext) { setFileIndex((i) => i + 1); scrollToTop(); }
@@ -137,11 +547,8 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
     );
   }
 
-  const fileName = file ? getFileName(file) : "";
   const oldFileName = file ? getOldFileName(file) : undefined;
   const filetype = fileName ? detectFiletype(fileName) : undefined;
-  const { additions, deletions } = file ? countChanges(file.hunks) : { additions: 0, deletions: 0 };
-  const viewMode = viewOverride ?? getViewMode(additions, deletions, width);
 
   const fileOptions = files.map((f, idx) => ({
     title: getFileName(f),
@@ -150,6 +557,8 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
   }));
 
   const themeOpts = themeNames.map((n: string) => ({ title: n, value: n }));
+
+  const showNormalUI = !showFilePicker && !showThemePicker;
 
   return (
     <box style={{ flexDirection: "column", height: "100%", backgroundColor: bg }}>
@@ -194,7 +603,7 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
       )}
 
       {/* Header: ← filename +N -N → */}
-      {!showFilePicker && !showThemePicker && (
+      {showNormalUI && (
         <box
           style={{
             flexShrink: 0,
@@ -237,20 +646,57 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
             trackOptions: { foregroundColor: mutedColor, backgroundColor: bg },
           },
         }}
-        focused={!showFilePicker && !showThemePicker}
+        focused={showNormalUI && !showCommentForm}
       >
         {file && (
-          <DiffView
+          <DiffWithCursor
             diff={file.rawDiff ?? ""}
             view={viewMode}
             filetype={filetype}
             themeName={activeTheme}
+            diffRef={diffRef}
           />
         )}
       </scrollbox>
 
-      {/* Footer: ← prev        [q quit  ctrl p files  s split  t theme]        next → */}
-      {!showFilePicker && !showThemePicker && (
+      {/* Flash confirmation */}
+      {showNormalUI && flashMessage && (
+        <box style={{ flexDirection: "row", justifyContent: "center", paddingBottom: 1 }}>
+          <text fg="#2d8a47">{flashMessage}</text>
+        </box>
+      )}
+
+      {/* Comment form — matches split panel width (50%) or full-width in unified */}
+      {showNormalUI && showCommentForm && (
+        <box style={{ flexDirection: "row", width: "100%", flexShrink: 0 }}>
+          {/* Left spacer: pushes form to the right panel in split-new */}
+          {viewMode === "split" && commentSide === "new"
+            ? <box style={{ width: "50%" }} />
+            : null}
+          <CommentForm
+            key={editingCommentIndex !== null ? `edit-${editingCommentIndex}` : "new"}
+            fileName={fileName}
+            fileLine={commentFileLine}
+            side={commentSide}
+            viewMode={viewMode}
+            onTextChange={(v) => { commentTextRef.current = v; }}
+            onCancel={() => setShowCommentForm(false)}
+            textColor={textColor}
+            mutedColor={mutedColor}
+            bg={bg}
+            style={{ width: viewMode === "split" ? "50%" : "100%" }}
+            initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
+            isEditing={editingCommentIndex !== null}
+          />
+          {/* Right spacer: pushes form to the left panel in split-old */}
+          {viewMode === "split" && commentSide === "old"
+            ? <box style={{ width: "50%" }} />
+            : null}
+        </box>
+      )}
+
+      {/* Footer */}
+      {showNormalUI && (
         <box
           style={{
             flexShrink: 0,
@@ -273,6 +719,10 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
             <text fg={mutedColor}> quit  </text>
             <text fg={textColor}>ctrl p</text>
             <text fg={mutedColor}> files ({fileIndex + 1}/{files.length})  </text>
+            <text fg={textColor}>↑↓</text>
+            <text fg={mutedColor}> cursor  </text>
+            <text fg={textColor}>c</text>
+            <text fg={mutedColor}> comment  </text>
             <text fg={textColor}>s</text>
             <text fg={mutedColor}> {viewMode}  </text>
             <text fg={textColor}>t</text>
@@ -288,7 +738,7 @@ function DiffApp({ files, currentWorkstream, workstreams }: DiffAppProps): React
       )}
 
       {/* Workstream tabs */}
-      {workstreams && workstreams.length > 1 && !showFilePicker && !showThemePicker && (
+      {workstreams && workstreams.length > 1 && showNormalUI && (
         <box
           style={{
             flexShrink: 0,
@@ -343,6 +793,7 @@ export async function openDiffViewer(
 
     createRoot(renderer).render(
       <DiffApp
+        name={name}
         files={files}
         currentWorkstream={name}
         workstreams={options?.workstreams}
