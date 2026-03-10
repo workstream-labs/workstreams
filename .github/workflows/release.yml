@@ -15,12 +15,16 @@ jobs:
         include:
           - os: macos-latest
             target: darwin-arm64
-          - os: macos-13
+            bun_target: bun-darwin-arm64
+          - os: macos-latest
             target: darwin-x64
+            bun_target: bun-darwin-x64
           - os: ubuntu-latest
             target: linux-x64
+            bun_target: bun-linux-x64
           - os: ubuntu-24.04-arm
             target: linux-arm64
+            bun_target: bun-linux-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -34,7 +38,7 @@ jobs:
       - run: bun install
 
       - name: Build binary
-        run: bun build --compile src/index.ts --outfile ws-${{ matrix.target }}
+        run: bun build --compile --target=${{ matrix.bun_target }} src/index.ts --outfile ws-${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
