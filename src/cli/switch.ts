@@ -562,6 +562,15 @@ export function switchCommand() {
             }
             entry.status = st;
             entry.hasSession = !!wsState.sessionId;
+
+            // Quick dirty check for diff option visibility
+            if (entry.hasWorktree && !entry.isDirty) {
+              const { $ } = await import("bun");
+              try {
+                const r = await $`git -C ${`.workstreams/trees/${entry.name}`} status --porcelain`.quiet();
+                entry.isDirty = !!(r.stdout.toString().trim());
+              } catch {}
+            }
           }
           return updated;
         };
