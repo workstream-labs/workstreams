@@ -5,12 +5,19 @@
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | sh
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/workstream-labs/workstreams.git
+cd workstreams
 bun install
 bun link        # makes `ws` available globally
 ```
 
 Requires:
-- [Bun](https://bun.sh)
 - [tmux](https://github.com/tmux/tmux) — `brew install tmux` (macOS) / `apt install tmux` (Linux)
 - At least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)) installed and available in your `$PATH`
 
