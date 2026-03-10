@@ -1,14 +1,21 @@
 import { Command } from "commander";
 import { loadState, saveState, defaultState } from "../core/state";
 import { WorktreeManager } from "../core/worktree";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
+import { rm, unlink } from "fs/promises";
 
 export function destroyCommand() {
   return new Command("destroy")
-    .description("Remove workstream worktrees and reset state")
+    .description("Remove a workstream (worktree, config entry, state, logs, comments)")
     .argument("[name]", "workstream name to destroy")
-    .option("--all", "destroy all workstreams and reset workstream.yaml")
+    .option("--all", "destroy everything: all worktrees, workstream.yaml, and .workstreams/")
     .option("-y, --yes", "skip confirmation")
+    .addHelpText("after", `
+Examples:
+  ws destroy auth-feature    Remove the "auth-feature" workstream entirely
+  ws destroy --all           Tear down all workstreams and remove config files
+  ws destroy --all -y        Same as above, skip confirmation prompt
+`)
     .action(async (name: string | undefined, opts: { all?: boolean; yes?: boolean }) => {
       const state = await loadState();
       if (!state) {
@@ -20,13 +27,13 @@ export function destroyCommand() {
       const wt = new WorktreeManager();
 
       if (opts.all) {
-        // Destroy everything: all worktrees, reset state, clear workstream.yaml
+        // Destroy everything: all worktrees, delete workstream.yaml and .workstreams/
         const toDestroy = run ? Object.keys(run.workstreams) : [];
 
         if (!opts.yes) {
           const msg = toDestroy.length > 0
-            ? `Destroy all workstreams (${toDestroy.join(", ")}) and reset config?`
-            : "Reset workstream config?";
+            ? `Destroy all workstreams (${toDestroy.join(", ")}), workstream.yaml, and .workstreams/?`
+            : "Delete workstream.yaml and .workstreams/?";
           process.stdout.write(`${msg} [y/N] `);
           const reader = Bun.stdin.stream().getReader();
           const { value } = await reader.read();
@@ -44,26 +51,22 @@ export function destroyCommand() {
           console.log(" done");
         }
 
-        // Reset state
-        state.currentRun = undefined;
-        await saveState(state);
+        // Delete workstream.yaml entirely
+        await unlink("workstream.yaml").catch(() => {});
 
-        // Clear workstreams from yaml
-        const configFile = Bun.file("workstream.yaml");
-        if (await configFile.exists()) {
-          const { parse } = await import("yaml");
-          const raw = parse(await configFile.text());
-          raw.workstreams = {};
-          await Bun.write("workstream.yaml", stringify(raw));
-        }
+        // Delete .workstreams/ directory recursively
+        await rm(".workstreams", { recursive: true, force: true }).catch(() => {});
 
-        console.log("All workstreams destroyed. workstream.yaml reset.");
+        console.log("All workstreams destroyed. workstream.yaml and .workstreams/ removed.");
         return;
       }
 
       // Single workstream destroy
       if (!name) {
-        console.error("Specify a workstream name or use --all");
+        console.error("Error: specify a workstream name or use --all to destroy everything.");
+        console.error("\nUsage:");
+        console.error("  ws destroy <name>    Destroy a single workstream");
+        console.error("  ws destroy --all     Destroy all workstreams and config files");
         process.exit(1);
       }
 
@@ -88,6 +91,20 @@ export function destroyCommand() {
       await wt.remove(name);
       delete run.workstreams[name];
       console.log(" done");
+
+      // Remove entry from workstream.yaml
+      const configFile = Bun.file("workstream.yaml");
+      if (await configFile.exists()) {
+        const raw = parse(await configFile.text());
+        if (raw.workstreams && raw.workstreams[name]) {
+          delete raw.workstreams[name];
+          await Bun.write("workstream.yaml", stringify(raw));
+        }
+      }
+
+      // Delete comments and log files
+      await unlink(`.workstreams/comments/${name}.json`).catch(() => {});
+      await unlink(`.workstreams/logs/${name}.log`).catch(() => {});
 
       if (Object.keys(run.workstreams).length === 0) {
         state.currentRun = undefined;

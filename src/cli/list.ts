@@ -167,8 +167,15 @@ export async function listAction(configPath: string = "workstream.yaml") {
 
 export function listCommand() {
   return new Command("list")
-    .description("List workstreams and their status")
+    .description("Show all workstreams with status, branch info, and diff stats")
     .option("-c, --config <path>", "config file path", "workstream.yaml")
+    .addHelpText("after", `
+Examples:
+  ws list                Show status of all workstreams
+  ws list -c custom.yaml Use a custom config file
+
+Statuses: pending, running, success, failed, workspace (no prompt).
+`)
     .action(async (opts: { config: string }) => {
       await listAction(opts.config);
     });

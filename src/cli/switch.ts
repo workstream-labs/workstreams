@@ -353,10 +353,20 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
 export function switchCommand() {
   return new Command("switch")
-    .description("Switch to a workstream — pick an action (editor, resume, diff, etc.)")
-    .argument("[name]", "workstream name (interactive dashboard if omitted)")
-    .option("-e, --editor <editor>", "open directly in editor (skip dashboard)")
-    .option("--no-editor", "don't open an editor, just print the path")
+    .description("Open the interactive TUI dashboard, or jump to a workstream in your editor")
+    .argument("[name]", "workstream name (opens editor directly; omit for dashboard)")
+    .option("-e, --editor <editor>", "open directly in a specific editor (e.g. code, cursor, zed)")
+    .option("--no-editor", "print the worktree path without opening an editor")
+    .addHelpText("after", `
+Examples:
+  ws switch                  Open the interactive dashboard
+  ws switch auth-feature     Open "auth-feature" in your default editor
+  ws switch auth -e cursor   Open in Cursor specifically
+  ws switch auth --no-editor Just print the worktree path
+
+Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
+  c=comments, /=search, ?=help, q=quit.
+`)
     .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean }) => {
       const noEditor = opts.editor_ === false;
       const directEditor = !!opts.editor;

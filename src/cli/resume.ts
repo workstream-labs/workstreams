@@ -7,10 +7,17 @@ import type { AgentConfig, WorkstreamState } from "../core/types";
 
 export function resumeCommand() {
   return new Command("resume")
-    .description("Resume a workstream with new instructions or review comments (non-interactive)")
+    .description("Resume a workstream agent non-interactively with a new prompt or stored comments")
     .argument("<name>", "workstream name")
-    .option("-p, --prompt <text>", "prompt text to send")
-    .option("--comments", "use stored review comments")
+    .option("-p, --prompt <text>", "prompt text to send to the agent")
+    .option("--comments", "resume using stored review comments from the dashboard")
+    .addHelpText("after", `
+Examples:
+  ws resume auth -p "Also add refresh token support"
+  ws resume auth --comments        Use comments added via "ws switch"
+
+For interactive resume (with a live terminal), use "ws switch <name>" instead.
+`)
     .action(async (name: string, opts: { prompt?: string; comments?: boolean }) => {
       const state = await loadState();
       if (!state?.currentRun) {

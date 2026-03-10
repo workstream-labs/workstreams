@@ -3,8 +3,13 @@ import { loadState } from "../core/state";
 
 export function initCommand() {
   return new Command("init")
-    .description("Initialize workstreams in the current git repo")
+    .description("Initialize workstreams in the current git repo (creates .workstreams/ and workstream.yaml)")
     .option("-f, --force", "reinitialize even if already initialized")
+    .addHelpText("after", `
+Examples:
+  ws init           Set up workstreams for the first time
+  ws init --force   Re-create .workstreams/ directory and reset state
+`)
     .action(async (opts: { force?: boolean }) => {
       const { $ } = await import("bun");
 
