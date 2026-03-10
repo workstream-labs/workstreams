@@ -233,9 +233,9 @@ async function ensureTmuxSession(): Promise<void> {
       "set -g status-position bottom",
       "set -g status-style 'bg=colour235'",
       "set -g status-justify centre",
-      "set -g status-left ''",
+      "set -g status-left '#[fg=brightwhite,bold] #{window_name}'",
+      "set -g status-left-length 30",
       "set -g status-right ''",
-      "set -g status-left-length 0",
       "set -g status-right-length 0",
       "set -g window-status-format ''",
       "set -g window-status-current-format '#[fg=brightwhite]ctrl+q #[fg=colour245]back'",
@@ -246,10 +246,7 @@ async function ensureTmuxSession(): Promise<void> {
   Bun.spawnSync(["tmux", "-L", "ws", "-f", tmuxConf, "new-session", "-d", "-s", WS_TMUX_SESSION]);
 }
 
-async function setTmuxWindowStatus(session: string, windowName: string, name: string): Promise<void> {
-  const { setOption } = await import("../core/tmux");
-  await setOption(`${session}:${windowName}`, "status-left", `#[fg=brightwhite,bold] ws/${name}`);
-}
+// Status-left uses #{window_name} — set at session level, resolves per window. No per-window call needed.
 
 async function actionOpenClaudeSession(name: string, state: any): Promise<void> {
   if (!await hasTmux()) {
@@ -291,8 +288,6 @@ async function actionOpenClaudeSession(name: string, state: any): Promise<void> 
     paneId = await createWindow(WS_TMUX_SESSION, name, worktreePath, claudeCmd);
 
     // Set status line for this window
-    await setTmuxWindowStatus(WS_TMUX_SESSION, name, name);
-
     // Update state to track the pane
     if (ws) {
       ws.tmuxSession = WS_TMUX_SESSION;

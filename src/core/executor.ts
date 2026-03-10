@@ -105,9 +105,9 @@ export class Executor {
       "set -g status-position bottom",
       "set -g status-style 'bg=colour235'",
       "set -g status-justify centre",
-      "set -g status-left ''",
+      "set -g status-left '#[fg=brightwhite,bold] #{window_name}'",
+      "set -g status-left-length 30",
       "set -g status-right ''",
-      "set -g status-left-length 0",
       "set -g status-right-length 0",
       "set -g window-status-format ''",
       "set -g window-status-current-format '#[fg=brightwhite]ctrl+q #[fg=colour245]back'",
@@ -197,10 +197,7 @@ export class Executor {
           ws.tmuxSession = this.tmuxSessionName;
           ws.tmuxPaneId = paneId;
           await saveState(this.state);
-          // Set status line for this window
-          const target = `${this.tmuxSessionName}:${name}`;
-          const { setOption } = await import("./tmux");
-          await setOption(target, "status-left", `#[fg=brightwhite,bold] ws/${name}`);
+          // No per-window status-left needed — uses #{window_name} set at session level
         },
         onSessionId: async (id) => {
           ws.sessionId = id;
