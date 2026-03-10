@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { loadState, saveState, defaultState } from "../core/state";
 import { WorktreeManager } from "../core/worktree";
 import { stringify } from "yaml";
+import { killServer } from "../core/tmux";
+import { clearComments } from "../core/comments";
 
 export function destroyCommand() {
   return new Command("destroy")
@@ -38,11 +40,20 @@ export function destroyCommand() {
           }
         }
 
+        // Kill tmux server
+        await killServer();
+
         for (const n of toDestroy) {
           process.stdout.write(`Removing ${n}...`);
           await wt.remove(n);
+          await clearComments(n);
           console.log(" done");
         }
+
+        // Clean up logs and hook state files
+        const { rm } = await import("fs/promises");
+        await rm(".workstreams/logs", { recursive: true, force: true });
+        await rm("/tmp/ws-state", { recursive: true, force: true });
 
         // Reset state
         state.currentRun = undefined;
@@ -86,6 +97,10 @@ export function destroyCommand() {
 
       process.stdout.write(`Removing ${name}...`);
       await wt.remove(name);
+      await clearComments(name);
+      const { unlink } = await import("fs/promises");
+      await unlink(`.workstreams/logs/${name}.log`).catch(() => {});
+      await unlink(`/tmp/ws-state/${name}`).catch(() => {});
       delete run.workstreams[name];
       console.log(" done");
 

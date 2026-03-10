@@ -19,6 +19,7 @@ import {
   selectWindow,
   killWindow,
   getPaneIds,
+  sendPrompt,
 } from "../core/tmux";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -461,7 +462,23 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
     case "resume-comments": {
       const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeWithComments(action.name, ws, config, state);
+      if (!ws) return false;
+
+      const data = await loadComments(action.name);
+      if (data.comments.length === 0) return false;
+      const formatted = formatCommentsAsPrompt(data);
+
+      // If idle with live tmux pane — send comments directly into the session
+      if (ws.tmuxSession && ws.tmuxPaneId && !await isPaneDead(ws.tmuxPaneId)) {
+        await sendPrompt(`${ws.tmuxSession}:${action.name}`, formatted);
+        await clearComments(action.name);
+        await selectWindow(ws.tmuxSession, action.name).catch(() => {});
+        await attachSession(ws.tmuxSession);
+        return true;
+      }
+
+      // Otherwise use pipe-based resume
+      await actionResumeWithComments(action.name, ws, config, state);
       return false;
     }
   }
