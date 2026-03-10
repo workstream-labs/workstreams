@@ -105,10 +105,14 @@ export class Executor {
     await $`tmux set -t ${this.tmuxSessionName} remain-on-exit on`.quiet().catch(() => {});
     await $`tmux set -t ${this.tmuxSessionName} mouse on`.quiet().catch(() => {});
     await $`tmux set -t ${this.tmuxSessionName} status on`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-style bg=black`.quiet().catch(() => {});
+    await $`tmux set -t ${this.tmuxSessionName} status-position bottom`.quiet().catch(() => {});
+    await $`tmux set -t ${this.tmuxSessionName} status-style "bg=colour235"`.quiet().catch(() => {});
     await $`tmux set -t ${this.tmuxSessionName} status-left ""`.quiet().catch(() => {});
     await $`tmux set -t ${this.tmuxSessionName} status-right ""`.quiet().catch(() => {});
     await $`tmux set -t ${this.tmuxSessionName} status-justify centre`.quiet().catch(() => {});
+    // Hide all window tabs from the center of the status bar
+    await $`tmux set -t ${this.tmuxSessionName} window-status-format ""`.quiet().catch(() => {});
+    await $`tmux set -t ${this.tmuxSessionName} window-status-current-format ""`.quiet().catch(() => {});
     await $`tmux bind-key -T root C-q detach-client`.quiet().catch(() => {});
 
     // Ensure log directory exists and clear old log files
@@ -193,16 +197,16 @@ export class Executor {
           ws.tmuxPaneId = paneId;
           await saveState(this.state);
           // Set status line for this window
-          const statusText = `ws/${name}  ·  Ctrl+Q detach`;
-          await $`tmux set -t ${this.tmuxSessionName}:${name} status-format[0] ${`#[align=centre,fg=white,dim] ${statusText}`}`.quiet().catch(() => {});
+          const target = `${this.tmuxSessionName}:${name}`;
+          const bar = `#[fg=brightwhite,bold]ws/${name}  #[fg=brightwhite,nobold]Ctrl+Q #[fg=colour245]back`;
+          await $`tmux set -t ${target} status-left ""`.quiet().catch(() => {});
+          await $`tmux set -t ${target} status-right ""`.quiet().catch(() => {});
+          await $`tmux set -t ${target} window-status-current-format ${bar}`.quiet().catch(() => {});
         },
         onSessionId: async (id) => {
           ws.sessionId = id;
           await saveState(this.state);
           await logLine(`Session ID captured: ${id}`);
-          // Update status line with session ID
-          const statusText = `ws/${name}  session:${id.slice(0, 8)}  ·  Ctrl+Q detach`;
-          await $`tmux set -t ${this.tmuxSessionName}:${name} status-format[0] ${`#[align=centre,fg=white,dim] ${statusText}`}`.quiet().catch(() => {});
         },
       });
 

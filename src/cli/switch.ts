@@ -222,19 +222,26 @@ async function ensureTmuxSession(): Promise<void> {
   if (!await hasTmuxSession(WS_TMUX_SESSION)) {
     await createSession(WS_TMUX_SESSION);
   }
-  // Enable mouse (scroll), hide default status bar, bind Ctrl+Q to detach
+  // Enable mouse (scroll), status bar matching dashboard footer, Ctrl+Q to detach
   await $`tmux set -t ${WS_TMUX_SESSION} mouse on`.quiet().catch(() => {});
   await $`tmux set -t ${WS_TMUX_SESSION} status on`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-style bg=black`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-position bottom`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-style "bg=colour235"`.quiet().catch(() => {});
   await $`tmux set -t ${WS_TMUX_SESSION} status-left ""`.quiet().catch(() => {});
   await $`tmux set -t ${WS_TMUX_SESSION} status-right ""`.quiet().catch(() => {});
   await $`tmux set -t ${WS_TMUX_SESSION} status-justify centre`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} window-status-format ""`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} window-status-current-format ""`.quiet().catch(() => {});
   await $`tmux bind-key -T root C-q detach-client`.quiet().catch(() => {});
 }
 
-function buildStatusLine(name: string, sessionId?: string): string {
-  const session = sessionId ? ` session:${sessionId.slice(0, 8)}` : "";
-  return `ws/${name}${session}  ·  Ctrl+Q detach`;
+async function setTmuxWindowStatus(session: string, windowName: string, name: string): Promise<void> {
+  const { $ } = await import("bun");
+  const bar = `#[fg=brightwhite,bold]ws/${name}  #[fg=brightwhite,nobold]Ctrl+Q #[fg=colour245]back`;
+  const target = `${session}:${windowName}`;
+  await $`tmux set -t ${target} status-left ""`.quiet().catch(() => {});
+  await $`tmux set -t ${target} status-right ""`.quiet().catch(() => {});
+  await $`tmux set -t ${target} window-status-current-format ${bar}`.quiet().catch(() => {});
 }
 
 async function actionOpenClaudeSession(name: string, state: any): Promise<void> {
@@ -277,8 +284,7 @@ async function actionOpenClaudeSession(name: string, state: any): Promise<void> 
     paneId = await createWindow(WS_TMUX_SESSION, name, worktreePath, claudeCmd);
 
     // Set status line for this window
-    const statusText = buildStatusLine(name, ws?.sessionId);
-    await $`tmux set -t ${WS_TMUX_SESSION}:${name} status-format[0] ${`#[align=centre,fg=white,dim] ${statusText}`}`.quiet().catch(() => {});
+    await setTmuxWindowStatus(WS_TMUX_SESSION, name, name);
 
     // Update state to track the pane
     if (ws) {

@@ -60,7 +60,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   if (isActive && entry.hasTmuxPane) {
     options.push({
       label: "Attach to session",
-      description: isIdle ? "Claude is waiting for input — jump in" : "Watch the running Claude session",
+      description: isIdle ? "Claude finished working — attach to session" : "Watch the running Claude session",
       action: "attach-session",
     });
   }
@@ -110,6 +110,8 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
 
 type DashboardMode = "normal" | "search" | "prompt-input" | "help" | "action-picker";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 interface DashboardState {
   entries: WorkstreamEntry[];
   filteredIndices: number[];
@@ -120,6 +122,7 @@ interface DashboardState {
   promptInput: string;
   actionPickerOptions: ActionOption[];
   actionPickerSelected: number;
+  spinnerFrame: number;
   termW: number;
   termH: number;
 }
@@ -195,15 +198,18 @@ const CARD_HEIGHT = 3; // 2 content lines + 1 blank separator
 
 // ─── Card rendering ─────────────────────────────────────────────────────────
 
-function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number): string[] {
+function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, spinnerFrame: number): string[] {
   const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
   const sel = isSelected ? C.selectedBg : "";
   const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
 
-  // Line 1: status icon + name
+  // Line 1: status icon (animated spinner for running) + name
+  const icon = entry.status === "running"
+    ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+    : st.icon;
   const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
   const line1 =
-    sel + `  ${st.color}${st.icon}${selReset}` +
+    sel + `  ${st.color}${icon}${selReset}` +
     (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`);
 
   // Line 2: prompt (dimmed, indented)
@@ -259,7 +265,7 @@ function renderCards(s: DashboardState): string {
     const entryIdx = s.filteredIndices[fi];
     const entry = s.entries[entryIdx];
     const isSelected = fi === s.selected;
-    const cardLines = renderCard(entry, isSelected, s.termW - 2);
+    const cardLines = renderCard(entry, isSelected, s.termW - 2, s.spinnerFrame);
 
     for (let r = 0; r < 2; r++) {
       const row = baseRow + r;
@@ -460,6 +466,7 @@ export async function openDashboard(
     promptInput: "",
     actionPickerOptions: [],
     actionPickerSelected: 0,
+    spinnerFrame: 0,
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
   };
@@ -486,9 +493,20 @@ export async function openDashboard(
 
   return new Promise<DashboardAction>((resolve) => {
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+
+    // Animate spinner for running workstreams (80ms per frame)
+    const hasRunning = () => state.entries.some(e => e.status === "running");
+    if (hasRunning()) {
+      spinnerTimer = setInterval(() => {
+        state.spinnerFrame++;
+        if (state.mode === "normal") draw();
+      }, 80);
+    }
 
     const cleanup = (result: DashboardAction) => {
       if (refreshTimer) clearInterval(refreshTimer);
+      if (spinnerTimer) clearInterval(spinnerTimer);
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
@@ -510,6 +528,13 @@ export async function openDashboard(
           if (selectedName) {
             const idx = state.filteredIndices.findIndex(i => state.entries[i]?.name === selectedName);
             if (idx >= 0) state.selected = idx;
+          }
+          // Start/stop spinner based on whether any workstream is running
+          if (fresh.some(e => e.status === "running") && !spinnerTimer) {
+            spinnerTimer = setInterval(() => { state.spinnerFrame++; if (state.mode === "normal") draw(); }, 80);
+          } else if (!fresh.some(e => e.status === "running") && spinnerTimer) {
+            clearInterval(spinnerTimer);
+            spinnerTimer = null;
           }
           draw();
         } catch {}
