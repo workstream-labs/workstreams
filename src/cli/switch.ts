@@ -218,30 +218,37 @@ async function actionOpenEditor(name: string, state: any, config: any, editorOpt
 const WS_TMUX_SESSION = "ws-run";
 
 async function ensureTmuxSession(): Promise<void> {
-  const { $ } = await import("bun");
-  if (!await hasTmuxSession(WS_TMUX_SESSION)) {
-    await createSession(WS_TMUX_SESSION);
+  if (await hasTmuxSession(WS_TMUX_SESSION)) return;
+
+  // Create session on dedicated ws socket with clean config
+  const tmuxConf = "/tmp/ws-tmux.conf";
+  const { stat } = await import("fs/promises");
+  const confExists = await stat(tmuxConf).then(() => true).catch(() => false);
+
+  if (!confExists) {
+    await Bun.write(tmuxConf, [
+      "set -g remain-on-exit on",
+      "set -g mouse on",
+      "set -g status on",
+      "set -g status-position bottom",
+      "set -g status-style 'bg=colour235'",
+      "set -g status-justify centre",
+      "set -g status-left ''",
+      "set -g status-right ''",
+      "set -g status-left-length 0",
+      "set -g status-right-length 0",
+      "set -g window-status-format ''",
+      "set -g window-status-current-format '#[fg=brightwhite]ctrl+q #[fg=colour245]back'",
+      "bind-key -T root C-q detach-client",
+    ].join("\n"));
   }
-  // Enable mouse (scroll), status bar matching dashboard footer, Ctrl+Q to detach
-  await $`tmux set -t ${WS_TMUX_SESSION} mouse on`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status on`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-position bottom`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-style "bg=colour235"`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-left ""`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-right ""`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} status-justify centre`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} window-status-format ""`.quiet().catch(() => {});
-  await $`tmux set -t ${WS_TMUX_SESSION} window-status-current-format ""`.quiet().catch(() => {});
-  await $`tmux bind-key -T root C-q detach-client`.quiet().catch(() => {});
+
+  Bun.spawnSync(["tmux", "-L", "ws", "-f", tmuxConf, "new-session", "-d", "-s", WS_TMUX_SESSION]);
 }
 
 async function setTmuxWindowStatus(session: string, windowName: string, name: string): Promise<void> {
-  const { $ } = await import("bun");
-  const bar = `#[fg=brightwhite,bold]ws/${name}  #[fg=brightwhite,nobold]Ctrl+Q #[fg=colour245]back`;
-  const target = `${session}:${windowName}`;
-  await $`tmux set -t ${target} status-left ""`.quiet().catch(() => {});
-  await $`tmux set -t ${target} status-right ""`.quiet().catch(() => {});
-  await $`tmux set -t ${target} window-status-current-format ${bar}`.quiet().catch(() => {});
+  const { setOption } = await import("../core/tmux");
+  await setOption(`${session}:${windowName}`, "status-left", `#[fg=brightwhite,bold] ws/${name}`);
 }
 
 async function actionOpenClaudeSession(name: string, state: any): Promise<void> {

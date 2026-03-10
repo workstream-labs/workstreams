@@ -26,7 +26,7 @@ describe("Executor", () => {
 
   afterEach(async () => {
     process.chdir("/tmp");
-    await $`tmux kill-session -t ws-run`.quiet().catch(() => {});
+    await $`tmux -L ws kill-server`.quiet().catch(() => {});
     await rm(TEST_DIR, { recursive: true, force: true });
   });
 

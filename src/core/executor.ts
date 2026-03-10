@@ -1,4 +1,3 @@
-import { $ } from "bun";
 import type {
   ProjectState,
   RunState,
@@ -9,7 +8,7 @@ import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
 import { saveState } from "./state";
 import type { EventBus } from "./events";
-import { hasTmux, createSession, hasSession, killSession } from "./tmux";
+import { hasTmux, createSession, killServer } from "./tmux";
 
 const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
@@ -95,25 +94,27 @@ export class Executor {
       process.exit(1);
     }
 
-    // Kill stale session, create fresh one
-    if (await hasSession(this.tmuxSessionName)) {
-      await killSession(this.tmuxSessionName);
-    }
-    await createSession(this.tmuxSessionName);
+    // Kill stale ws tmux server, create fresh one with clean config
+    await killServer();
 
-    // Configure session: remain-on-exit, mouse scroll, Ctrl+Q detach, status bar
-    await $`tmux set -t ${this.tmuxSessionName} remain-on-exit on`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} mouse on`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status on`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-position bottom`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-style "bg=colour235"`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-left ""`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-right ""`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} status-justify centre`.quiet().catch(() => {});
-    // Hide all window tabs from the center of the status bar
-    await $`tmux set -t ${this.tmuxSessionName} window-status-format ""`.quiet().catch(() => {});
-    await $`tmux set -t ${this.tmuxSessionName} window-status-current-format ""`.quiet().catch(() => {});
-    await $`tmux bind-key -T root C-q detach-client`.quiet().catch(() => {});
+    const tmuxConf = "/tmp/ws-tmux.conf";
+    await Bun.write(tmuxConf, [
+      "set -g remain-on-exit on",
+      "set -g mouse on",
+      "set -g status on",
+      "set -g status-position bottom",
+      "set -g status-style 'bg=colour235'",
+      "set -g status-justify centre",
+      "set -g status-left ''",
+      "set -g status-right ''",
+      "set -g status-left-length 0",
+      "set -g status-right-length 0",
+      "set -g window-status-format ''",
+      "set -g window-status-current-format '#[fg=brightwhite]ctrl+q #[fg=colour245]back'",
+      "bind-key -T root C-q detach-client",
+    ].join("\n"));
+
+    Bun.spawnSync(["tmux", "-L", "ws", "-f", tmuxConf, "new-session", "-d", "-s", this.tmuxSessionName]);
 
     // Ensure log directory exists and clear old log files
     const { unlink, mkdir } = await import("fs/promises");
@@ -141,8 +142,8 @@ export class Executor {
     await saveState(this.state);
     this.emit("run:complete", undefined, { runId: this.run.runId });
 
-    // Clean up tmux session
-    await killSession(this.tmuxSessionName);
+    // Clean up tmux server
+    await killServer();
 
     // Print summary
     console.log();
@@ -198,10 +199,8 @@ export class Executor {
           await saveState(this.state);
           // Set status line for this window
           const target = `${this.tmuxSessionName}:${name}`;
-          const bar = `#[fg=brightwhite,bold]ws/${name}  #[fg=brightwhite,nobold]Ctrl+Q #[fg=colour245]back`;
-          await $`tmux set -t ${target} status-left ""`.quiet().catch(() => {});
-          await $`tmux set -t ${target} status-right ""`.quiet().catch(() => {});
-          await $`tmux set -t ${target} window-status-current-format ${bar}`.quiet().catch(() => {});
+          const { setOption } = await import("./tmux");
+          await setOption(target, "status-left", `#[fg=brightwhite,bold] ws/${name}`);
         },
         onSessionId: async (id) => {
           ws.sessionId = id;
@@ -267,14 +266,11 @@ export class Executor {
         ws.status = "failed";
         ws.error = "Aborted by user";
         ws.finishedAt = new Date().toISOString();
-        if (ws.tmuxPaneId) {
-          Bun.spawnSync(["tmux", "kill-pane", "-t", ws.tmuxPaneId]);
-        }
       }
       this.run.finishedAt = new Date().toISOString();
       saveState(this.state);
-      // Kill the tmux session
-      Bun.spawnSync(["tmux", "kill-session", "-t", this.tmuxSessionName]);
+      // Kill the ws tmux server
+      Bun.spawnSync(["tmux", "-L", "ws", "kill-server"]);
     };
 
     process.on("SIGINT", cleanup);
