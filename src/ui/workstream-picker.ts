@@ -47,12 +47,9 @@ interface ActionOption {
 
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   const options: ActionOption[] = [];
-<<<<<<< HEAD
   const isRunning = entry.status === "running";
   const isIdle = entry.status === "idle";
   const isActive = isRunning || isIdle;
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 
   options.push({
     label: "Open in editor",
@@ -60,7 +57,6 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "editor",
   });
 
-<<<<<<< HEAD
   if (isActive && entry.hasTmuxPane) {
     options.push({
       label: "Attach to session",
@@ -70,9 +66,6 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   }
 
   if (!isActive && entry.hasSession) {
-=======
-  if (entry.hasSession) {
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
@@ -80,7 +73,6 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-<<<<<<< HEAD
   if (!isActive && !entry.hasSession && entry.hasWorktree) {
     options.push({
       label: "Open Claude session",
@@ -90,9 +82,6 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   }
 
   if (entry.hasWorktree && (entry.filesChanged > 0 || entry.isDirty)) {
-=======
-  if (entry.hasWorktree && entry.filesChanged > 0) {
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     options.push({
       label: "View diff & review",
       description: "Browse changes and add review comments",
@@ -100,11 +89,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-<<<<<<< HEAD
   if (!isActive && entry.hasSession) {
-=======
-  if (entry.hasSession) {
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -112,11 +97,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-<<<<<<< HEAD
   if (!isActive && entry.commentCount > 0) {
-=======
-  if (entry.commentCount > 0) {
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
@@ -128,11 +109,8 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
 }
 
 type DashboardMode = "normal" | "search" | "prompt-input" | "help" | "action-picker";
-<<<<<<< HEAD
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 
 interface DashboardState {
   entries: WorkstreamEntry[];
@@ -144,10 +122,7 @@ interface DashboardState {
   promptInput: string;
   actionPickerOptions: ActionOption[];
   actionPickerSelected: number;
-<<<<<<< HEAD
   spinnerFrame: number;
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
   termW: number;
   termH: number;
 }
@@ -228,7 +203,6 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, 
   const sel = isSelected ? C.selectedBg : "";
   const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
 
-<<<<<<< HEAD
   // Line 1: status icon (animated spinner for running) + name
   const icon = entry.status === "running"
     ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
@@ -236,12 +210,6 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, 
   const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
   const line1 =
     sel + `  ${st.color}${icon}${selReset}` +
-=======
-  // Line 1: status icon + name
-  const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
-  const line1 =
-    sel + `  ${st.color}${st.icon}${selReset}` +
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`);
 
   // Line 2: prompt (dimmed, indented)
@@ -250,45 +218,7 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, 
     : `${A.brightBlack}(no prompt)${selReset}`;
   const line2 = sel + `    ${A.dim}${promptText}${selReset}`;
 
-<<<<<<< HEAD
   return [line1, line2];
-=======
-  // Line 3: all metadata in one line — stats + resumable + comments + last commit
-  const meta: string[] = [];
-  const metaVis: string[] = [];
-
-  if (entry.hasWorktree && entry.filesChanged > 0) {
-    const stats = `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}−${entry.deletions}${selReset}`;
-    meta.push(stats);
-    metaVis.push(`+${entry.additions} −${entry.deletions}`);
-  }
-
-  if (entry.hasSession) {
-    meta.push(`${A.brightGreen}resumable${selReset}`);
-    metaVis.push("resumable");
-  }
-
-  if (entry.commentCount > 0) {
-    meta.push(`${A.brightYellow}${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}${selReset}`);
-    metaVis.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
-  }
-
-  if (entry.lastCommitMsg && entry.hasWorktree) {
-    const usedLen = metaVis.join("  ·  ").length;
-    const maxMsg = cardW - 6 - usedLen - (usedLen > 0 ? 5 : 0) - 2;
-    if (maxMsg > 8) {
-      const age = entry.lastCommitAge ? `${entry.lastCommitAge} · ` : "";
-      meta.push(`${A.dim}${age}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
-    }
-  } else if (!entry.hasWorktree) {
-    meta.push(`${A.brightBlack}no worktree${selReset}`);
-  }
-
-  const sep = `${A.brightBlack}  ·  ${selReset}`;
-  const line3 = sel + `    ${meta.join(sep)}`;
-
-  return [line1, line2, line3];
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 }
 
 // ─── Header ──────────────────────────────────────────────────────────────────
@@ -536,10 +466,7 @@ export async function openDashboard(
     promptInput: "",
     actionPickerOptions: [],
     actionPickerSelected: 0,
-<<<<<<< HEAD
     spinnerFrame: 0,
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
   };

@@ -4,10 +4,7 @@ import { loadState } from "../core/state";
 import { getBranchInfo, getDiffStats } from "../ui/workstream-picker.js";
 import { A, STATUS_STYLE, pad, fg256 } from "../ui/ansi.js";
 import { loadComments } from "../core/comments";
-<<<<<<< HEAD
 import { isPaneDead } from "../core/tmux";
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 
 function formatDuration(ms: number): string {
   const s = Math.round(ms / 1000);
@@ -57,10 +54,6 @@ export async function listAction(configPath: string = "workstream.yaml") {
       status = "pending";
     }
 
-<<<<<<< HEAD
-=======
-    let durationStr = "";
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
     const ws = state?.currentRun?.workstreams?.[def.name];
 
     // Detect idle: hooks (primary) + Claude session file mtime (fallback)
@@ -147,10 +140,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   const succeeded = rows.filter(r => r.status === "success").length;
   const failed = rows.filter(r => r.status === "failed").length;
   const running = rows.filter(r => r.status === "running").length;
-<<<<<<< HEAD
   const idle = rows.filter(r => r.status === "idle").length;
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
   const pending = rows.filter(r => r.status === "pending").length;
 
   console.log("");
@@ -183,10 +173,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   if (succeeded) parts.push(`${A.green}${STATUS_STYLE.success.icon} ${succeeded} passed${A.reset}`);
   if (failed) parts.push(`${A.red}${STATUS_STYLE.failed.icon} ${failed} failed${A.reset}`);
   if (running) parts.push(`${A.brightYellow}${STATUS_STYLE.running.icon} ${running} running${A.reset}`);
-<<<<<<< HEAD
   if (idle) parts.push(`${A.brightCyan}${STATUS_STYLE.idle.icon} ${idle} idle${A.reset}`);
-=======
->>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
   if (pending) parts.push(`${A.dim}${STATUS_STYLE.pending.icon} ${pending} pending${A.reset}`);
 
   if (parts.length > 0) {
