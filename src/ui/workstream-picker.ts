@@ -34,12 +34,13 @@ export type DashboardAction =
   | { type: "resume-session"; name: string }
   | { type: "resume-prompt"; name: string; prompt: string }
   | { type: "resume-comments"; name: string }
+  | { type: "set-prompt"; name: string; prompt: string }
   | { type: "quit" };
 
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"] | "prompt-input";
+  action: DashboardAction["type"] | "prompt-input" | "set-prompt-input";
 }
 
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
@@ -49,6 +50,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     label: "Open in editor",
     description: "Create worktree if needed and open in your editor",
     action: "editor",
+  });
+
+  options.push({
+    label: entry.prompt ? "Edit prompt" : "Set prompt",
+    description: entry.prompt
+      ? "Modify the workstream prompt in workstream.yaml"
+      : "Add a prompt to this workspace in workstream.yaml",
+    action: "set-prompt-input",
   });
 
   if (entry.hasSession) {
@@ -86,7 +95,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   return options;
 }
 
-type DashboardMode = "normal" | "search" | "prompt-input" | "help" | "action-picker";
+type DashboardMode = "normal" | "search" | "prompt-input" | "set-prompt-input" | "help" | "action-picker";
 
 interface DashboardState {
   entries: WorkstreamEntry[];
@@ -370,8 +379,13 @@ function renderHelpOverlay(s: DashboardState): string {
 // ─── Prompt modal ────────────────────────────────────────────────────────────
 
 function renderPromptModal(s: DashboardState): string {
+  let title = "Enter prompt";
+  if (s.mode === "set-prompt-input") {
+    const entry = s.entries[s.filteredIndices[s.selected]];
+    title = entry?.prompt ? "Edit prompt" : "Set prompt";
+  }
   return renderInputModal({
-    title: "Enter prompt",
+    title,
     value: s.promptInput,
     cursorPos: s.promptInput.length,
     termW: s.termW,
@@ -421,6 +435,7 @@ function render(s: DashboardState): string {
 
   if (s.mode === "search") out += renderSearchBar(s);
   if (s.mode === "prompt-input") out += renderPromptModal(s);
+  if (s.mode === "set-prompt-input") out += renderPromptModal(s);
   if (s.mode === "help") out += renderHelpOverlay(s);
   if (s.mode === "action-picker") out += renderActionPicker(s);
 
@@ -550,6 +565,13 @@ export async function openDashboard(
             draw();
             return;
           }
+          if (opt.action === "set-prompt-input") {
+            state.mode = "set-prompt-input";
+            const currentEntry = selectedEntry();
+            state.promptInput = currentEntry?.prompt ?? "";
+            draw();
+            return;
+          }
           if (opt.action === "quit") {
             cleanup({ type: "quit" });
             return;
@@ -578,6 +600,52 @@ export async function openDashboard(
           const prompt = state.promptInput.trim();
           if (entry && prompt) {
             cleanup({ type: "resume-prompt", name: entry.name, prompt });
+          } else {
+            state.mode = "normal";
+            state.promptInput = "";
+            draw();
+          }
+          return;
+        }
+        if (key === "\x7f" || key === "\b") { // Backspace
+          state.promptInput = state.promptInput.slice(0, -1);
+          draw();
+          return;
+        }
+        if (key === "\x03") { // Ctrl+C
+          state.mode = "normal";
+          state.promptInput = "";
+          draw();
+          return;
+        }
+        // Printable characters
+        if (key.length === 1 && key.charCodeAt(0) >= 32) {
+          state.promptInput += key;
+          draw();
+          return;
+        }
+        // Multi-byte characters (e.g. pasted text)
+        if (key.length > 1 && !key.startsWith("\x1b")) {
+          state.promptInput += key;
+          draw();
+          return;
+        }
+        return;
+      }
+
+      // ─── Set-prompt input mode ─────────────────────────────────────
+      if (state.mode === "set-prompt-input") {
+        if (key === "\x1b") { // Esc
+          state.mode = "normal";
+          state.promptInput = "";
+          draw();
+          return;
+        }
+        if (key === "\r") { // Enter
+          const entry = selectedEntry();
+          const prompt = state.promptInput.trim();
+          if (entry && prompt) {
+            cleanup({ type: "set-prompt", name: entry.name, prompt });
           } else {
             state.mode = "normal";
             state.promptInput = "";

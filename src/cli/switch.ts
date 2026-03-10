@@ -249,6 +249,24 @@ async function actionResumeWithComments(name: string, ws: WorkstreamState, confi
   await runResume(name, ws, config.agent, formatted, state);
 }
 
+// ─── Action: Set/update prompt in workstream.yaml ─────────────────────────────
+
+async function actionSetPrompt(name: string, prompt: string) {
+  const { parse, stringify } = await import("yaml");
+  const configFile = Bun.file("workstream.yaml");
+  const raw = parse(await configFile.text()) as any;
+
+  if (Array.isArray(raw.workstreams)) {
+    const entry = raw.workstreams.find((w: any) => w.name === name);
+    if (entry) entry.prompt = prompt;
+  } else if (raw.workstreams && name in raw.workstreams) {
+    if (raw.workstreams[name] == null) raw.workstreams[name] = {};
+    raw.workstreams[name].prompt = prompt;
+  }
+
+  await Bun.write("workstream.yaml", stringify(raw));
+}
+
 // ─── Shared resume runner ────────────────────────────────────────────────────
 
 async function runResume(
@@ -346,6 +364,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       if (ws) await actionResumeWithComments(action.name, ws, config, state);
       return false;
     }
+
+    case "set-prompt":
+      await actionSetPrompt(action.name, action.prompt);
+      return true; // loop back to dashboard so updated prompt is visible
   }
 }
 
@@ -415,12 +437,13 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
         return;
       }
 
-      // Dashboard loop: after diff viewer, return to dashboard
+      // Dashboard loop: after diff viewer or set-prompt, return to dashboard
       let loop = true;
       while (loop) {
-        const entries = await buildEntries(config, state);
+        const freshConfig = await loadConfig("workstream.yaml");
+        const entries = await buildEntries(freshConfig, state);
         const action = await openDashboard(entries);
-        loop = await dispatchAction(action, state, config);
+        loop = await dispatchAction(action, state, freshConfig);
       }
     });
 }

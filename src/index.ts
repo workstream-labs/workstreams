@@ -11,6 +11,7 @@ import { diffCommand } from "./cli/diff";
 import { mergeCommand } from "./cli/merge";
 import { resumeCommand } from "./cli/resume";
 import { switchCommand } from "./cli/switch";
+import { promptCommand } from "./cli/prompt";
 
 const program = new Command();
 
@@ -41,6 +42,7 @@ Key options:
             --no-cleanup           Keep worktree and branch after merge
   destroy   --all                  Remove all worktrees, config, and state
             -y, --yes              Skip confirmation prompt
+  prompt    -p, --prompt <text>    Set or update a workstream's prompt
   switch    -e, --editor <editor>  Open directly in a specific editor
             --no-editor            Print worktree path without opening editor
 
@@ -56,5 +58,6 @@ program.addCommand(diffCommand());
 program.addCommand(resumeCommand());
 program.addCommand(mergeCommand());
 program.addCommand(destroyCommand());
+program.addCommand(promptCommand());
 
 program.parse();
