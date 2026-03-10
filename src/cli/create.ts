@@ -7,10 +7,16 @@ const MSG_ADDED = (name: string) => `Added workstream "${name}" to workstream.ya
 
 export function createCommand() {
   return new Command("create")
-    .description("Add a new workstream to workstream.yaml")
-    .argument("<name>", "workstream name")
+    .description("Add a new workstream entry to workstream.yaml (does not run it)")
+    .argument("<name>", "workstream name (used as branch suffix: ws/<name>)")
     .option("-p, --prompt <text>", "prompt for the agent")
     .option("--plan-first", "pause for review after planning phase")
+    .addHelpText("after", `
+Examples:
+  ws create auth -p "Add JWT authentication"
+  ws create dark-mode -p "Implement dark mode toggle" --plan-first
+  ws create sandbox              Create a prompt-less workspace (manual work only)
+`)
     .action(async (name: string, opts: { prompt?: string; planFirst?: boolean }) => {
       const configFile = Bun.file("workstream.yaml");
       if (!(await configFile.exists())) {

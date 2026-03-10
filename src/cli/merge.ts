@@ -3,12 +3,21 @@ import { loadState } from "../core/state";
 
 export function mergeCommand() {
   return new Command("merge")
-    .description("Merge workstream branch(es) into main")
-    .argument("[name]", "workstream name (omit to merge all successful)")
+    .description("Merge a workstream branch into the current branch")
+    .argument("[name]", "workstream name to merge")
     .argument("[into]", "target branch to merge into (default: current branch)")
+    .option("--all", "merge all successful workstreams")
     .option("--squash", "squash commits into a single commit")
     .option("--no-cleanup", "keep worktree and branch after merge")
-    .action(async (name?: string, into?: string, opts?: { squash?: boolean; cleanup: boolean }) => {
+    .addHelpText("after", `
+Examples:
+  ws merge auth-feature          Merge the "auth-feature" branch into current branch
+  ws merge auth-feature main     Merge into the "main" branch
+  ws merge --all                 Merge all successful workstreams
+  ws merge --all --squash        Squash-merge all successful workstreams
+  ws merge auth-feature --squash Squash-merge a single workstream
+`)
+    .action(async (name?: string, into?: string, opts?: { all?: boolean; squash?: boolean; cleanup: boolean }) => {
       const { $ } = await import("bun");
 
       const state = await loadState();
@@ -18,6 +27,14 @@ export function mergeCommand() {
       }
 
       // Determine which workstreams to merge
+      if (!name && !opts?.all) {
+        console.error("Error: specify a workstream name or use --all to merge all successful workstreams.");
+        console.error("\nUsage:");
+        console.error("  ws merge <name>    Merge a single workstream");
+        console.error("  ws merge --all     Merge all successful workstreams");
+        process.exit(1);
+      }
+
       const names = name
         ? [name]
         : Object.entries(state.currentRun.workstreams)

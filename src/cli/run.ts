@@ -7,10 +7,18 @@ import type { RunState } from "../core/types";
 
 export function runCommand() {
   return new Command("run")
-    .description("Run workstreams")
+    .description("Spawn AI agents for workstreams in parallel (runs in background)")
     .argument("[name]", "run a single workstream by name")
     .option("-c, --config <path>", "config file path", "workstream.yaml")
     .option("-d, --dry-run", "show what would run without executing")
+    .addHelpText("after", `
+Examples:
+  ws run               Run all workstreams defined in workstream.yaml
+  ws run auth-feature   Run only the "auth-feature" workstream
+  ws run --dry-run      Preview which workstreams would run
+
+Agents are spawned in the background. Use "ws list" or "ws switch" to monitor progress.
+`)
     .action(async (name: string | undefined, opts: { config: string; dryRun?: boolean }) => {
       // Background mode: actually run the executor with the pre-saved state
       if (process.env.WS_BACKGROUND === "1") {

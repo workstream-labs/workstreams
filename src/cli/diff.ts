@@ -5,9 +5,18 @@ import { openDiffViewer } from "../ui/diff-viewer.js";
 
 export function diffCommand() {
   return new Command("diff")
-    .description("Show git diff for workstream(s)")
-    .argument("[name]", "workstream name (omit for all)")
-    .option("--raw", "print raw diff without the interactive viewer")
+    .description("View changes made by a workstream (interactive viewer for single, raw for multiple)")
+    .argument("[name]", "workstream name (omit to show all diffs as raw output)")
+    .option("--raw", "print raw diff output instead of interactive viewer")
+    .addHelpText("after", `
+Examples:
+  ws diff auth-feature   Open interactive diff viewer for "auth-feature"
+  ws diff                Print raw diffs for all workstreams
+  ws diff auth --raw     Print raw diff instead of interactive viewer
+
+Interactive viewer keys: j/k scroll, Tab switch panels, t toggle side-by-side,
+  n/p next/prev file, d/u half-page, g/G top/bottom, q quit.
+`)
     .action(async (name?: string, opts?: { raw?: boolean }) => {
       const state = await loadState();
       if (!state?.currentRun) {
