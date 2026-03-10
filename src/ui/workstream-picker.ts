@@ -97,7 +97,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (!isActive && entry.commentCount > 0) {
+  if (!isRunning && entry.commentCount > 0) {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
