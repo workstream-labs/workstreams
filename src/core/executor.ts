@@ -14,12 +14,19 @@ const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
 const COLOR_OTHER = "\x1b[90m";
 const COLOR_RESET = "\x1b[0m";
+<<<<<<< HEAD
+=======
+const COLOR_BLUE = "\x1b[34m";
+>>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 const COLOR_YELLOW = "\x1b[33m";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+<<<<<<< HEAD
 const TMUX_SESSION = "ws-run";
 
+=======
+>>>>>>> 9f3fde30c6650b17e2b273a35e30fd19d94dd106
 class Spinner {
   private interval: ReturnType<typeof setInterval> | null = null;
   private frame = 0;
