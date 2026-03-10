@@ -24,6 +24,7 @@ export interface WorkstreamEntry {
   additions: number;
   deletions: number;
   hasSession: boolean;
+  hasTmuxPane: boolean;
   commentCount: number;
   isDirty: boolean;
 }
@@ -31,6 +32,8 @@ export interface WorkstreamEntry {
 export type DashboardAction =
   | { type: "editor"; name: string }
   | { type: "diff"; name: string }
+  | { type: "attach-session"; name: string }
+  | { type: "open-session"; name: string }
   | { type: "resume-session"; name: string }
   | { type: "resume-prompt"; name: string; prompt: string }
   | { type: "resume-comments"; name: string }
@@ -44,6 +47,9 @@ interface ActionOption {
 
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   const options: ActionOption[] = [];
+  const isRunning = entry.status === "running";
+  const isIdle = entry.status === "idle";
+  const isActive = isRunning || isIdle;
 
   options.push({
     label: "Open in editor",
@@ -51,7 +57,15 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "editor",
   });
 
-  if (entry.hasSession) {
+  if (isActive && entry.hasTmuxPane) {
+    options.push({
+      label: "Attach to session",
+      description: isIdle ? "Claude finished working — attach to session" : "Watch the running Claude session",
+      action: "attach-session",
+    });
+  }
+
+  if (!isActive && entry.hasSession) {
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
@@ -59,7 +73,15 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasWorktree && entry.filesChanged > 0) {
+  if (!isActive && !entry.hasSession && entry.hasWorktree) {
+    options.push({
+      label: "Open Claude session",
+      description: "Start a new interactive Claude session in the worktree",
+      action: "open-session",
+    });
+  }
+
+  if (entry.hasWorktree && (entry.filesChanged > 0 || entry.isDirty)) {
     options.push({
       label: "View diff & review",
       description: "Browse changes and add review comments",
@@ -67,7 +89,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasSession) {
+  if (!isActive && entry.hasSession) {
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -75,7 +97,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.commentCount > 0) {
+  if (!isActive && entry.commentCount > 0) {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
@@ -88,6 +110,8 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
 
 type DashboardMode = "normal" | "search" | "prompt-input" | "help" | "action-picker";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 interface DashboardState {
   entries: WorkstreamEntry[];
   filteredIndices: number[];
@@ -98,6 +122,7 @@ interface DashboardState {
   promptInput: string;
   actionPickerOptions: ActionOption[];
   actionPickerSelected: number;
+  spinnerFrame: number;
   termW: number;
   termH: number;
 }
@@ -169,19 +194,22 @@ export async function getBranchDiff(branch: string): Promise<string> {
 
 const HEADER_ROWS = 2;
 const FOOTER_ROWS = 1;
-const CARD_HEIGHT = 4; // 3 content lines + 1 blank separator
+const CARD_HEIGHT = 3; // 2 content lines + 1 blank separator
 
 // ─── Card rendering ─────────────────────────────────────────────────────────
 
-function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number): string[] {
+function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, spinnerFrame: number): string[] {
   const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
   const sel = isSelected ? C.selectedBg : "";
   const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
 
-  // Line 1: status icon + name
+  // Line 1: status icon (animated spinner for running) + name
+  const icon = entry.status === "running"
+    ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+    : st.icon;
   const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
   const line1 =
-    sel + `  ${st.color}${st.icon}${selReset}` +
+    sel + `  ${st.color}${icon}${selReset}` +
     (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`);
 
   // Line 2: prompt (dimmed, indented)
@@ -190,41 +218,7 @@ function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number):
     : `${A.brightBlack}(no prompt)${selReset}`;
   const line2 = sel + `    ${A.dim}${promptText}${selReset}`;
 
-  // Line 3: all metadata in one line — stats + resumable + comments + last commit
-  const meta: string[] = [];
-  const metaVis: string[] = [];
-
-  if (entry.hasWorktree && entry.filesChanged > 0) {
-    const stats = `${A.brightGreen}+${entry.additions}${selReset} ${A.brightRed}−${entry.deletions}${selReset}`;
-    meta.push(stats);
-    metaVis.push(`+${entry.additions} −${entry.deletions}`);
-  }
-
-  if (entry.hasSession) {
-    meta.push(`${A.brightGreen}resumable${selReset}`);
-    metaVis.push("resumable");
-  }
-
-  if (entry.commentCount > 0) {
-    meta.push(`${A.brightYellow}${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}${selReset}`);
-    metaVis.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
-  }
-
-  if (entry.lastCommitMsg && entry.hasWorktree) {
-    const usedLen = metaVis.join("  ·  ").length;
-    const maxMsg = cardW - 6 - usedLen - (usedLen > 0 ? 5 : 0) - 2;
-    if (maxMsg > 8) {
-      const age = entry.lastCommitAge ? `${entry.lastCommitAge} · ` : "";
-      meta.push(`${A.dim}${age}${truncate(entry.lastCommitMsg, maxMsg)}${selReset}`);
-    }
-  } else if (!entry.hasWorktree) {
-    meta.push(`${A.brightBlack}no worktree${selReset}`);
-  }
-
-  const sep = `${A.brightBlack}  ·  ${selReset}`;
-  const line3 = sel + `    ${meta.join(sep)}`;
-
-  return [line1, line2, line3];
+  return [line1, line2];
 }
 
 // ─── Header ──────────────────────────────────────────────────────────────────
@@ -271,9 +265,9 @@ function renderCards(s: DashboardState): string {
     const entryIdx = s.filteredIndices[fi];
     const entry = s.entries[entryIdx];
     const isSelected = fi === s.selected;
-    const cardLines = renderCard(entry, isSelected, s.termW - 2);
+    const cardLines = renderCard(entry, isSelected, s.termW - 2, s.spinnerFrame);
 
-    for (let r = 0; r < 3; r++) {
+    for (let r = 0; r < 2; r++) {
       const row = baseRow + r;
       const line = cardLines[r] ?? "";
       const bg = isSelected ? C.selectedBg : "";
@@ -282,7 +276,7 @@ function renderCards(s: DashboardState): string {
       out += moveTo(row, 1) + line + bg + " ".repeat(trail) + A.reset;
     }
     // Separator line (blank)
-    out += moveTo(baseRow + 3, 1) + " ".repeat(s.termW);
+    out += moveTo(baseRow + 2, 1) + " ".repeat(s.termW);
   }
 
   // Fill remaining rows
@@ -455,6 +449,7 @@ function refilter(s: DashboardState): void {
 
 export async function openDashboard(
   entries: WorkstreamEntry[],
+  onRefresh?: () => Promise<WorkstreamEntry[]>,
 ): Promise<DashboardAction> {
   if (entries.length === 0) {
     console.log("No workstreams found.");
@@ -471,6 +466,7 @@ export async function openDashboard(
     promptInput: "",
     actionPickerOptions: [],
     actionPickerSelected: 0,
+    spinnerFrame: 0,
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
   };
@@ -496,7 +492,21 @@ export async function openDashboard(
   stdin.setEncoding("utf8");
 
   return new Promise<DashboardAction>((resolve) => {
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+
+    // Animate spinner for running workstreams (80ms per frame)
+    const hasRunning = () => state.entries.some(e => e.status === "running");
+    if (hasRunning()) {
+      spinnerTimer = setInterval(() => {
+        state.spinnerFrame++;
+        if (state.mode === "normal") draw();
+      }, 80);
+    }
+
     const cleanup = (result: DashboardAction) => {
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (spinnerTimer) clearInterval(spinnerTimer);
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
@@ -504,6 +514,32 @@ export async function openDashboard(
       stdout.write(showCursor() + exitAltScreen());
       resolve(result);
     };
+
+    // Auto-refresh entries every 5 seconds to pick up state changes
+    if (onRefresh) {
+      refreshTimer = setInterval(async () => {
+        try {
+          const fresh = await onRefresh();
+          // Update entries in-place, preserving selection
+          const selectedName = state.entries[state.filteredIndices[state.selected]]?.name;
+          state.entries = fresh;
+          refilter(state);
+          // Restore selection by name
+          if (selectedName) {
+            const idx = state.filteredIndices.findIndex(i => state.entries[i]?.name === selectedName);
+            if (idx >= 0) state.selected = idx;
+          }
+          // Start/stop spinner based on whether any workstream is running
+          if (fresh.some(e => e.status === "running") && !spinnerTimer) {
+            spinnerTimer = setInterval(() => { state.spinnerFrame++; if (state.mode === "normal") draw(); }, 80);
+          } else if (!fresh.some(e => e.status === "running") && spinnerTimer) {
+            clearInterval(spinnerTimer);
+            spinnerTimer = null;
+          }
+          draw();
+        } catch {}
+      }, 500);
+    }
 
     const selectedEntry = (): WorkstreamEntry | undefined => {
       if (state.filteredIndices.length === 0) return undefined;

@@ -91,17 +91,23 @@ export function runCommand() {
       if (name) bgArgs.push(name);
       const proc = Bun.spawn(bgArgs, {
         cwd: process.cwd(),
-        env: { ...process.env, WS_BACKGROUND: "1" },
+        env: { ...process.env, WS_BACKGROUND: "1", CLAUDECODE: "", CLAUDE_CODE_ENTRYPOINT: "" },
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
       });
       proc.unref();
 
-      const names = runnableDefs.map((d) => d.name).join(", ");
-      console.log(`Started ${runnableDefs.length} workstream(s) in the background: ${names}`);
-      console.log(`  Use \`ws status\` to check progress.`);
-      console.log(`  Use \`ws switch <name>\` to inspect or resume a session.`);
+      const names = runnableDefs.map((d) => d.name);
+      console.log("");
+      console.log(`  \x1b[32m✓\x1b[0m Started \x1b[1m${names.length}\x1b[0m workstream${names.length > 1 ? "s" : ""} in tmux`);
+      for (const n of names) {
+        console.log(`    \x1b[90m›\x1b[0m ${n}`);
+      }
+      console.log("");
+      console.log(`  \x1b[90mws list\x1b[0m      check progress`);
+      console.log(`  \x1b[90mws switch\x1b[0m    attach to sessions`);
+      console.log("");
     });
 }
 

@@ -93,6 +93,7 @@ export const STATUS_STYLE: Record<string, { color: string; icon: string }> = {
   running: { color: A.brightYellow, icon: "\u25CF" },
   pending: { color: A.brightBlack, icon: "\u25CB" },
   queued: { color: A.cyan, icon: "\u25C9" },
+  idle: { color: A.brightCyan, icon: "\u23F8" },
   waiting: { color: A.brightYellow, icon: "\u23F8" },
   workspace: { color: A.brightBlue, icon: "\u25C7" },
 };

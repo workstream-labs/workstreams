@@ -2,6 +2,7 @@ export type WorkstreamStatus =
   | "pending"
   | "queued"
   | "running"
+  | "idle"
   | "success"
   | "failed";
 
@@ -38,6 +39,8 @@ export interface WorkstreamState {
   logFile: string;
   sessionId?: string;
   planFirst?: boolean;
+  tmuxSession?: string;
+  tmuxPaneId?: string;
 }
 
 export interface RunState {

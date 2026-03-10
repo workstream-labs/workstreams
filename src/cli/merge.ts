@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
+import { loadState, saveState } from "../core/state";
+import { parse, stringify } from "yaml";
 
 export function mergeCommand() {
   return new Command("merge")
@@ -103,11 +104,31 @@ export function mergeCommand() {
         }
         console.log(`\x1b[32m✓ Merged ${n}\x1b[0m`);
 
-        // Cleanup worktree and branch
+        // Cleanup worktree, branch, config entry, and state
         if (opts?.cleanup !== false) {
           const treePath = `.workstreams/trees/${n}`;
           await $`git worktree remove ${treePath} --force`.quiet().catch(() => {});
           await $`git branch -D ${branch}`.quiet().catch(() => {});
+
+          // Remove from workstream.yaml
+          const configFile = Bun.file("workstream.yaml");
+          if (await configFile.exists()) {
+            const raw = parse(await configFile.text());
+            if (raw.workstreams && raw.workstreams[n] !== undefined) {
+              delete raw.workstreams[n];
+              await Bun.write("workstream.yaml", stringify(raw));
+            }
+          }
+
+          // Remove from state
+          if (state.currentRun?.workstreams[n]) {
+            delete state.currentRun.workstreams[n];
+            if (Object.keys(state.currentRun.workstreams).length === 0) {
+              state.currentRun = undefined;
+            }
+            await saveState(state);
+          }
+
           console.log(`  Cleaned up worktree and branch`);
         }
       }

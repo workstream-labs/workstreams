@@ -1118,7 +1118,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
                 textColor={textColor}
                 mutedColor={mutedColor}
                 bg={bg}
-                style={viewMode === "split" ? { flexGrow: 1, flexShrink: 1 } : { width: "100%" }}
+                style={viewMode === "split" ? { flexGrow: 1, flexShrink: 1 } : { flexGrow: 1, flexShrink: 1 }}
                 initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
                 isEditing={editingCommentIndex !== null}
               />

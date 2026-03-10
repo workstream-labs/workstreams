@@ -8,15 +8,17 @@ import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
 import { saveState } from "./state";
 import type { EventBus } from "./events";
+import { hasTmux, createSession, killServer } from "./tmux";
 
 const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
 const COLOR_OTHER = "\x1b[90m";
 const COLOR_RESET = "\x1b[0m";
-const COLOR_BLUE = "\x1b[34m";
 const COLOR_YELLOW = "\x1b[33m";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+const TMUX_SESSION = "ws-run";
 
 class Spinner {
   private interval: ReturnType<typeof setInterval> | null = null;
@@ -53,6 +55,7 @@ export class Executor {
   private aborted = false;
   private runningProcs: Set<string> = new Set();
   private worktreeLock: Promise<void> = Promise.resolve();
+  private tmuxSessionName = TMUX_SESSION;
 
   constructor(
     config: WorkstreamConfig,
@@ -85,6 +88,34 @@ export class Executor {
     this.setupSignalHandlers();
     this.emit("run:start", undefined, { runId: this.run.runId });
 
+    // Require tmux
+    if (!await hasTmux()) {
+      console.error("Error: tmux is required for ws run. Install with: brew install tmux");
+      process.exit(1);
+    }
+
+    // Kill stale ws tmux server, create fresh one with clean config
+    await killServer();
+
+    const tmuxConf = "/tmp/ws-tmux.conf";
+    await Bun.write(tmuxConf, [
+      "set -g remain-on-exit on",
+      "set -g mouse on",
+      "set -g status on",
+      "set -g status-position bottom",
+      "set -g status-style 'bg=colour235'",
+      "set -g status-justify centre",
+      "set -g status-left '#[fg=brightwhite,bold] #{window_name}'",
+      "set -g status-left-length 30",
+      "set -g status-right ''",
+      "set -g status-right-length 0",
+      "set -g window-status-format ''",
+      "set -g window-status-current-format '#[fg=brightwhite]ctrl+q #[fg=colour245]back'",
+      "bind-key -T root C-q detach-client",
+    ].join("\n"));
+
+    Bun.spawnSync(["tmux", "-L", "ws", "-f", tmuxConf, "new-session", "-d", "-s", this.tmuxSessionName]);
+
     // Ensure log directory exists and clear old log files
     const { unlink, mkdir } = await import("fs/promises");
     await mkdir(".workstreams/logs", { recursive: true });
@@ -110,6 +141,9 @@ export class Executor {
     this.run.finishedAt = new Date().toISOString();
     await saveState(this.state);
     this.emit("run:complete", undefined, { runId: this.run.runId });
+
+    // Clean up tmux server
+    await killServer();
 
     // Print summary
     console.log();
@@ -149,13 +183,22 @@ export class Executor {
       });
       await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
 
-      await logLine("Launching agent...");
-      const result = await this.agent.run({
+      await logLine("Launching agent in tmux...");
+
+      const result = await this.agent.runInTmux({
         workDir: ws.worktreePath,
-        prompt: node.def.prompt,
+        prompt: node.def.prompt!,
         logFile: ws.logFile,
         agentConfig: this.config.agent,
         planFirst: ws.planFirst,
+        tmuxSession: this.tmuxSessionName,
+        windowName: name,
+        onPaneCreated: async (paneId) => {
+          ws.tmuxSession = this.tmuxSessionName;
+          ws.tmuxPaneId = paneId;
+          await saveState(this.state);
+          // No per-window status-left needed — uses #{window_name} set at session level
+        },
         onSessionId: async (id) => {
           ws.sessionId = id;
           await saveState(this.state);
@@ -177,6 +220,7 @@ export class Executor {
     }
 
     ws.finishedAt = new Date().toISOString();
+    ws.tmuxPaneId = undefined;
     this.runningProcs.delete(name);
     await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
     await saveState(this.state);
@@ -222,6 +266,8 @@ export class Executor {
       }
       this.run.finishedAt = new Date().toISOString();
       saveState(this.state);
+      // Kill the ws tmux server
+      Bun.spawnSync(["tmux", "-L", "ws", "kill-server"]);
     };
 
     process.on("SIGINT", cleanup);
