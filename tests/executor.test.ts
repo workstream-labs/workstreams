@@ -26,6 +26,7 @@ describe("Executor", () => {
 
   afterEach(async () => {
     process.chdir("/tmp");
+    await $`tmux kill-session -t ws-run`.quiet().catch(() => {});
     await rm(TEST_DIR, { recursive: true, force: true });
   });
 
@@ -57,7 +58,7 @@ describe("Executor", () => {
 
     expect(run.workstreams["a"].status).toBe("success");
     expect(run.workstreams["b"].status).toBe("success");
-  });
+  }, 15000);
 
   it("marks failed nodes correctly", async () => {
     const config: WorkstreamConfig = {
@@ -85,5 +86,5 @@ describe("Executor", () => {
     await executor.execute();
 
     expect(run.workstreams["a"].status).toBe("failed");
-  });
+  }, 15000);
 });

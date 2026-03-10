@@ -8,16 +8,17 @@ import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/com
 import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
-import { openSidebar } from "../ui/sidebar.js";
 import type { AgentConfig, ProjectState, WorkstreamState } from "../core/types";
 import {
   hasTmux,
   hasSession as hasTmuxSession,
   createSession,
   createWindow,
-  respawnPane,
-  selectPaneLeft,
   attachSession,
+  isPaneDead,
+  selectWindow,
+  killWindow,
+  getPaneIds,
 } from "../core/tmux";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -110,7 +111,26 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
 
     const wsState = state?.currentRun?.workstreams?.[def.name];
     const hasSession = !!wsState?.sessionId;
-    const hasTmuxPane = !!wsState?.tmuxPaneId;
+
+    // Validate tmux pane is actually alive and detect idle status
+    let hasTmuxPane = !!wsState?.tmuxPaneId;
+    if (hasTmuxPane && wsState?.tmuxPaneId) {
+      const dead = await isPaneDead(wsState.tmuxPaneId);
+      if (dead) hasTmuxPane = false;
+    }
+
+    // Detect idle: hooks (primary) + Claude session file mtime (fallback)
+    if (hasTmuxPane && (status === "running" || status === "idle")) {
+      const { readAgentState, isSessionFileStale } = await import("../core/agent");
+      const agentState = await readAgentState(def.name);
+      if (agentState === "idle") {
+        status = "idle";
+      } else if (await isSessionFileStale(`.workstreams/trees/${def.name}`)) {
+        // Hook didn't fire but Claude's session file hasn't been written in 30s
+        status = "idle";
+      }
+    }
+
     const commentsData = await loadComments(def.name);
     const commentCount = commentsData.comments.length;
 
@@ -191,40 +211,101 @@ async function actionOpenEditor(name: string, state: any, config: any, editorOpt
   }
 }
 
-// ─── Action: Open Claude in tmux split ────────────────────────────────────────
+// ─── Action: Open or attach to a Claude tmux session ─────────────────────────
+// All session actions (attach, resume, open) go through this single function.
+// Each workstream gets one window in the "ws-run" tmux session. Reuses it if alive.
 
-async function actionOpenClaudeSplit(name: string, config: any, state: any): Promise<void> {
+const WS_TMUX_SESSION = "ws-run";
+
+async function ensureTmuxSession(): Promise<void> {
+  const { $ } = await import("bun");
+  if (!await hasTmuxSession(WS_TMUX_SESSION)) {
+    await createSession(WS_TMUX_SESSION);
+  }
+  // Enable mouse (scroll), hide default status bar, bind Ctrl+Q to detach
+  await $`tmux set -t ${WS_TMUX_SESSION} mouse on`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status on`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-style bg=black`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-left ""`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-right ""`.quiet().catch(() => {});
+  await $`tmux set -t ${WS_TMUX_SESSION} status-justify centre`.quiet().catch(() => {});
+  await $`tmux bind-key -T root C-q detach-client`.quiet().catch(() => {});
+}
+
+function buildStatusLine(name: string, sessionId?: string): string {
+  const session = sessionId ? ` session:${sessionId.slice(0, 8)}` : "";
+  return `ws/${name}${session}  ·  Ctrl+Q detach`;
+}
+
+async function actionOpenClaudeSession(name: string, state: any): Promise<void> {
   if (!await hasTmux()) {
-    console.error("tmux is required for Claude session view. Install with: brew install tmux");
+    console.error("tmux is required. Install with: brew install tmux");
     return;
   }
 
-  const cwd = process.cwd();
+  const { $ } = await import("bun");
+  await ensureTmuxSession();
 
-  // Create tmux session
-  if (!await hasTmuxSession("ws")) {
-    await createSession("ws");
-  }
-
-  // Build Claude command for the selected workstream
   const ws = state?.currentRun?.workstreams?.[name];
   const worktreePath = resolve(ws?.worktreePath ?? `.workstreams/trees/${name}`);
-  const claudeCmd = ws?.sessionId
-    ? `claude --dangerously-skip-permissions --resume ${ws.sessionId}`
-    : `claude --dangerously-skip-permissions`;
 
-  // Create dashboard window with sidebar on the left
-  const sidebarCmd = `bun run ${Bun.main} switch --tmux-sidebar --tmux-initial ${name}`;
-  Bun.spawnSync(["tmux", "new-window", "-t", "ws", "-n", "dashboard", "-c", cwd, sidebarCmd]);
+  // Check if this workstream already has a live window in the ws-run session
+  const paneIds = await getPaneIds(WS_TMUX_SESSION);
+  const existingPane = paneIds.get(name);
+  let needsNewWindow = true;
 
-  // Split right pane (80%) with Claude
-  Bun.spawnSync(["tmux", "split-window", "-h", "-p", "82", "-t", "ws:dashboard", "-c", worktreePath, claudeCmd]);
+  if (existingPane && !await isPaneDead(existingPane)) {
+    // Alive window exists — attach to it
+    needsNewWindow = false;
+  } else if (existingPane) {
+    // Dead window — clean up
+    await killWindow(`${WS_TMUX_SESSION}:${name}`);
+  }
 
-  // Focus sidebar (left pane)
-  await selectPaneLeft();
+  let paneId: string | undefined;
 
-  // Attach — blocks until user quits sidebar
-  await attachSession("ws:dashboard");
+  if (needsNewWindow) {
+    // Build Claude command — unset Claude env vars to prevent nested-session detection
+    const claudeCmd = ws?.sessionId
+      ? `unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT; claude --dangerously-skip-permissions --resume ${ws.sessionId}`
+      : `unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT; claude --dangerously-skip-permissions`;
+
+    // Set up Claude hooks for state detection before launching
+    const { setupClaudeHooks: setupHooks } = await import("../core/agent");
+    await setupHooks(worktreePath, name);
+
+    paneId = await createWindow(WS_TMUX_SESSION, name, worktreePath, claudeCmd);
+
+    // Set status line for this window
+    const statusText = buildStatusLine(name, ws?.sessionId);
+    await $`tmux set -t ${WS_TMUX_SESSION}:${name} status-format[0] ${`#[align=centre,fg=white,dim] ${statusText}`}`.quiet().catch(() => {});
+
+    // Update state to track the pane
+    if (ws) {
+      ws.tmuxSession = WS_TMUX_SESSION;
+      ws.tmuxPaneId = paneId;
+      ws.status = "running";
+      ws.startedAt = ws.startedAt ?? new Date().toISOString();
+      ws.finishedAt = undefined;
+      await saveState(state);
+    }
+  }
+
+  // Select the window and attach
+  await selectWindow(WS_TMUX_SESSION, name).catch(() => {});
+  await attachSession(WS_TMUX_SESSION);
+
+  // After detach — check if Claude exited while we were attached
+  const checkPaneId = paneId ?? existingPane;
+  if (ws && checkPaneId) {
+    const dead = await isPaneDead(checkPaneId);
+    if (dead) {
+      ws.tmuxPaneId = undefined;
+      ws.status = "success";
+      ws.finishedAt = new Date().toISOString();
+      await saveState(state);
+    }
+  }
 }
 
 // ─── Action: View diff ───────────────────────────────────────────────────────
@@ -346,11 +427,23 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       await actionDiffReview(action.name, state);
       return true; // loop back to dashboard
 
-    case "attach-session":
+    case "attach-session": {
+      // Attach directly to the known-alive tmux window — don't re-validate
+      const ws = state.currentRun?.workstreams?.[action.name];
+      if (ws?.tmuxSession) {
+        await ensureTmuxSession();
+        await selectWindow(ws.tmuxSession, action.name).catch(() => {});
+        await attachSession(ws.tmuxSession);
+      } else {
+        await actionOpenClaudeSession(action.name, state);
+      }
+      return true;
+    }
+
     case "open-session":
     case "resume-session":
-      await actionOpenClaudeSplit(action.name, config, state);
-      return true; // loop back to dashboard after tmux exits
+      await actionOpenClaudeSession(action.name, state);
+      return true;
 
     case "resume-prompt": {
       const ws = state.currentRun?.workstreams?.[action.name];
@@ -366,36 +459,6 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
   }
 }
 
-// ─── Tmux sidebar mode ───────────────────────────────────────────────────────
-
-async function runTmuxSidebar(config: any, state: any, initialName?: string): Promise<void> {
-  const { $ } = await import("bun");
-  // Hide status bar, enable mouse, bind Tab to toggle panes
-  await $`tmux set -g status off`.quiet().catch(() => {});
-  await $`tmux set -g mouse on`.quiet().catch(() => {});
-  await $`tmux bind -n Tab select-pane -t ws:dashboard.+`.quiet().catch(() => {});
-
-  const entries = await buildEntries(config, state);
-
-  const buildClaudeCmd = (name: string): { cmd: string; cwd: string } => {
-    const ws = state?.currentRun?.workstreams?.[name];
-    const cwd = resolve(ws?.worktreePath ?? `.workstreams/trees/${name}`);
-    const cmd = ws?.sessionId
-      ? `claude --dangerously-skip-permissions --resume ${ws.sessionId}`
-      : `claude --dangerously-skip-permissions`;
-    return { cmd, cwd };
-  };
-
-  await openSidebar(entries, async (name) => {
-    const { cmd, cwd } = buildClaudeCmd(name);
-    await respawnPane("ws:dashboard.1", cwd, cmd);
-    await selectPaneLeft();
-  }, initialName);
-
-  // Cleanup
-  await $`tmux kill-session -t ws`.quiet().catch(() => {});
-}
-
 // ─── Command ─────────────────────────────────────────────────────────────────
 
 export function switchCommand() {
@@ -404,9 +467,7 @@ export function switchCommand() {
     .argument("[name]", "workstream name (interactive dashboard if omitted)")
     .option("-e, --editor <editor>", "open directly in editor (skip dashboard)")
     .option("--no-editor", "don't open an editor, just print the path")
-    .option("--tmux-sidebar", "internal: run as tmux sidebar pane")
-    .option("--tmux-initial <name>", "internal: initially selected workstream")
-    .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean; tmuxSidebar?: boolean; tmuxInitial?: string }) => {
+    .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean }) => {
       const noEditor = opts.editor_ === false;
       const directEditor = !!opts.editor;
 
@@ -417,12 +478,6 @@ export function switchCommand() {
       }
 
       const config = await loadConfig("workstream.yaml");
-
-      // Internal: tmux sidebar mode (runs inside left pane)
-      if (opts.tmuxSidebar) {
-        await runTmuxSidebar(config, state, opts.tmuxInitial);
-        return;
-      }
 
       // If -e flag or --no-editor, go directly to editor flow
       if (name && (directEditor || noEditor)) {
@@ -463,8 +518,47 @@ export function switchCommand() {
       // Dashboard loop: after diff/tmux, return to dashboard
       let loop = true;
       while (loop) {
+        // Reload state from disk each iteration — background executor may have updated it
+        const freshState = await loadState() ?? state;
+        Object.assign(state, freshState);
         const entries = await buildEntries(config, state);
-        const action = await openDashboard(entries);
+
+        // Lightweight refresh: only update status fields (no git ops)
+        const onRefresh = async () => {
+          const s = await loadState() ?? state;
+          Object.assign(state, s);
+          const { readAgentState, isSessionFileStale } = await import("../core/agent");
+          const updated = entries.map(e => ({ ...e }));
+          for (const entry of updated) {
+            const wsState = s.currentRun?.workstreams?.[entry.name];
+            if (!wsState) continue;
+
+            // Update base status from state
+            let st = wsState.status as string;
+
+            // Check pane liveness
+            let paneAlive = !!wsState.tmuxPaneId;
+            if (paneAlive && wsState.tmuxPaneId) {
+              paneAlive = !await isPaneDead(wsState.tmuxPaneId);
+            }
+            entry.hasTmuxPane = paneAlive;
+
+            // Detect idle
+            if (paneAlive && (st === "running" || st === "idle")) {
+              const agentState = await readAgentState(entry.name);
+              if (agentState === "idle") {
+                st = "idle";
+              } else if (await isSessionFileStale(`.workstreams/trees/${entry.name}`)) {
+                st = "idle";
+              }
+            }
+            entry.status = st;
+            entry.hasSession = !!wsState.sessionId;
+          }
+          return updated;
+        };
+
+        const action = await openDashboard(entries, onRefresh);
         loop = await dispatchAction(action, state, config);
       }
     });

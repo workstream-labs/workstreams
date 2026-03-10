@@ -48,6 +48,8 @@ interface ActionOption {
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   const options: ActionOption[] = [];
   const isRunning = entry.status === "running";
+  const isIdle = entry.status === "idle";
+  const isActive = isRunning || isIdle;
 
   options.push({
     label: "Open in editor",
@@ -55,15 +57,15 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "editor",
   });
 
-  if (isRunning && entry.hasTmuxPane) {
+  if (isActive && entry.hasTmuxPane) {
     options.push({
       label: "Attach to session",
-      description: "Open the running Claude Code session",
+      description: isIdle ? "Claude is waiting for input — jump in" : "Watch the running Claude session",
       action: "attach-session",
     });
   }
 
-  if (!isRunning && entry.hasSession) {
+  if (!isActive && entry.hasSession) {
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
@@ -71,7 +73,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (!isRunning && !entry.hasSession && entry.hasWorktree) {
+  if (!isActive && !entry.hasSession && entry.hasWorktree) {
     options.push({
       label: "Open Claude session",
       description: "Start a new interactive Claude session in the worktree",
@@ -79,7 +81,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasWorktree && entry.filesChanged > 0) {
+  if (entry.hasWorktree && (entry.filesChanged > 0 || entry.isDirty)) {
     options.push({
       label: "View diff & review",
       description: "Browse changes and add review comments",
@@ -87,7 +89,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (!isRunning && entry.hasSession) {
+  if (!isActive && entry.hasSession) {
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -95,7 +97,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (!isRunning && entry.commentCount > 0) {
+  if (!isActive && entry.commentCount > 0) {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
@@ -441,6 +443,7 @@ function refilter(s: DashboardState): void {
 
 export async function openDashboard(
   entries: WorkstreamEntry[],
+  onRefresh?: () => Promise<WorkstreamEntry[]>,
 ): Promise<DashboardAction> {
   if (entries.length === 0) {
     console.log("No workstreams found.");
@@ -482,7 +485,10 @@ export async function openDashboard(
   stdin.setEncoding("utf8");
 
   return new Promise<DashboardAction>((resolve) => {
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
     const cleanup = (result: DashboardAction) => {
+      if (refreshTimer) clearInterval(refreshTimer);
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
@@ -490,6 +496,25 @@ export async function openDashboard(
       stdout.write(showCursor() + exitAltScreen());
       resolve(result);
     };
+
+    // Auto-refresh entries every 5 seconds to pick up state changes
+    if (onRefresh) {
+      refreshTimer = setInterval(async () => {
+        try {
+          const fresh = await onRefresh();
+          // Update entries in-place, preserving selection
+          const selectedName = state.entries[state.filteredIndices[state.selected]]?.name;
+          state.entries = fresh;
+          refilter(state);
+          // Restore selection by name
+          if (selectedName) {
+            const idx = state.filteredIndices.findIndex(i => state.entries[i]?.name === selectedName);
+            if (idx >= 0) state.selected = idx;
+          }
+          draw();
+        } catch {}
+      }, 500);
+    }
 
     const selectedEntry = (): WorkstreamEntry | undefined => {
       if (state.filteredIndices.length === 0) return undefined;

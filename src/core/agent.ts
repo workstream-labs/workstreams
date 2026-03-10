@@ -4,6 +4,7 @@ import {
   createWindow,
   sendPrompt,
   isPaneDead,
+  pipePaneToFile,
 } from "./tmux";
 
 const PLAN_PHASE_SUFFIX = [
@@ -89,6 +90,86 @@ export interface AgentRunOptions {
 export interface AgentResult {
   exitCode: number;
   sessionId?: string;
+}
+
+const STATE_DIR = "/tmp/ws-state";
+
+function stateFilePath(workstreamName: string): string {
+  return `${STATE_DIR}/${workstreamName}`;
+}
+
+export async function readAgentState(workstreamName: string): Promise<"working" | "idle" | null> {
+  try {
+    const { readFile } = await import("fs/promises");
+    const content = (await readFile(stateFilePath(workstreamName), "utf-8")).trim();
+    if (content === "working" || content === "idle") return content;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeClaudePath(absPath: string): string {
+  // Claude encodes paths by replacing both / and . with -
+  return absPath.replace(/[/.]/g, "-");
+}
+
+/** Check Claude's session .jsonl file mtime as a fallback for idle detection */
+export async function isSessionFileStale(workDir: string, thresholdMs = 30_000): Promise<boolean> {
+  const { resolve } = await import("path");
+  const { readdir, stat } = await import("fs/promises");
+  const { homedir } = await import("os");
+
+  const absWorkDir = resolve(workDir);
+  const encoded = encodeClaudePath(absWorkDir);
+  const sessDir = `${homedir()}/.claude/projects/${encoded}`;
+
+  try {
+    const files = await readdir(sessDir);
+    const jsonlFiles = files.filter(f => f.endsWith(".jsonl"));
+    if (jsonlFiles.length === 0) return false;
+
+    let newestMtime = 0;
+    for (const f of jsonlFiles) {
+      const s = await stat(`${sessDir}/${f}`);
+      if (s.mtimeMs > newestMtime) newestMtime = s.mtimeMs;
+    }
+
+    return (Date.now() - newestMtime) > thresholdMs;
+  } catch {
+    return false;
+  }
+}
+
+export async function setupClaudeHooks(workDir: string, workstreamName: string): Promise<void> {
+  const { mkdir, writeFile } = await import("fs/promises");
+  const { join } = await import("path");
+
+  // Ensure state dir exists
+  await mkdir(STATE_DIR, { recursive: true });
+
+  const sf = stateFilePath(workstreamName);
+
+  // Write .claude/settings.local.json in the worktree with state-tracking hooks
+  const claudeDir = join(workDir, ".claude");
+  await mkdir(claudeDir, { recursive: true });
+
+  const hooks = {
+    hooks: {
+      Notification: [{
+        matcher: "idle_prompt",
+        hooks: [{ type: "command", command: `echo idle > '${sf}'` }],
+      }],
+      PreToolUse: [{
+        matcher: "",
+        hooks: [{ type: "command", command: `echo working > '${sf}'` }],
+      }],
+    },
+  };
+
+  await writeFile(join(claudeDir, "settings.local.json"), JSON.stringify(hooks, null, 2));
+  // Initialize state file as "working"
+  await writeFile(sf, "working");
 }
 
 export class AgentAdapter {
@@ -196,8 +277,16 @@ export class AgentAdapter {
   async runInTmux(options: AgentRunOptions & {
     tmuxSession: string;
     windowName: string;
+    onPaneCreated?: (paneId: string) => void | Promise<void>;
   }): Promise<AgentResult & { tmuxPaneId: string }> {
-    const { workDir, prompt, agentConfig, tmuxSession, windowName, planFirst } = options;
+    const { workDir, prompt, logFile, agentConfig, tmuxSession, windowName, planFirst } = options;
+
+    const { appendFile, mkdir } = await import("fs/promises");
+    const { dirname } = await import("path");
+    await mkdir(dirname(logFile), { recursive: true });
+
+    const ts = () => new Date().toISOString();
+    const appendLog = async (data: string) => { await appendFile(logFile, data); };
 
     const cmd = agentConfig.command.split("/").pop() ?? agentConfig.command;
     const tmuxFlags = agentConfig.acceptAll === false
@@ -206,33 +295,125 @@ export class AgentAdapter {
 
     const effectivePrompt = planFirst ? prompt + PLAN_PHASE_SUFFIX : prompt;
 
-    // Build the claude command — launch interactive, no -p flag
-    const claudeCmd = [
+    // Build interactive command — filter out -p from args (prompt sent via paste-buffer)
+    const filteredArgs = (agentConfig.args ?? []).filter(a => a !== "-p");
+    const cmdArgs = [
       agentConfig.command,
       ...tmuxFlags,
-      ...(agentConfig.args ?? []),
-    ].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
+      ...filteredArgs,
+    ];
+
+    // Write a launcher script that captures exit code to a file
+    const exitCodeFile = `/tmp/ws-exit-${windowName}-${Date.now()}`;
+    const scriptFile = `/tmp/ws-launch-${windowName}-${Date.now()}.sh`;
+    const scriptContent = [
+      "#!/bin/bash",
+      "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT",
+      cmdArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" "),
+      `echo $? > '${exitCodeFile}'`,
+    ].join("\n");
+    await Bun.write(scriptFile, scriptContent);
+    const { chmod } = await import("fs/promises");
+    await chmod(scriptFile, 0o755);
+    const claudeCmd = scriptFile;
+
+    const { resolve } = await import("path");
+    const absWorkDir = resolve(workDir);
+
+    // Set up Claude hooks for state detection (idle_prompt / PreToolUse)
+    await setupClaudeHooks(absWorkDir, windowName);
+
+    await appendLog(`[${ts()}] Agent starting (tmux): ${claudeCmd}\n`);
+    await appendLog(`[${ts()}] Working directory: ${absWorkDir}\n---\n`);
 
     // Create tmux window with interactive Claude
-    const paneId = await createWindow(tmuxSession, windowName, workDir, claudeCmd);
+    // Note: remain-on-exit is set at the session level by the executor
+    const paneId = await createWindow(tmuxSession, windowName, absWorkDir, claudeCmd);
 
-    // Wait for Claude to initialize
-    await Bun.sleep(2000);
+    // Notify executor immediately so tmuxPaneId is saved to state
+    if (options.onPaneCreated) await options.onPaneCreated(paneId);
 
-    // Send the prompt via tmux paste-buffer
-    await sendPrompt(`${tmuxSession}:${windowName}`, effectivePrompt);
+    // Pipe all pane output to log file
+    await pipePaneToFile(paneId, logFile);
 
-    // Poll for completion — check if the pane's process has exited
-    let dead = false;
-    while (!dead) {
-      await Bun.sleep(5000);
-      dead = await isPaneDead(paneId);
+    // Wait for Claude to initialize, then send the prompt
+    // (skip if pane already died — fast commands like echo exit instantly)
+    if (!await isPaneDead(paneId)) {
+      await Bun.sleep(2000);
+      if (!await isPaneDead(paneId)) {
+        await sendPrompt(`${tmuxSession}:${windowName}`, effectivePrompt);
+        await appendLog(`[${ts()}] Prompt sent\n`);
+      }
     }
 
-    // Auto-commit after completion
-    await this.autoCommit(workDir, async () => {}, () => new Date().toISOString());
+    // Poll for completion — pane dies when user quits Claude or process exits
+    while (!await isPaneDead(paneId)) {
+      await Bun.sleep(2000);
+    }
 
-    return { exitCode: 0, sessionId: undefined, tmuxPaneId: paneId };
+    // Read exit code from file (written by launcher script)
+    // Wait briefly for the file to appear — tmux pane may still be flushing
+    const { readFile, unlink: unlinkFile } = await import("fs/promises");
+    let exitCode = 1;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const raw = await readFile(exitCodeFile, "utf-8");
+        exitCode = parseInt(raw.trim(), 10);
+        if (isNaN(exitCode)) exitCode = 1;
+        break;
+      } catch {
+        await Bun.sleep(200);
+      }
+    }
+    // Clean up temp files
+    await unlinkFile(exitCodeFile).catch(() => {});
+    await unlinkFile(scriptFile).catch(() => {});
+    await unlinkFile(stateFilePath(windowName)).catch(() => {});
+
+    const sessionId = await this.extractSessionIdFromStorage(absWorkDir);
+    if (sessionId && options.onSessionId) {
+      await options.onSessionId(sessionId);
+    }
+
+    await appendLog(`\n---\n[${ts()}] Agent exited with code ${exitCode}\n`);
+
+    // Auto-commit any changes
+    if (exitCode === 0) {
+      await this.autoCommit(absWorkDir, appendLog, ts);
+    }
+
+    // Kill the dead pane (cleanup remain-on-exit)
+    Bun.spawnSync(["tmux", "kill-pane", "-t", paneId]);
+
+    return { exitCode, sessionId, tmuxPaneId: paneId };
+  }
+
+  private async extractSessionIdFromStorage(workDir: string): Promise<string | undefined> {
+    const { readdir, stat } = await import("fs/promises");
+    const { homedir } = await import("os");
+
+    const encoded = encodeClaudePath(workDir);
+    const sessDir = `${homedir()}/.claude/projects/${encoded}`;
+
+    try {
+      const files = await readdir(sessDir);
+      const jsonlFiles = files.filter(f => f.endsWith(".jsonl"));
+      if (jsonlFiles.length === 0) return undefined;
+
+      // Find the most recently modified .jsonl file
+      let newest: { name: string; mtime: number } | null = null;
+      for (const f of jsonlFiles) {
+        const s = await stat(`${sessDir}/${f}`);
+        if (!newest || s.mtimeMs > newest.mtime) {
+          newest = { name: f, mtime: s.mtimeMs };
+        }
+      }
+
+      if (!newest) return undefined;
+      return newest.name.replace(".jsonl", "");
+    } catch {
+      return undefined;
+    }
   }
 
   private async autoCommit(

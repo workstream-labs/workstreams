@@ -4,6 +4,7 @@ import { loadState } from "../core/state";
 import { getBranchInfo, getDiffStats } from "../ui/workstream-picker.js";
 import { A, STATUS_STYLE, pad, fg256 } from "../ui/ansi.js";
 import { loadComments } from "../core/comments";
+import { isPaneDead } from "../core/tmux";
 
 function formatDuration(ms: number): string {
   const s = Math.round(ms / 1000);
@@ -53,8 +54,23 @@ export async function listAction(configPath: string = "workstream.yaml") {
       status = "pending";
     }
 
-    let durationStr = "";
     const ws = state?.currentRun?.workstreams?.[def.name];
+
+    // Detect idle: hooks (primary) + Claude session file mtime (fallback)
+    if (ws?.tmuxPaneId && (status === "running" || status === "idle")) {
+      const dead = await isPaneDead(ws.tmuxPaneId);
+      if (!dead) {
+        const { readAgentState, isSessionFileStale } = await import("../core/agent");
+        const agentState = await readAgentState(def.name);
+        if (agentState === "idle") {
+          status = "idle";
+        } else if (await isSessionFileStale(`.workstreams/trees/${def.name}`)) {
+          status = "idle";
+        }
+      }
+    }
+
+    let durationStr = "";
     if (ws?.startedAt) {
       const start = new Date(ws.startedAt).getTime();
       const end = ws.finishedAt ? new Date(ws.finishedAt).getTime() : Date.now();
@@ -124,6 +140,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   const succeeded = rows.filter(r => r.status === "success").length;
   const failed = rows.filter(r => r.status === "failed").length;
   const running = rows.filter(r => r.status === "running").length;
+  const idle = rows.filter(r => r.status === "idle").length;
   const pending = rows.filter(r => r.status === "pending").length;
 
   console.log("");
@@ -156,6 +173,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   if (succeeded) parts.push(`${A.green}${STATUS_STYLE.success.icon} ${succeeded} passed${A.reset}`);
   if (failed) parts.push(`${A.red}${STATUS_STYLE.failed.icon} ${failed} failed${A.reset}`);
   if (running) parts.push(`${A.brightYellow}${STATUS_STYLE.running.icon} ${running} running${A.reset}`);
+  if (idle) parts.push(`${A.brightCyan}${STATUS_STYLE.idle.icon} ${idle} idle${A.reset}`);
   if (pending) parts.push(`${A.dim}${STATUS_STYLE.pending.icon} ${pending} pending${A.reset}`);
 
   if (parts.length > 0) {

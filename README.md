@@ -9,7 +9,10 @@ bun install
 bun link        # makes `ws` available globally
 ```
 
-Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)) installed and available in your `$PATH`.
+Requires:
+- [Bun](https://bun.sh)
+- [tmux](https://github.com/tmux/tmux) — `brew install tmux` (macOS) / `apt install tmux` (Linux)
+- At least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)) installed and available in your `$PATH`
 
 ## Quick Start
 

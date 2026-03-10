@@ -2,6 +2,7 @@ export type WorkstreamStatus =
   | "pending"
   | "queued"
   | "running"
+  | "idle"
   | "success"
   | "failed";
 

@@ -91,7 +91,7 @@ export function runCommand() {
       if (name) bgArgs.push(name);
       const proc = Bun.spawn(bgArgs, {
         cwd: process.cwd(),
-        env: { ...process.env, WS_BACKGROUND: "1" },
+        env: { ...process.env, WS_BACKGROUND: "1", CLAUDECODE: "", CLAUDE_CODE_ENTRYPOINT: "" },
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
