@@ -4,6 +4,7 @@ import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments } from "../core/comments";
+import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
 import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
@@ -101,6 +102,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
     const hasSession = !!state?.currentRun?.workstreams?.[def.name]?.sessionId;
     const commentsData = await loadComments(def.name);
     const commentCount = commentsData.comments.length;
+    const pendingPromptText = await loadPendingPrompt(def.name);
 
     return {
       name: def.name,
@@ -112,6 +114,8 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
       ...diffStats,
       hasSession,
       commentCount,
+      hasPendingPrompt: !!pendingPromptText,
+      pendingPromptText: pendingPromptText ?? undefined,
       isDirty,
     } as WorkstreamEntry;
   });
@@ -178,9 +182,9 @@ async function actionOpenEditor(name: string, state: any, config: any, editorOpt
   }
 }
 
-// ─── Action: Resume Claude session (interactive) ─────────────────────────────
+// ─── Action: Open Claude session (interactive) ───────────────────────────────
 
-async function actionResumeSession(name: string, ws: WorkstreamState, state: ProjectState) {
+async function actionOpenSession(name: string, ws: WorkstreamState, state: ProjectState) {
   if (!ws.sessionId) {
     console.error("Error: no session ID captured for this workstream.");
     return;
@@ -243,40 +247,11 @@ async function actionViewLogs(name: string, state: any) {
   });
 }
 
-// ─── Action: Resume with new prompt (hands-off) ─────────────────────────────
+// ─── Action: Run (gathers pending prompt + comments) ─────────────────────────
 
-async function actionResumeWithPrompt(name: string, prompt: string, ws: WorkstreamState, state: any) {
-  ws.status = "running";
-  ws.startedAt = new Date().toISOString();
-  ws.finishedAt = undefined;
-  ws.exitCode = undefined;
-  ws.error = undefined;
-  await saveState(state);
-
-  const bgArgs = ["bun", Bun.main, "resume", name, "-p", prompt];
-  const proc = Bun.spawn(bgArgs, {
-    cwd: process.cwd(),
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  proc.unref();
-}
-
-// ─── Action: Resume with review comments ─────────────────────────────────────
-
-async function actionResumeWithComments(name: string, ws: WorkstreamState, state: any) {
-  const data = await loadComments(name);
-  if (data.comments.length === 0) return;
-
-  ws.status = "running";
-  ws.startedAt = new Date().toISOString();
-  ws.finishedAt = undefined;
-  ws.exitCode = undefined;
-  ws.error = undefined;
-  await saveState(state);
-
-  const bgArgs = ["bun", Bun.main, "resume", name, "--comments"];
+async function actionRun(name: string, ws: WorkstreamState, state: any) {
+  // Don't set status here — ws run handles validation and status updates itself
+  const bgArgs = ["bun", Bun.main, "run", name];
   const proc = Bun.spawn(bgArgs, {
     cwd: process.cwd(),
     stdin: "ignore",
@@ -323,27 +298,44 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       await actionViewLogs(action.name, state);
       return true; // loop back to dashboard
 
-    case "resume-session": {
+    case "open-session": {
       const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeSession(action.name, ws, state);
+      if (ws) await actionOpenSession(action.name, ws, state);
       return false;
     }
 
-    case "resume-prompt": {
-      const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeWithPrompt(action.name, action.prompt, ws, state);
-      return true;
-    }
-
-    case "resume-comments": {
-      const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeWithComments(action.name, ws, state);
+    case "run": {
+      let ws = state.currentRun?.workstreams?.[action.name];
+      if (!ws) {
+        // Fresh workstream — ensure run state exists
+        if (!state.currentRun) {
+          state.currentRun = {
+            runId: `run-${Date.now()}`,
+            startedAt: new Date().toISOString(),
+            workstreams: {},
+          };
+        }
+        ws = {
+          name: action.name,
+          status: "pending" as const,
+          branch: `ws/${action.name}`,
+          worktreePath: `.workstreams/trees/${action.name}`,
+          logFile: `.workstreams/logs/${action.name}.log`,
+        };
+        state.currentRun.workstreams[action.name] = ws;
+      }
+      await actionRun(action.name, ws, state);
       return true;
     }
 
     case "set-prompt":
       await actionSetPrompt(action.name, action.prompt);
       return true; // loop back to dashboard so updated prompt is visible
+
+    case "save-pending-prompt":
+      await savePendingPrompt(action.name, action.prompt);
+      return true; // loop back to dashboard
+
   }
 }
 

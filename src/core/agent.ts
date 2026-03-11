@@ -24,6 +24,7 @@ export interface AgentRunOptions {
   logFile: string;
   agentConfig: AgentConfig;
   onSessionId?: (id: string) => void | Promise<void>;
+  onPid?: (pid: number) => void | Promise<void>;
 }
 
 export interface AgentResult {

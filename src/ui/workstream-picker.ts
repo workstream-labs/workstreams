@@ -25,6 +25,8 @@ export interface WorkstreamEntry {
   deletions: number;
   hasSession: boolean;
   commentCount: number;
+  hasPendingPrompt: boolean;
+  pendingPromptText?: string;
   isDirty: boolean;
 }
 
@@ -32,16 +34,16 @@ export type DashboardAction =
   | { type: "editor"; name: string }
   | { type: "diff"; name: string }
   | { type: "log"; name: string }
-  | { type: "resume-session"; name: string }
-  | { type: "resume-prompt"; name: string; prompt: string }
-  | { type: "resume-comments"; name: string }
+  | { type: "open-session"; name: string }
+  | { type: "run"; name: string }
   | { type: "set-prompt"; name: string; prompt: string }
+  | { type: "save-pending-prompt"; name: string; prompt: string }
   | { type: "quit" };
 
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"] | "prompt-input" | "set-prompt-input";
+  action: DashboardAction["type"] | "set-prompt-input" | "pending-prompt-input";
 }
 
 function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
@@ -53,22 +55,54 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "editor",
   });
 
-  options.push({
-    label: entry.prompt ? "Edit prompt" : "Set prompt",
-    description: entry.prompt
-      ? "Modify the workstream prompt in workstream.yaml"
-      : "Add a prompt to this workspace in workstream.yaml",
-    action: "set-prompt-input",
-  });
-
-  if (entry.hasSession && entry.status !== "running") {
+  // ─── No session (pre-first-run) ─────────────────────────────────
+  if (!entry.hasSession && entry.status !== "running") {
     options.push({
-      label: "Resume Claude session",
-      description: "Continue the previous interactive session",
-      action: "resume-session",
+      label: entry.prompt ? "Edit prompt" : "Set prompt",
+      description: entry.prompt
+        ? "Modify the workstream prompt in workstream.yaml"
+        : "Add a prompt to this workspace in workstream.yaml",
+      action: "set-prompt-input",
     });
+
+    if (entry.prompt) {
+      options.push({
+        label: "Run",
+        description: "Run the agent with the configured prompt",
+        action: "run",
+      });
+    }
   }
 
+  // ─── Has session, finished ──────────────────────────────────────
+  if (entry.hasSession && entry.status !== "running") {
+    options.push({
+      label: "Open session",
+      description: "Continue in an interactive terminal session",
+      action: "open-session",
+    });
+
+    // Set/edit prompt to continue with
+    options.push({
+      label: entry.hasPendingPrompt ? "Edit prompt" : "Set prompt",
+      description: "Set instructions to continue with",
+      action: "pending-prompt-input",
+    });
+
+    // Run — only if there's something pending to send
+    if (entry.hasPendingPrompt || entry.commentCount > 0) {
+      const pending: string[] = [];
+      if (entry.commentCount > 0) pending.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
+      if (entry.hasPendingPrompt) pending.push("prompt");
+      options.push({
+        label: `Run`,
+        description: `Send ${pending.join(" + ")} to the agent`,
+        action: "run",
+      });
+    }
+  }
+
+  // ─── Common: view diff, logs ────────────────────────────────────
   if (entry.hasWorktree && entry.filesChanged > 0) {
     options.push({
       label: "View diff & review",
@@ -85,26 +119,11 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasSession && entry.status !== "running") {
-    options.push({
-      label: "Resume with new prompt",
-      description: "Send new instructions to the agent",
-      action: "prompt-input",
-    });
-  }
-
-  if (entry.commentCount > 0 && entry.status !== "running") {
-    options.push({
-      label: "Resume with comments",
-      description: "Send stored review comments to the agent",
-      action: "resume-comments",
-    });
-  }
-
+  // ─── Running ────────────────────────────────────────────────────
   return options;
 }
 
-type DashboardMode = "normal" | "search" | "prompt-input" | "set-prompt-input" | "help" | "action-picker";
+type DashboardMode = "normal" | "search" | "set-prompt-input" | "pending-prompt-input" | "help" | "action-picker";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -398,6 +417,9 @@ function renderPromptModal(s: DashboardState): string {
   if (s.mode === "set-prompt-input") {
     const entry = s.entries[s.filteredIndices[s.selected]];
     title = entry?.prompt ? "Edit prompt" : "Set prompt";
+  } else if (s.mode === "pending-prompt-input") {
+    const entry = s.entries[s.filteredIndices[s.selected]];
+    title = entry?.hasPendingPrompt ? "Edit prompt" : "Set prompt";
   }
   return renderInputModal({
     title,
@@ -449,8 +471,8 @@ function render(s: DashboardState): string {
     renderFooter(s);
 
   if (s.mode === "search") out += renderSearchBar(s);
-  if (s.mode === "prompt-input") out += renderPromptModal(s);
   if (s.mode === "set-prompt-input") out += renderPromptModal(s);
+  if (s.mode === "pending-prompt-input") out += renderPromptModal(s);
   if (s.mode === "help") out += renderHelpOverlay(s);
   if (s.mode === "action-picker") out += renderActionPicker(s);
 
@@ -629,16 +651,17 @@ export async function openDashboard(
           if (!entry) return;
           const opt = state.actionPickerOptions[state.actionPickerSelected];
           if (!opt) return;
-          if (opt.action === "prompt-input") {
-            state.mode = "prompt-input";
-            state.promptInput = "";
-            draw();
-            return;
-          }
           if (opt.action === "set-prompt-input") {
             state.mode = "set-prompt-input";
             const currentEntry = selectedEntry();
             state.promptInput = currentEntry?.prompt ?? "";
+            draw();
+            return;
+          }
+          if (opt.action === "pending-prompt-input") {
+            state.mode = "pending-prompt-input";
+            const currentEntry = selectedEntry();
+            state.promptInput = currentEntry?.pendingPromptText ?? "";
             draw();
             return;
           }
@@ -657,8 +680,8 @@ export async function openDashboard(
         return;
       }
 
-      // ─── Prompt input mode ────────────────────────────────────────
-      if (state.mode === "prompt-input") {
+      // ─── Set-prompt input mode ─────────────────────────────────────
+      if (state.mode === "set-prompt-input") {
         if (key === "\x1b") { // Esc
           state.mode = "normal";
           state.promptInput = "";
@@ -669,7 +692,7 @@ export async function openDashboard(
           const entry = selectedEntry();
           const prompt = state.promptInput.trim();
           if (entry && prompt) {
-            cleanup({ type: "resume-prompt", name: entry.name, prompt });
+            cleanup({ type: "set-prompt", name: entry.name, prompt });
           } else {
             state.mode = "normal";
             state.promptInput = "";
@@ -703,8 +726,8 @@ export async function openDashboard(
         return;
       }
 
-      // ─── Set-prompt input mode ─────────────────────────────────────
-      if (state.mode === "set-prompt-input") {
+      // ─── Pending-prompt input mode ──────────────────────────────────
+      if (state.mode === "pending-prompt-input") {
         if (key === "\x1b") { // Esc
           state.mode = "normal";
           state.promptInput = "";
@@ -715,7 +738,7 @@ export async function openDashboard(
           const entry = selectedEntry();
           const prompt = state.promptInput.trim();
           if (entry && prompt) {
-            cleanup({ type: "set-prompt", name: entry.name, prompt });
+            cleanup({ type: "save-pending-prompt", name: entry.name, prompt });
           } else {
             state.mode = "normal";
             state.promptInput = "";

@@ -163,6 +163,11 @@ export class Executor {
           await saveState(this.state);
           await logLine(`Session ID captured: ${id}`);
         },
+        onPid: async (pid) => {
+          ws.pid = pid;
+          await saveState(this.state);
+          await logLine(`Agent PID: ${pid}`);
+        },
       });
 
       ws.exitCode = result.exitCode;
@@ -179,6 +184,7 @@ export class Executor {
     }
 
     ws.finishedAt = new Date().toISOString();
+    ws.pid = undefined;
     this.runningProcs.delete(name);
     await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
     await saveState(this.state);
