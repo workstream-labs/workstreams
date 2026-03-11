@@ -63,6 +63,7 @@ export interface AgentRunOptions {
   logFile: string;
   agentConfig: AgentConfig;
   onSessionId?: (id: string) => void | Promise<void>;
+  onPid?: (pid: number) => void | Promise<void>;
 }
 
 export interface AgentResult {
@@ -102,6 +103,8 @@ export class AgentAdapter {
         stdout: "pipe",
         stderr: "pipe",
       });
+
+      if (proc.pid && options.onPid) await options.onPid(proc.pid);
 
       const isStreamJson = args.includes("stream-json");
       let sessionId: string | undefined;

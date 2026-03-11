@@ -286,6 +286,38 @@ async function actionResumeWithComments(name: string, ws: WorkstreamState, state
   proc.unref();
 }
 
+// ─── Action: Interrupt running agent ──────────────────────────────────────────
+
+async function actionInterrupt(name: string, ws: WorkstreamState, state: ProjectState) {
+  if (!ws.pid) {
+    console.log(`No PID recorded for "${name}". The agent may have already finished.`);
+    return;
+  }
+
+  try {
+    // Check if process is still alive
+    process.kill(ws.pid, 0);
+  } catch {
+    console.log(`Process ${ws.pid} is no longer running.`);
+    ws.pid = undefined;
+    await saveState(state);
+    return;
+  }
+
+  // Send SIGINT for graceful shutdown
+  try {
+    process.kill(ws.pid, "SIGINT");
+  } catch {}
+
+  ws.status = "failed";
+  ws.error = "Interrupted by user";
+  ws.finishedAt = new Date().toISOString();
+  ws.pid = undefined;
+  await saveState(state);
+
+  console.log(`Interrupted "${name}".`);
+}
+
 // ─── Action: Set/update prompt in workstream.yaml ─────────────────────────────
 
 async function actionSetPrompt(name: string, prompt: string) {
@@ -344,6 +376,12 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "set-prompt":
       await actionSetPrompt(action.name, action.prompt);
       return true; // loop back to dashboard so updated prompt is visible
+
+    case "interrupt": {
+      const ws = state.currentRun?.workstreams?.[action.name];
+      if (ws) await actionInterrupt(action.name, ws, state);
+      return true;
+    }
   }
 }
 

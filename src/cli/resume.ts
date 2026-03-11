@@ -104,6 +104,11 @@ async function runResume(
       prompt: resumePrompt,
       logFile: ws.logFile,
       agentConfig: resumeAgentConfig,
+      onPid: async (pid) => {
+        ws.pid = pid;
+        await saveState(state);
+        await logLine(`Agent PID: ${pid}`);
+      },
     });
 
     ws.exitCode = result.exitCode;
@@ -120,6 +125,7 @@ async function runResume(
   }
 
   ws.finishedAt = new Date().toISOString();
+  ws.pid = undefined;
   await logLine(`Resume of "${name}" finished with status: ${ws.status}`);
   await saveState(state);
 
