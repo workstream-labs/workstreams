@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadConfig } from "../core/config.js";
 import { loadState } from "../core/state.js";
 import { openChoicePicker } from "../ui/choice-picker.js";
-import { openLogViewer } from "../ui/log-viewer.js";
+import { openSessionViewer } from "../ui/session-viewer.js";
 import { STATUS_STYLE } from "../ui/ansi.js";
 
 export function logsCommand() {
@@ -75,7 +75,7 @@ Interactive viewer keys: j/k scroll, d/u half-page, g/G top/bottom,
       }
 
       // Interactive viewer
-      await openLogViewer({
+      await openSessionViewer({
         name,
         logFile: ws.logFile,
         status: ws.status,
