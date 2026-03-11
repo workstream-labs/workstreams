@@ -28,7 +28,7 @@ function formatStreamEvent(line: string): string | null {
             parts.push(`${ts} [assistant] ${block.text}`);
           } else if (block.type === "tool_use") {
             const input = typeof block.input === "string" ? block.input : JSON.stringify(block.input);
-            const truncated = input.length > 500 ? input.slice(0, 500) + "..." : input;
+            const truncated = input;
             parts.push(`${ts} [tool_call] ${block.name}: ${truncated}`);
           }
         }
@@ -42,7 +42,7 @@ function formatStreamEvent(line: string): string | null {
       case "tool_result": {
         const content = event.content ?? "";
         const text = typeof content === "string" ? content : JSON.stringify(content);
-        const truncated = text.length > 1000 ? text.slice(0, 1000) + "..." : text;
+        const truncated = text;
         return `${ts} [tool_result] ${truncated}`;
       }
       case "system": {

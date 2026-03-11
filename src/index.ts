@@ -9,11 +9,11 @@ import { createCommand } from "./cli/create";
 import { listCommand } from "./cli/list";
 import { diffCommand } from "./cli/diff";
 import { mergeCommand } from "./cli/merge";
-import { resumeCommand } from "./cli/resume";
+
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
 import { logsCommand } from "./cli/logs";
-import { interruptCommand } from "./cli/interrupt";
+
 
 const program = new Command();
 
@@ -26,22 +26,20 @@ Quick start:
   ws init                        Initialize workstreams in this repo
   ws create auth -p "Add auth"   Define a workstream
   ws run                         Spawn agents for all workstreams
+  ws run auth -p "fix tests"     Resume with new instructions
   ws list                        Check status
   ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
   ws merge auth                  Merge completed work
-  ws interrupt auth              Stop a running agent
   ws destroy --all               Tear everything down
 
 Key options:
   init      -f, --force            Reinitialize even if already set up
   create    -p, --prompt <text>    Prompt for the agent
   run       -d, --dry-run          Preview which workstreams would run
+            -p, --prompt <text>    Resume with new instructions
   diff      --raw                  Print raw diff instead of interactive viewer
-  resume    -p, --prompt <text>    New prompt to send to the agent
-            --comments             Resume using stored review comments
   merge     --all                  Merge all successful workstreams
-            --squash               Squash commits into a single commit
             --no-cleanup           Keep worktree and branch after merge
   destroy   --all                  Remove all worktrees, config, and state
             -y, --yes              Skip confirmation prompt
@@ -59,11 +57,9 @@ program.addCommand(runCommand());
 program.addCommand(listCommand());
 program.addCommand(switchCommand());
 program.addCommand(diffCommand());
-program.addCommand(resumeCommand());
 program.addCommand(mergeCommand());
 program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
-program.addCommand(interruptCommand());
 
 program.parse();
