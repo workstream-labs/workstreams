@@ -404,7 +404,26 @@ function SessionApp({ name, status, messages: init, logFile }: {
   const scrollRef = React.useRef<ScrollBoxRenderable | null>(null);
   const [messages, setMessages] = React.useState(init);
   const [showThinking, setShowThinking] = React.useState(true);
+  const [liveStatus, setLiveStatus] = React.useState(status);
   const [follow, setFollow] = React.useState(status === "running");
+
+  // Watch state.json for status changes (e.g. running → success/failed)
+  React.useEffect(() => {
+    if (status !== "running") return;
+    const { watch } = require("fs");
+    const { readFile } = require("fs/promises");
+    const stateFile = ".workstreams/state.json";
+    let watcher: any = null;
+    const check = async () => {
+      try {
+        const data = JSON.parse(await readFile(stateFile, "utf-8"));
+        const ws = data?.currentRun?.workstreams?.[name]?.status;
+        if (ws && ws !== "running") setLiveStatus(ws);
+      } catch {}
+    };
+    try { watcher = watch(stateFile, { persistent: false }, () => check()); } catch {}
+    return () => { if (watcher) watcher.close(); };
+  }, [name, status]);
 
   // Live tailing — re-parse the stream-json log file on changes
   React.useEffect(() => {
@@ -444,10 +463,11 @@ function SessionApp({ name, status, messages: init, logFile }: {
 
   let totalCost = 0;
   for (const m of messages) if (m.role === "result" && m.cost) totalCost += m.cost;
-  const isRunning = status === "running";
+  const hasResult = messages.some((m: DisplayMessage) => m.role === "result");
+  const isRunning = liveStatus === "running" && !hasResult;
   const lastAst = messages.reduce((a: number, m: DisplayMessage, i: number) => m.role === "assistant" ? i : a, -1);
-  const sIcon = isRunning ? "\u25CF" : status === "success" ? "\u2713" : status === "failed" ? "\u2717" : "\u25CB";
-  const sColor = isRunning ? theme.warning : status === "success" ? theme.success : status === "failed" ? theme.error : theme.textMuted;
+  const sIcon = isRunning ? "\u25CF" : liveStatus === "success" ? "\u2713" : liveStatus === "failed" ? "\u2717" : "\u25CB";
+  const sColor = isRunning ? theme.warning : liveStatus === "success" ? theme.success : liveStatus === "failed" ? theme.error : theme.textMuted;
 
   return (
     <box width="100%" height="100%" backgroundColor={theme.background} flexDirection="column">
@@ -458,7 +478,7 @@ function SessionApp({ name, status, messages: init, logFile }: {
           backgroundColor={theme.backgroundPanel} flexDirection="row" justifyContent="space-between">
           <text fg={theme.text}><b># {name}</b></text>
           <box flexDirection="row" gap={2} flexShrink={0}>
-            <text fg={sColor}>{sIcon} {status}</text>
+            <text fg={sColor}>{sIcon} {liveStatus}</text>
             {follow && <text fg={theme.success}>{"\u25CF"} FOLLOW</text>}
             {totalCost > 0 && <text fg={theme.textMuted}>{fmtCost(totalCost)}</text>}
           </box>
@@ -482,13 +502,7 @@ function SessionApp({ name, status, messages: init, logFile }: {
       {/* Footer */}
       <box flexShrink={0} flexDirection="row" justifyContent="space-between"
         paddingLeft={2} paddingRight={2} backgroundColor={theme.backgroundPanel}>
-        <box flexDirection="row" gap={2}>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>esc</span> back</text>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>{"\u2191\u2193"}</span> scroll</text>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>G</span> bottom</text>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>f</span> follow</text>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>t</span> thinking</text>
-        </box>
+        <text fg={theme.textMuted}><span style={{ fg: theme.text }}>esc</span> back</text>
         <text fg={theme.textMuted}>{messages.length} messages</text>
       </box>
     </box>
@@ -543,10 +557,7 @@ function FallbackApp({ name, status, logFile }: { name: string; status: string; 
         </box>
       </scrollbox>
       <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2} backgroundColor={theme.backgroundPanel}>
-        <box flexDirection="row" gap={2}>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>esc</span> back</text>
-          <text fg={theme.textMuted}><span style={{ fg: theme.text }}>f</span> follow</text>
-        </box>
+        <text fg={theme.textMuted}><span style={{ fg: theme.text }}>esc</span> back</text>
         <text fg={theme.textMuted}>{lines.length} lines</text>
       </box>
     </box>
@@ -571,14 +582,19 @@ export async function openSessionViewer(options: SessionViewerOptions): Promise<
   const { resolve } = await import("path");
   const logPath = resolve(options.logFile);
 
-  // Try to parse the log file as stream-json
+  // Try to parse the log file as stream-json.
+  // Even if 0 messages parsed initially (file still being written),
+  // use the rich viewer if status is running — it will live-tail and re-parse.
   let messages: DisplayMessage[] = [];
+  let hasJsonLines = false;
   try {
     const raw = await Bun.file(logPath).text();
     messages = parseSessionJsonlContent(raw);
+    // Check if the file contains JSON lines (even if parser returned 0 messages)
+    hasJsonLines = raw.split("\n").some(l => { try { JSON.parse(l.trim()); return true; } catch { return false; } });
   } catch { /* file may not exist yet */ }
 
-  const isRich = messages.length > 0;
+  const isRich = messages.length > 0 || hasJsonLines || options.status === "running";
 
   return new Promise<void>(async (resolvePromise) => {
     const renderer = await createCliRenderer({
