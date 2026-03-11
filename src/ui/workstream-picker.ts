@@ -60,7 +60,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "set-prompt-input",
   });
 
-  if (entry.hasSession) {
+  if (entry.hasSession && entry.status !== "running") {
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
@@ -76,7 +76,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasSession) {
+  if (entry.hasSession && entry.status !== "running") {
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -84,7 +84,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.commentCount > 0) {
+  if (entry.commentCount > 0 && entry.status !== "running") {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
@@ -96,6 +96,8 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
 }
 
 type DashboardMode = "normal" | "search" | "prompt-input" | "set-prompt-input" | "help" | "action-picker";
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 interface DashboardState {
   entries: WorkstreamEntry[];
@@ -109,6 +111,7 @@ interface DashboardState {
   actionPickerSelected: number;
   termW: number;
   termH: number;
+  spinnerFrame: number;
 }
 
 // ─── Git helpers ─────────────────────────────────────────────────────────────
@@ -182,15 +185,18 @@ const CARD_HEIGHT = 4; // 3 content lines + 1 blank separator
 
 // ─── Card rendering ─────────────────────────────────────────────────────────
 
-function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number): string[] {
+function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, spinnerFrame?: number): string[] {
   const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
+  const icon = entry.status === "running" && spinnerFrame !== undefined
+    ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+    : st.icon;
   const sel = isSelected ? C.selectedBg : "";
   const selReset = isSelected ? A.reset + C.selectedBg : A.reset;
 
   // Line 1: status icon + name
   const nameStr = truncate(entry.name, Math.max(10, cardW - 8));
   const line1 =
-    sel + `  ${st.color}${st.icon}${selReset}` +
+    sel + `  ${st.color}${icon}${selReset}` +
     (isSelected ? ` ${A.bold}${A.brightWhite}${nameStr}${selReset}` : ` ${A.white}${nameStr}${selReset}`);
 
   // Line 2: prompt (dimmed, indented)
@@ -280,7 +286,7 @@ function renderCards(s: DashboardState): string {
     const entryIdx = s.filteredIndices[fi];
     const entry = s.entries[entryIdx];
     const isSelected = fi === s.selected;
-    const cardLines = renderCard(entry, isSelected, s.termW - 2);
+    const cardLines = renderCard(entry, isSelected, s.termW - 2, s.spinnerFrame);
 
     for (let r = 0; r < 3; r++) {
       const row = baseRow + r;
@@ -468,8 +474,16 @@ function refilter(s: DashboardState): void {
 
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
+export interface DashboardOptions {
+  /** Called periodically to refresh entries while the dashboard is open. */
+  onRefresh?: () => Promise<WorkstreamEntry[]>;
+  /** Refresh interval in milliseconds (default: 3000). */
+  refreshInterval?: number;
+}
+
 export async function openDashboard(
   entries: WorkstreamEntry[],
+  options?: DashboardOptions,
 ): Promise<DashboardAction> {
   if (entries.length === 0) {
     console.log("No workstreams found.");
@@ -488,6 +502,7 @@ export async function openDashboard(
     actionPickerSelected: 0,
     termW: process.stdout.columns ?? 120,
     termH: process.stdout.rows ?? 40,
+    spinnerFrame: 0,
   };
 
   const stdin = process.stdin;
@@ -506,12 +521,58 @@ export async function openDashboard(
   };
   process.stdout.on("resize", onResize);
 
+  // Spinner animation for running workstreams
+  const hasRunning = () => state.entries.some(e => e.status === "running");
+  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  if (hasRunning()) {
+    spinnerTimer = setInterval(() => {
+      if (!hasRunning()) { clearInterval(spinnerTimer!); spinnerTimer = null; return; }
+      state.spinnerFrame++;
+      draw();
+    }, 80);
+  }
+
+  // Poll for status updates from background agents
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  if (options?.onRefresh) {
+    const interval = options.refreshInterval ?? 3000;
+    const doRefresh = options.onRefresh;
+    refreshTimer = setInterval(async () => {
+      try {
+        const updated = await doRefresh();
+        // Update entries in-place, preserving selection
+        const selectedName = state.filteredIndices.length > 0
+          ? state.entries[state.filteredIndices[state.selected]]?.name
+          : undefined;
+        state.entries = updated;
+        refilter(state);
+        // Restore selection by name
+        if (selectedName) {
+          const idx = state.filteredIndices.findIndex(i => state.entries[i]?.name === selectedName);
+          if (idx >= 0) state.selected = idx;
+        }
+        clampScroll(state);
+        // Start/stop spinner based on running state
+        if (hasRunning() && !spinnerTimer) {
+          spinnerTimer = setInterval(() => {
+            if (!hasRunning()) { clearInterval(spinnerTimer!); spinnerTimer = null; return; }
+            state.spinnerFrame++;
+            draw();
+          }, 80);
+        }
+        draw();
+      } catch {}
+    }, interval);
+  }
+
   stdin.setRawMode(true);
   stdin.resume();
   stdin.setEncoding("utf8");
 
   return new Promise<DashboardAction>((resolve) => {
     const cleanup = (result: DashboardAction) => {
+      if (spinnerTimer) clearInterval(spinnerTimer);
+      if (refreshTimer) clearInterval(refreshTimer);
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();
