@@ -1103,7 +1103,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
 
           {/* Comment form — inside diff panel */}
           {showNormalUI && showCommentForm && (
-            <box style={{ flexDirection: "row", width: "100%", flexShrink: 0 }}>
+            <box style={{ flexDirection: "row", flexShrink: 0 }}>
               {viewMode === "split" && commentSide === "new"
                 ? <box style={{ width: "50%" }} />
                 : null}
@@ -1118,7 +1118,7 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
                 textColor={textColor}
                 mutedColor={mutedColor}
                 bg={bg}
-                style={viewMode === "split" ? { flexGrow: 1, flexShrink: 1 } : { width: "100%" }}
+                style={{ flexGrow: 1, flexShrink: 1 }}
                 initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
                 isEditing={editingCommentIndex !== null}
               />
