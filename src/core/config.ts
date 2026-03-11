@@ -80,7 +80,6 @@ function validateConfig(raw: any): WorkstreamConfig {
       name,
       prompt: d.prompt,
       baseBranch: d.base_branch ?? d.baseBranch,
-      planFirst: d.plan_first ?? d.planFirst ?? false,
     });
   }
 

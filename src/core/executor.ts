@@ -75,7 +75,6 @@ export class Executor {
           branch: `ws/${name}`,
           worktreePath: `.workstreams/trees/${name}`,
           logFile: `.workstreams/logs/${name}.log`,
-          planFirst: node.def.planFirst ?? false,
         };
       }
     }
@@ -155,7 +154,6 @@ export class Executor {
         prompt: node.def.prompt,
         logFile: ws.logFile,
         agentConfig: this.config.agent,
-        planFirst: ws.planFirst,
         onSessionId: async (id) => {
           ws.sessionId = id;
           await saveState(this.state);
