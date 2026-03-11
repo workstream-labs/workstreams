@@ -3,21 +3,24 @@ import { loadState } from "../core/state";
 
 export function mergeCommand() {
   return new Command("merge")
-    .description("Merge a workstream branch into the current branch")
+    .description("Stage a workstream's changes into the current branch (squash, no commit)")
     .argument("[name]", "workstream name to merge")
     .argument("[into]", "target branch to merge into (default: current branch)")
     .option("--all", "merge all successful workstreams")
-    .option("--squash", "squash commits into a single commit")
     .option("--no-cleanup", "keep worktree and branch after merge")
     .addHelpText("after", `
 Examples:
-  ws merge auth-feature          Merge the "auth-feature" branch into current branch
-  ws merge auth-feature main     Merge into the "main" branch
-  ws merge --all                 Merge all successful workstreams
-  ws merge --all --squash        Squash-merge all successful workstreams
-  ws merge auth-feature --squash Squash-merge a single workstream
+  ws merge auth              Stage changes from "auth" — review, then git commit
+  ws merge auth main         Stage into the "main" branch
+  ws merge --all             Stage all successful workstreams (commits each one)
+
+Default behavior: squash-merges and stages changes without committing.
+You review with "git diff --cached" and commit with your own message.
+
+For --all, each workstream is auto-committed with "ws: <name>" since
+staging multiple workstreams without committing between them would conflict.
 `)
-    .action(async (name?: string, into?: string, opts?: { all?: boolean; squash?: boolean; cleanup: boolean }) => {
+    .action(async (name?: string, into?: string, opts?: { all?: boolean; cleanup: boolean }) => {
       const { $ } = await import("bun");
 
       const state = await loadState();
@@ -30,7 +33,7 @@ Examples:
       if (!name && !opts?.all) {
         console.error("Error: specify a workstream name or use --all to merge all successful workstreams.");
         console.error("\nUsage:");
-        console.error("  ws merge <name>    Merge a single workstream");
+        console.error("  ws merge <name>    Stage a workstream's changes for commit");
         console.error("  ws merge --all     Merge all successful workstreams");
         process.exit(1);
       }
@@ -83,20 +86,19 @@ Examples:
         }
       }
 
+      const autoCommit = names.length > 1;
+
       for (const n of names) {
         const branch = `ws/${n}`;
         console.log(`\x1b[34mMerging ${branch} into ${targetBranch}...\x1b[0m`);
 
-        const mergeResult = opts?.squash
-          ? await $`git merge --squash ${branch}`.nothrow()
-          : await $`git merge ${branch} -m ${"ws: merge " + n}`.nothrow();
+        const mergeResult = await $`git merge --squash ${branch}`.nothrow();
 
         if (mergeResult.exitCode !== 0) {
           const stderr = mergeResult.stderr.toString();
           if (stderr.includes("CONFLICT")) {
             console.error(`\x1b[31m✗ Merge conflict in ${n}\x1b[0m`);
-            console.error(`  Resolve conflicts and run: git commit`);
-            console.error(`  Or abort with: git merge --abort`);
+            console.error(`  Resolve conflicts, then: git add . && git commit`);
             process.exit(1);
           }
           if (stderr.includes("untracked working tree files would be overwritten")) {
@@ -106,19 +108,22 @@ Examples:
               .map((l: string) => l.trim());
             console.error(`\x1b[31m✗ Untracked files in ${targetBranch} would be overwritten:\x1b[0m`);
             for (const f of files) console.error(`  ${f}`);
-            console.error(`\n  Commit or stash them first:`);
-            console.error(`    git add ${files.join(" ")} && git commit -m "wip"`);
-            console.error(`  Then retry: ws merge ${n}${into ? " " + into : ""}`);
+            console.error(`\n  Commit or stash them first, then retry.`);
             process.exit(1);
           }
           console.error(`\x1b[31m✗ Failed to merge ${n}: ${stderr || mergeResult.stdout.toString()}\x1b[0m`);
           process.exit(1);
         }
 
-        if (opts?.squash) {
+        // For --all, auto-commit each one so the next merge doesn't conflict
+        if (autoCommit) {
           await $`git commit -m ${"ws: " + n}`.quiet();
+          console.log(`\x1b[32m✓ Merged and committed ${n}\x1b[0m`);
+        } else {
+          console.log(`\x1b[32m✓ Changes from ${n} staged\x1b[0m`);
+          console.log(`  Review: git diff --cached`);
+          console.log(`  Commit: git commit -m "your message"`);
         }
-        console.log(`\x1b[32m✓ Merged ${n}\x1b[0m`);
 
         // Cleanup worktree and branch
         if (opts?.cleanup !== false) {
@@ -132,6 +137,9 @@ Examples:
       if (into && into !== currentBranch) {
         await $`git checkout ${currentBranch}`.quiet().catch(() => {});
       }
-      console.log(`\nDone. ${names.length} workstream(s) merged into ${targetBranch}.`);
+
+      if (autoCommit) {
+        console.log(`\nDone. ${names.length} workstream(s) merged into ${targetBranch}.`);
+      }
     });
 }
