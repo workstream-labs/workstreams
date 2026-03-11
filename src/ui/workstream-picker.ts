@@ -36,6 +36,7 @@ export type DashboardAction =
   | { type: "resume-prompt"; name: string; prompt: string }
   | { type: "resume-comments"; name: string }
   | { type: "set-prompt"; name: string; prompt: string }
+  | { type: "interrupt"; name: string }
   | { type: "quit" };
 
 interface ActionOption {
@@ -98,6 +99,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
       action: "resume-comments",
+    });
+  }
+
+  if (entry.status === "running") {
+    options.push({
+      label: "Interrupt agent",
+      description: "Stop the running agent process",
+      action: "interrupt",
     });
   }
 

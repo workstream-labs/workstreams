@@ -13,6 +13,7 @@ import { resumeCommand } from "./cli/resume";
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
 import { logsCommand } from "./cli/logs";
+import { interruptCommand } from "./cli/interrupt";
 
 const program = new Command();
 
@@ -29,6 +30,7 @@ Quick start:
   ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
   ws merge auth                  Merge completed work
+  ws interrupt auth              Stop a running agent
   ws destroy --all               Tear everything down
 
 Key options:
@@ -62,5 +64,6 @@ program.addCommand(mergeCommand());
 program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
+program.addCommand(interruptCommand());
 
 program.parse();
