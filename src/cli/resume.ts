@@ -4,6 +4,7 @@ import { loadConfig } from "../core/config";
 import { AgentAdapter } from "../core/agent";
 import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/comments";
 import type { AgentConfig, WorkstreamState } from "../core/types";
+import { notifyStatus } from "../core/notify";
 
 export function resumeCommand() {
   return new Command("resume")
@@ -123,6 +124,8 @@ async function runResume(
   await saveState(state);
 
   await clearComments(name);
+
+  notifyStatus(name, ws.status);
 
   const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
   console.log(`${color}${name}: ${ws.status}\x1b[0m`);

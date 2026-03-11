@@ -8,6 +8,7 @@ import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
 import { saveState } from "./state";
 import type { EventBus } from "./events";
+import { notifyStatus, notifyRunComplete } from "./notify";
 
 const COLOR_SUCCESS = "\x1b[32m";
 const COLOR_FAILED = "\x1b[31m";
@@ -113,11 +114,14 @@ export class Executor {
     // Print summary
     console.log();
     console.log("=== Run Complete ===");
+    const statusMap: Record<string, import("./types").WorkstreamStatus> = {};
     for (const [name, ws] of Object.entries(this.run.workstreams)) {
       const color =
         ws.status === "success" ? COLOR_SUCCESS : ws.status === "failed" ? COLOR_FAILED : COLOR_OTHER;
       console.log(`  ${color}${ws.status.padEnd(8)}${COLOR_RESET} ${name}`);
+      statusMap[name] = ws.status;
     }
+    notifyRunComplete(statusMap);
   }
 
   private async executeNode(name: string): Promise<void> {
@@ -182,6 +186,8 @@ export class Executor {
     const icon = ws.status === "success" ? "✓" : "✗";
     const color = ws.status === "success" ? COLOR_SUCCESS : COLOR_FAILED;
     spinner.stop(icon, color, ws.status);
+
+    notifyStatus(name, ws.status);
 
     const eventType = ws.status === "success" ? "node:success" : "node:failed";
     this.emit(eventType, name, { exitCode: ws.exitCode, error: ws.error });
