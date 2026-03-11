@@ -468,8 +468,16 @@ function refilter(s: DashboardState): void {
 
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
+export interface DashboardOptions {
+  /** Called periodically to refresh entries while the dashboard is open. */
+  onRefresh?: () => Promise<WorkstreamEntry[]>;
+  /** Refresh interval in milliseconds (default: 3000). */
+  refreshInterval?: number;
+}
+
 export async function openDashboard(
   entries: WorkstreamEntry[],
+  options?: DashboardOptions,
 ): Promise<DashboardAction> {
   if (entries.length === 0) {
     console.log("No workstreams found.");
@@ -506,12 +514,38 @@ export async function openDashboard(
   };
   process.stdout.on("resize", onResize);
 
+  // Poll for status updates from background agents
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  if (options?.onRefresh) {
+    const interval = options.refreshInterval ?? 3000;
+    const doRefresh = options.onRefresh;
+    refreshTimer = setInterval(async () => {
+      try {
+        const updated = await doRefresh();
+        // Update entries in-place, preserving selection
+        const selectedName = state.filteredIndices.length > 0
+          ? state.entries[state.filteredIndices[state.selected]]?.name
+          : undefined;
+        state.entries = updated;
+        refilter(state);
+        // Restore selection by name
+        if (selectedName) {
+          const idx = state.filteredIndices.findIndex(i => state.entries[i]?.name === selectedName);
+          if (idx >= 0) state.selected = idx;
+        }
+        clampScroll(state);
+        draw();
+      } catch {}
+    }, interval);
+  }
+
   stdin.setRawMode(true);
   stdin.resume();
   stdin.setEncoding("utf8");
 
   return new Promise<DashboardAction>((resolve) => {
     const cleanup = (result: DashboardAction) => {
+      if (refreshTimer) clearInterval(refreshTimer);
       stdin.off("data", onData);
       stdin.setRawMode(false);
       stdin.pause();

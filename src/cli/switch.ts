@@ -4,7 +4,7 @@ import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments } from "../core/comments";
-import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
+import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
@@ -401,7 +401,14 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
         const freshState = await loadState() ?? state;
         const freshConfig = await loadConfig("workstream.yaml");
         const entries = await buildEntries(freshConfig, freshState);
-        const action = await openDashboard(entries);
+        const dashboardOpts: DashboardOptions = {
+          onRefresh: async () => {
+            const s = await loadState() ?? state;
+            const c = await loadConfig("workstream.yaml");
+            return buildEntries(c, s);
+          },
+        };
+        const action = await openDashboard(entries, dashboardOpts);
         loop = await dispatchAction(action, freshState, freshConfig);
       }
     });
