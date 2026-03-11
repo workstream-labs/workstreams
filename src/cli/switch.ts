@@ -7,6 +7,7 @@ import { loadComments } from "../core/comments";
 import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
+import { openLogViewer } from "../ui/log-viewer.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -229,6 +230,19 @@ async function actionDiffReview(name: string, state: any) {
   });
 }
 
+// ─── Action: View logs ────────────────────────────────────────────────────────
+
+async function actionViewLogs(name: string, state: any) {
+  const ws = state.currentRun?.workstreams?.[name];
+  if (!ws) return;
+
+  await openLogViewer({
+    name,
+    logFile: ws.logFile,
+    status: ws.status,
+  });
+}
+
 // ─── Action: Resume with new prompt (hands-off) ─────────────────────────────
 
 async function actionResumeWithPrompt(name: string, prompt: string, ws: WorkstreamState, state: any) {
@@ -303,6 +317,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
     case "diff":
       await actionDiffReview(action.name, state);
+      return true; // loop back to dashboard
+
+    case "log":
+      await actionViewLogs(action.name, state);
       return true; // loop back to dashboard
 
     case "resume-session": {

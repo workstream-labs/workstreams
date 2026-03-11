@@ -180,10 +180,12 @@ function renderView(s: ViewState): string {
   // ── Footer ──
   const footerRow = s.termH - 1;
   const keysLine = [
-    `${A.white}q${A.reset}${A.brightBlack} quit${A.reset}`,
-    `${A.white}j/k${A.reset}${A.brightBlack} scroll${A.reset}`,
-    `${A.white}d/u${A.reset}${A.brightBlack} page${A.reset}`,
-    `${A.white}g/G${A.reset}${A.brightBlack} top/bottom${A.reset}`,
+    `${A.white}esc${A.reset}${A.brightBlack} back${A.reset}`,
+    `${A.white}\u2191\u2193${A.reset}${A.brightBlack} scroll${A.reset}`,
+    `${A.white}d${A.reset}${A.brightBlack} page down${A.reset}`,
+    `${A.white}u${A.reset}${A.brightBlack} page up${A.reset}`,
+    `${A.white}g${A.reset}${A.brightBlack} top${A.reset}`,
+    `${A.white}G${A.reset}${A.brightBlack} bottom${A.reset}`,
     `${A.white}f${A.reset}${A.brightBlack} follow${A.reset}`,
   ].join("  ");
 

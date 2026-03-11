@@ -31,6 +31,7 @@ export interface WorkstreamEntry {
 export type DashboardAction =
   | { type: "editor"; name: string }
   | { type: "diff"; name: string }
+  | { type: "log"; name: string }
   | { type: "resume-session"; name: string }
   | { type: "resume-prompt"; name: string; prompt: string }
   | { type: "resume-comments"; name: string }
@@ -73,6 +74,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
       label: "View diff & review",
       description: "Browse changes and add review comments",
       action: "diff",
+    });
+  }
+
+  if (entry.status === "running" || entry.status === "success" || entry.status === "failed") {
+    options.push({
+      label: "View logs",
+      description: "View agent output logs" + (entry.status === "running" ? " (live)" : ""),
+      action: "log",
     });
   }
 
