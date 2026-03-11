@@ -8,7 +8,7 @@ import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
 import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
-import { openLogViewer } from "../ui/log-viewer.js";
+import { openSessionViewer } from "../ui/session-viewer.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -240,7 +240,7 @@ async function actionViewLogs(name: string, state: any) {
   const ws = state.currentRun?.workstreams?.[name];
   if (!ws) return;
 
-  await openLogViewer({
+  await openSessionViewer({
     name,
     logFile: ws.logFile,
     status: ws.status,

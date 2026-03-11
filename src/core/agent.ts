@@ -2,7 +2,12 @@ import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
 
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
-  claude: ["--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
+  claude: [
+    "--dangerously-skip-permissions",
+    "--output-format", "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+  ],
   codex: ["--full-auto"],
   aider: ["--yes"],
 };
@@ -11,50 +16,6 @@ function getAutoAcceptFlags(config: AgentConfig): string[] {
   if (config.acceptAll === false) return [];
   const cmd = config.command.split("/").pop() ?? config.command;
   return AUTO_ACCEPT_FLAGS[cmd] ?? [];
-}
-
-function formatStreamEvent(line: string): string | null {
-  try {
-    const event = JSON.parse(line);
-    const ts = event.timestamp ? `[${event.timestamp}]` : "";
-
-    switch (event.type) {
-      case "assistant": {
-        const content = event.message?.content ?? [];
-        const parts: string[] = [];
-
-        for (const block of content) {
-          if (block.type === "text" && block.text) {
-            parts.push(`${ts} [assistant] ${block.text}`);
-          } else if (block.type === "tool_use") {
-            const input = typeof block.input === "string" ? block.input : JSON.stringify(block.input);
-            const truncated = input;
-            parts.push(`${ts} [tool_call] ${block.name}: ${truncated}`);
-          }
-        }
-        return parts.join("\n") || null;
-      }
-      case "result": {
-        const cost = event.total_cost_usd ? ` (cost: $${event.total_cost_usd.toFixed(4)})` : "";
-        const duration = event.duration_ms ? ` (${(event.duration_ms / 1000).toFixed(1)}s)` : "";
-        return `${ts} [result] ${event.subtype ?? "done"}${duration}${cost}`;
-      }
-      case "tool_result": {
-        const content = event.content ?? "";
-        const text = typeof content === "string" ? content : JSON.stringify(content);
-        const truncated = text;
-        return `${ts} [tool_result] ${truncated}`;
-      }
-      case "system": {
-        return `${ts} [system] ${event.subtype ?? ""} ${event.message ?? ""}`.trim();
-      }
-      default:
-        return null;
-    }
-  } catch {
-    // Not valid JSON, output raw
-    return line;
-  }
 }
 
 export interface AgentRunOptions {
@@ -75,7 +36,6 @@ export class AgentAdapter {
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const { workDir, prompt, logFile, agentConfig } = options;
 
-    // Inject auto-accept flags based on agent command when acceptAll is true (default)
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
     const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), prompt];
     const { CLAUDECODE, ...baseEnv } = process.env;
@@ -84,17 +44,11 @@ export class AgentAdapter {
     const { appendFile, mkdir } = await import("fs/promises");
     const { dirname } = await import("path");
 
-    // Ensure log directory exists
     await mkdir(dirname(logFile), { recursive: true });
 
     const appendLog = async (data: string | Uint8Array) => {
       await appendFile(logFile, data);
     };
-
-    const timestamp = () => new Date().toISOString();
-    await appendLog(`[${timestamp()}] Agent starting: ${agentConfig.command} ${args.join(" ")}\n`);
-    await appendLog(`[${timestamp()}] Working directory: ${workDir}\n`);
-    await appendLog(`[${timestamp()}] Log file: ${logFile}\n---\n`);
 
     try {
       const proc = Bun.spawn([agentConfig.command, ...args], {
@@ -104,72 +58,75 @@ export class AgentAdapter {
         stderr: "pipe",
       });
 
-      if (proc.pid && options.onPid) await options.onPid(proc.pid);
-
-      const isStreamJson = args.includes("stream-json");
       let sessionId: string | undefined;
 
-      // Stream stdout and stderr to log file
-      const streamToLog = async (
-        stream: ReadableStream<Uint8Array> | null,
-        label: string
-      ) => {
+      // Stream stdout to log file as raw stream-json.
+      // Also extract session_id from init/result events.
+      const streamStdout = async (stream: ReadableStream<Uint8Array> | null) => {
         if (!stream) return;
         const reader = stream.getReader();
         let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (isStreamJson && label === "stdout") {
+          await appendLog(value);
+
+          // Parse for session_id
+          if (!sessionId) {
             buffer += new TextDecoder().decode(value);
             const lines = buffer.split("\n");
             buffer = lines.pop() ?? "";
             for (const line of lines) {
               if (!line.trim()) continue;
               try {
-                const p = JSON.parse(line);
-                if (p.session_id && !sessionId) {
-                  sessionId = p.session_id;
-                  if (options.onSessionId) await options.onSessionId(sessionId);
+                const e = JSON.parse(line);
+                const sid = e.session_id ?? e.message?.session_id;
+                if (sid && !sessionId) {
+                  sessionId = sid;
+                  if (options.onSessionId) await options.onSessionId(sid);
                 }
               } catch {}
-              const formatted = formatStreamEvent(line);
-              if (formatted) await appendLog(formatted + "\n");
             }
-          } else {
-            await appendLog(value);
           }
         }
-        // Flush remaining buffer
-        if (buffer.trim() && isStreamJson && label === "stdout") {
+        // Flush buffer
+        if (!sessionId && buffer.trim()) {
           try {
-            const p = JSON.parse(buffer);
-            if (p.session_id && !sessionId) {
-              sessionId = p.session_id;
-              if (options.onSessionId) await options.onSessionId(sessionId);
+            const e = JSON.parse(buffer);
+            const sid = e.session_id ?? e.message?.session_id;
+            if (sid) {
+              sessionId = sid;
+              if (options.onSessionId) await options.onSessionId(sid);
             }
           } catch {}
-          const formatted = formatStreamEvent(buffer);
-          if (formatted) await appendLog(formatted + "\n");
+        }
+      };
+
+      // Stream stderr to log file as-is
+      const streamStderr = async (stream: ReadableStream<Uint8Array> | null) => {
+        if (!stream) return;
+        const reader = stream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await appendLog(value);
         }
       };
 
       await Promise.all([
-        streamToLog(proc.stdout, "stdout"),
-        streamToLog(proc.stderr, "stderr"),
+        streamStdout(proc.stdout),
+        streamStderr(proc.stderr),
       ]);
 
       const exitCode = await proc.exited;
-      await appendLog(`\n---\n[${timestamp()}] Agent exited with code ${exitCode}\n`);
 
       // Auto-commit any changes the agent made
       if (exitCode === 0) {
-        await this.autoCommit(workDir, appendLog, timestamp);
+        await this.autoCommit(workDir, appendLog);
       }
 
       return { exitCode, sessionId };
     } catch (e: any) {
-      await appendLog(`\n---\n[${timestamp()}] Agent error: ${e.message}\n`);
       throw new AgentError(`Agent failed: ${e.message}`);
     }
   }
@@ -177,22 +134,16 @@ export class AgentAdapter {
   private async autoCommit(
     workDir: string,
     appendLog: (data: string | Uint8Array) => Promise<void>,
-    timestamp: () => string
   ): Promise<void> {
     const { $ } = await import("bun");
 
-    // Check if there are any uncommitted changes
     const status = await $`git -C ${workDir} status --porcelain`.quiet();
     const changes = status.stdout.toString().trim();
     if (!changes) return;
 
-    await appendLog(`[${timestamp()}] Auto-committing changes...\n`);
     try {
       await $`git -C ${workDir} add -A`.quiet();
       await $`git -C ${workDir} commit -m "ws: apply agent changes"`.quiet();
-      await appendLog(`[${timestamp()}] Changes committed\n`);
-    } catch (e: any) {
-      await appendLog(`[${timestamp()}] Auto-commit failed: ${e.stderr?.toString() ?? e.message}\n`);
-    }
+    } catch {}
   }
 }
