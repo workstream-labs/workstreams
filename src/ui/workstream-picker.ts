@@ -60,7 +60,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     action: "set-prompt-input",
   });
 
-  if (entry.hasSession) {
+  if (entry.hasSession && entry.status !== "running") {
     options.push({
       label: "Resume Claude session",
       description: "Continue the previous interactive session",
@@ -76,7 +76,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.hasSession) {
+  if (entry.hasSession && entry.status !== "running") {
     options.push({
       label: "Resume with new prompt",
       description: "Send new instructions to the agent",
@@ -84,7 +84,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.commentCount > 0) {
+  if (entry.commentCount > 0 && entry.status !== "running") {
     options.push({
       label: "Resume with comments",
       description: "Send stored review comments to the agent",
