@@ -12,6 +12,7 @@ import { mergeCommand } from "./cli/merge";
 import { resumeCommand } from "./cli/resume";
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
+import { logsCommand } from "./cli/logs";
 
 const program = new Command();
 
@@ -25,6 +26,7 @@ Quick start:
   ws create auth -p "Add auth"   Define a workstream
   ws run                         Spawn agents for all workstreams
   ws list                        Check status
+  ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
   ws merge auth                  Merge completed work
   ws destroy --all               Tear everything down
@@ -45,6 +47,7 @@ Key options:
   prompt    -p, --prompt <text>    Set or update a workstream's prompt
   switch    -e, --editor <editor>  Open directly in a specific editor
             --no-editor            Print worktree path without opening editor
+  logs      --raw                  Print raw log output instead of interactive viewer
 
 Run "ws <command> --help" for detailed usage and examples.
 `);
@@ -57,6 +60,7 @@ program.addCommand(switchCommand());
 program.addCommand(diffCommand());
 program.addCommand(resumeCommand());
 program.addCommand(mergeCommand());
+program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
 
