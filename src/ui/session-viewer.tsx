@@ -404,7 +404,6 @@ function SessionApp({ name, status, messages: init, logFile }: {
   const scrollRef = React.useRef<ScrollBoxRenderable | null>(null);
   const [messages, setMessages] = React.useState(init);
   const [showThinking, setShowThinking] = React.useState(true);
-<<<<<<< HEAD
   const [liveStatus, setLiveStatus] = React.useState(status);
   const [follow, setFollow] = React.useState(status === "running");
 
@@ -426,10 +425,6 @@ function SessionApp({ name, status, messages: init, logFile }: {
     return () => { if (watcher) watcher.close(); };
   }, [name, status]);
 
-=======
-  const [follow, setFollow] = React.useState(status === "running");
-
->>>>>>> 9f45a854aa3971fb373d3ae689d741c537900c2e
   // Live tailing — re-parse the stream-json log file on changes
   React.useEffect(() => {
     const { watch } = require("fs");
