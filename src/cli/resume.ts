@@ -81,10 +81,10 @@ async function runResume(
     await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
   };
 
-  // Build agent config with --resume flag
+  // Build agent config with --resume flag (before other args so it precedes -p)
   const resumeAgentConfig: AgentConfig = {
     ...agentConfig,
-    args: [...(agentConfig.args ?? []), "--resume", ws.sessionId!],
+    args: ["--resume", ws.sessionId!, ...(agentConfig.args ?? [])],
   };
 
   ws.status = "running";
@@ -122,10 +122,7 @@ async function runResume(
   await logLine(`Resume of "${name}" finished with status: ${ws.status}`);
   await saveState(state);
 
-  // Clear comments on successful resume
-  if (ws.status === "success") {
-    await clearComments(name);
-  }
+  await clearComments(name);
 
   const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
   console.log(`${color}${name}: ${ws.status}\x1b[0m`);

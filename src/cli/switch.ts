@@ -3,12 +3,11 @@ import { resolve } from "path";
 import { loadState, saveState } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
-import { AgentAdapter } from "../core/agent";
-import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/comments";
+import { loadComments } from "../core/comments";
 import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
-import type { AgentConfig, ProjectState, WorkstreamState } from "../core/types";
+import type { ProjectState, WorkstreamState } from "../core/types";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },
@@ -232,21 +231,45 @@ async function actionDiffReview(name: string, state: any) {
 
 // ─── Action: Resume with new prompt (hands-off) ─────────────────────────────
 
-async function actionResumeWithPrompt(name: string, prompt: string, ws: WorkstreamState, config: any, state: any) {
-  await runResume(name, ws, config.agent, prompt, state);
+async function actionResumeWithPrompt(name: string, prompt: string, ws: WorkstreamState, state: any) {
+  ws.status = "running";
+  ws.startedAt = new Date().toISOString();
+  ws.finishedAt = undefined;
+  ws.exitCode = undefined;
+  ws.error = undefined;
+  await saveState(state);
+
+  const bgArgs = ["bun", Bun.main, "resume", name, "-p", prompt];
+  const proc = Bun.spawn(bgArgs, {
+    cwd: process.cwd(),
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  proc.unref();
 }
 
 // ─── Action: Resume with review comments ─────────────────────────────────────
 
-async function actionResumeWithComments(name: string, ws: WorkstreamState, config: any, state: any) {
+async function actionResumeWithComments(name: string, ws: WorkstreamState, state: any) {
   const data = await loadComments(name);
-  if (data.comments.length === 0) {
-    console.error(`No stored comments for "${name}".`);
-    return;
-  }
-  const formatted = formatCommentsAsPrompt(data);
-  console.log(`Loaded ${data.comments.length} comment(s) for "${name}".`);
-  await runResume(name, ws, config.agent, formatted, state);
+  if (data.comments.length === 0) return;
+
+  ws.status = "running";
+  ws.startedAt = new Date().toISOString();
+  ws.finishedAt = undefined;
+  ws.exitCode = undefined;
+  ws.error = undefined;
+  await saveState(state);
+
+  const bgArgs = ["bun", Bun.main, "resume", name, "--comments"];
+  const proc = Bun.spawn(bgArgs, {
+    cwd: process.cwd(),
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  proc.unref();
 }
 
 // ─── Action: Set/update prompt in workstream.yaml ─────────────────────────────
@@ -265,71 +288,6 @@ async function actionSetPrompt(name: string, prompt: string) {
   }
 
   await Bun.write("workstream.yaml", stringify(raw));
-}
-
-// ─── Shared resume runner ────────────────────────────────────────────────────
-
-async function runResume(
-  name: string,
-  ws: WorkstreamState,
-  agentConfig: AgentConfig,
-  resumePrompt: string,
-  state: any,
-) {
-  const { appendFile } = await import("fs/promises");
-  const agent = new AgentAdapter();
-
-  const logLine = async (msg: string) => {
-    const ts = new Date().toISOString();
-    await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
-  };
-
-  const resumeAgentConfig: AgentConfig = {
-    ...agentConfig,
-    args: [...(agentConfig.args ?? []), "--resume", ws.sessionId!],
-  };
-
-  ws.status = "running";
-  ws.startedAt = new Date().toISOString();
-  ws.finishedAt = undefined;
-  ws.exitCode = undefined;
-  ws.error = undefined;
-  await saveState(state);
-
-  console.log(`Resuming "${name}" with agent...`);
-  await logLine(`Resuming workstream "${name}"`);
-
-  try {
-    const result = await agent.run({
-      workDir: ws.worktreePath,
-      prompt: resumePrompt,
-      logFile: ws.logFile,
-      agentConfig: resumeAgentConfig,
-    });
-
-    ws.exitCode = result.exitCode;
-    ws.status = result.exitCode === 0 ? "success" : "failed";
-    if (result.sessionId) ws.sessionId = result.sessionId;
-    if (result.exitCode !== 0) {
-      ws.error = `Agent exited with code ${result.exitCode}`;
-      await logLine(`FAILED: ${ws.error}`);
-    }
-  } catch (e: any) {
-    ws.status = "failed";
-    ws.error = e.message;
-    await logLine(`ERROR: ${e.message}`);
-  }
-
-  ws.finishedAt = new Date().toISOString();
-  await logLine(`Resume of "${name}" finished with status: ${ws.status}`);
-  await saveState(state);
-
-  if (ws.status === "success") {
-    await clearComments(name);
-  }
-
-  const color = ws.status === "success" ? "\x1b[32m" : "\x1b[31m";
-  console.log(`${color}${name}: ${ws.status}\x1b[0m`);
 }
 
 // ─── Dispatch dashboard action ───────────────────────────────────────────────
@@ -355,14 +313,14 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
     case "resume-prompt": {
       const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeWithPrompt(action.name, action.prompt, ws, config, state);
-      return false;
+      if (ws) await actionResumeWithPrompt(action.name, action.prompt, ws, state);
+      return true;
     }
 
     case "resume-comments": {
       const ws = state.currentRun?.workstreams?.[action.name];
-      if (ws) await actionResumeWithComments(action.name, ws, config, state);
-      return false;
+      if (ws) await actionResumeWithComments(action.name, ws, state);
+      return true;
     }
 
     case "set-prompt":
@@ -440,10 +398,11 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
       // Dashboard loop: after diff viewer or set-prompt, return to dashboard
       let loop = true;
       while (loop) {
+        const freshState = await loadState() ?? state;
         const freshConfig = await loadConfig("workstream.yaml");
-        const entries = await buildEntries(freshConfig, state);
+        const entries = await buildEntries(freshConfig, freshState);
         const action = await openDashboard(entries);
-        loop = await dispatchAction(action, state, freshConfig);
+        loop = await dispatchAction(action, freshState, freshConfig);
       }
     });
 }
