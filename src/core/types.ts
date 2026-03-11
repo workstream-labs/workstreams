@@ -17,7 +17,6 @@ export interface WorkstreamDef {
   name: string;
   prompt?: string;
   baseBranch?: string;
-  planFirst?: boolean;
 }
 
 export interface WorkstreamConfig {
@@ -37,7 +36,6 @@ export interface WorkstreamState {
   error?: string;
   logFile: string;
   sessionId?: string;
-  planFirst?: boolean;
 }
 
 export interface RunState {

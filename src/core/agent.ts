@@ -1,15 +1,6 @@
 import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
 
-const PLAN_PHASE_SUFFIX = [
-  "",
-  "---",
-  "IMPORTANT: Start by writing a detailed step-by-step plan for implementing the above.",
-  "Do not use any tools or edit any files while writing the plan.",
-  "Make judicious assumptions where details are unclear — do not ask clarifying questions.",
-  "After presenting your plan, immediately proceed to implement it.",
-].join("\n");
-
 const AUTO_ACCEPT_FLAGS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
   codex: ["--full-auto"],
@@ -71,7 +62,6 @@ export interface AgentRunOptions {
   prompt: string;
   logFile: string;
   agentConfig: AgentConfig;
-  planFirst?: boolean;
   onSessionId?: (id: string) => void | Promise<void>;
 }
 
@@ -82,12 +72,11 @@ export interface AgentResult {
 
 export class AgentAdapter {
   async run(options: AgentRunOptions): Promise<AgentResult> {
-    const { workDir, prompt, logFile, agentConfig, planFirst } = options;
+    const { workDir, prompt, logFile, agentConfig } = options;
 
     // Inject auto-accept flags based on agent command when acceptAll is true (default)
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
-    const effectivePrompt = planFirst ? prompt + PLAN_PHASE_SUFFIX : prompt;
-    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), effectivePrompt];
+    const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), prompt];
     const { CLAUDECODE, ...baseEnv } = process.env;
     const env = { ...baseEnv, ...agentConfig.env };
 

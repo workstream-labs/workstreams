@@ -34,7 +34,6 @@ Quick start:
 Key options:
   init      -f, --force            Reinitialize even if already set up
   create    -p, --prompt <text>    Prompt for the agent
-            --plan-first           Pause for review after planning phase
   run       -d, --dry-run          Preview which workstreams would run
   diff      --raw                  Print raw diff instead of interactive viewer
   resume    -p, --prompt <text>    New prompt to send to the agent

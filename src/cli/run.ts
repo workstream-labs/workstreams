@@ -88,7 +88,6 @@ Agents are spawned in the background. Use "ws list" or "ws switch" to monitor pr
           branch: `ws/${def.name}`,
           worktreePath: `.workstreams/trees/${def.name}`,
           logFile: `.workstreams/logs/${def.name}.log`,
-          planFirst: def.planFirst ?? false,
         };
       }
       state.currentRun = run;

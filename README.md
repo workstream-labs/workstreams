@@ -89,9 +89,9 @@ agent:
 
 Initialize workstreams in the current git repo. Creates `.workstreams/` directory and `workstream.yaml`.
 
-### `ws create <name> -p <prompt> [--plan-first]`
+### `ws create <name> -p <prompt>`
 
-Add a new workstream to `workstream.yaml`. Use `--plan-first` to have the agent write a plan for review before proceeding.
+Add a new workstream to `workstream.yaml`.
 
 ### `ws run [name]`
 
