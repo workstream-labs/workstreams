@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { loadState, saveState } from "../core/state";
+import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
 import { loadConfig } from "../core/config";
 import { buildGraph } from "../core/dag";
 import { Executor } from "../core/executor";
@@ -96,6 +96,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
           worktreePath: `.workstreams/trees/${name}`,
           logFile: `.workstreams/logs/${name}.log`,
         };
+        await appendWorkstreamStatus(state.currentRun.workstreams[name]);
         await saveState(state);
 
         const bgArgs = ["bun", Bun.main, "run", "-c", opts.config, name];
@@ -167,6 +168,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
           worktreePath: `.workstreams/trees/${def.name}`,
           logFile: `.workstreams/logs/${def.name}.log`,
         };
+        await appendWorkstreamStatus(run.workstreams[def.name]);
       }
       state.currentRun = run;
       await saveState(state);
@@ -236,6 +238,10 @@ async function handleResume(
   ws.finishedAt = undefined;
   ws.exitCode = undefined;
   ws.error = undefined;
+  if (state.currentRun) {
+    state.currentRun.finishedAt = undefined;
+  }
+  await appendWorkstreamStatus(ws);
   await saveState(state);
 
   // Spawn background worker for resume
@@ -321,12 +327,12 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
       agentConfig: resumeAgentConfig,
       onSessionId: async (id) => {
         ws.sessionId = id;
-        await saveState(state);
+        await appendWorkstreamStatus(ws);
         await logLine(`Session ID captured: ${id}`);
       },
       onPid: async (pid) => {
         ws.pid = pid;
-        await saveState(state);
+        await appendWorkstreamStatus(ws);
         await logLine(`Agent PID: ${pid}`);
       },
     });
@@ -347,7 +353,7 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
   ws.finishedAt = new Date().toISOString();
   ws.pid = undefined;
   await logLine(`Resume of "${name}" finished with status: ${ws.status}`);
-  await saveState(state);
+  await appendWorkstreamStatus(ws);
 
   await clearComments(name);
   await clearPendingPrompt(name);

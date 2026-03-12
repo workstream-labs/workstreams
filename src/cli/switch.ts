@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { resolve } from "path";
-import { loadState, saveState } from "../core/state";
+import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments } from "../core/comments";
@@ -10,15 +10,6 @@ import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },
@@ -79,28 +70,6 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
   const { stat } = await import("fs/promises");
   const { $ } = await import("bun");
   const entries: WorkstreamEntry[] = [];
-
-  // Detect and fix stale "running" states
-  let stateNeedsSave = false;
-  if (state?.currentRun) {
-    for (const ws of Object.values(state.currentRun.workstreams) as any[]) {
-      if (ws.status === "running" || ws.status === "queued") {
-        const isStale = !!state.currentRun.finishedAt  // run finished but ws still "running"
-          || (ws.pid && !isProcessAlive(ws.pid));       // PID recorded but process is dead
-        if (isStale) {
-          ws.status = "failed";
-          ws.error = "Process died unexpectedly";
-          ws.finishedAt = ws.finishedAt ?? new Date().toISOString();
-          ws.pid = undefined;
-          stateNeedsSave = true;
-        }
-      }
-    }
-    if (stateNeedsSave) {
-      const { saveState } = await import("../core/state");
-      await saveState(state);
-    }
-  }
 
   // Build all entries in parallel
   const promises = config.workstreams.map(async (def: any) => {
@@ -189,6 +158,7 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
         logFile: `.workstreams/logs/${name}.log`,
       };
     }
+    await appendWorkstreamStatus(state.currentRun.workstreams[name]);
     await saveState(state);
   }
 
@@ -241,7 +211,7 @@ async function actionOpenSession(name: string, ws: WorkstreamState, state: Proje
 
   ws.status = exitCode === 0 ? "success" : "failed";
   ws.finishedAt = new Date().toISOString();
-  await saveState(state);
+  await appendWorkstreamStatus(ws);
   console.log(`Status updated to: ${ws.status}`);
 }
 
@@ -338,7 +308,7 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "run": {
       let ws = state.currentRun?.workstreams?.[action.name];
       if (!ws) {
-        // Fresh workstream — ensure run state exists
+        // Fresh workstream — create run state
         if (!state.currentRun) {
           state.currentRun = {
             runId: `run-${Date.now()}`,
@@ -355,6 +325,13 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
         };
         state.currentRun.workstreams[action.name] = ws;
       }
+      // Clear run-level finishedAt — the run is being continued
+      if (state.currentRun) {
+        state.currentRun.finishedAt = undefined;
+      }
+      // Save BEFORE spawning so dashboard reads correct state immediately
+      await appendWorkstreamStatus(ws);
+      await saveState(state);
       await actionRun(action.name, ws, state);
       return true;
     }

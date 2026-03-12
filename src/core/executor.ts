@@ -6,7 +6,7 @@ import type {
 import type { WorkstreamGraph } from "./dag";
 import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
-import { saveState, saveStateSync } from "./state";
+import { saveState, saveStateSync, appendWorkstreamStatus, appendWorkstreamStatusSync } from "./state";
 import type { EventBus } from "./events";
 import { notifyStatus, notifyRunComplete } from "./notify";
 
@@ -85,12 +85,9 @@ export class Executor {
     this.setupSignalHandlers();
     this.emit("run:start", undefined, { runId: this.run.runId });
 
-    // Ensure log directory exists and clear old log files
-    const { unlink, mkdir } = await import("fs/promises");
+    // Ensure log directory exists
+    const { mkdir } = await import("fs/promises");
     await mkdir(".workstreams/logs", { recursive: true });
-    for (const ws of Object.values(this.run.workstreams)) {
-      await unlink(ws.logFile).catch(() => {});
-    }
 
     console.log(`Starting run ${this.run.runId} with ${this.graph.nodes.size} workstreams`);
     console.log();
@@ -138,7 +135,7 @@ export class Executor {
     ws.startedAt = new Date().toISOString();
     this.runningProcs.add(name);
     this.emit("node:running", name);
-    await saveState(this.state);
+    await appendWorkstreamStatus(ws);
 
     const spinner = new Spinner(name);
     spinner.start();
@@ -160,12 +157,12 @@ export class Executor {
         agentConfig: this.config.agent,
         onSessionId: async (id) => {
           ws.sessionId = id;
-          await saveState(this.state);
+          await appendWorkstreamStatus(ws);
           await logLine(`Session ID captured: ${id}`);
         },
         onPid: async (pid) => {
           ws.pid = pid;
-          await saveState(this.state);
+          await appendWorkstreamStatus(ws);
           await logLine(`Agent PID: ${pid}`);
         },
       });
@@ -187,7 +184,7 @@ export class Executor {
     ws.pid = undefined;
     this.runningProcs.delete(name);
     await logLine(`Workstream "${name}" finished with status: ${ws.status}`);
-    await saveState(this.state);
+    await appendWorkstreamStatus(ws);
 
     const icon = ws.status === "success" ? "✓" : "✗";
     const color = ws.status === "success" ? COLOR_SUCCESS : COLOR_FAILED;
@@ -230,6 +227,7 @@ export class Executor {
         ws.error = "Aborted by user";
         ws.finishedAt = new Date().toISOString();
         ws.pid = undefined;
+        appendWorkstreamStatusSync(ws);
       }
       this.run.finishedAt = new Date().toISOString();
       saveStateSync(this.state);
