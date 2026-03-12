@@ -5,10 +5,11 @@ import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments } from "../core/comments";
 import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
-import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
+import { getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
+import { openIdeDashboard, type IdeDashboardOptions } from "../ui/ide-dashboard.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -292,12 +293,14 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       return false;
 
     case "diff":
+      // Diff is now handled inline in the IDE dashboard, but keep fallback
       await actionDiffReview(action.name, state);
-      return true; // loop back to dashboard
+      return true;
 
     case "log":
+      // Logs are now handled inline in the IDE dashboard, but keep fallback
       await actionViewLogs(action.name, state);
-      return true; // loop back to dashboard
+      return true;
 
     case "open-session": {
       const ws = state.currentRun?.workstreams?.[action.name];
@@ -413,20 +416,35 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
         return;
       }
 
-      // Dashboard loop: after diff viewer or set-prompt, return to dashboard
+      // Dashboard loop: IDE dashboard handles logs/diff inline,
+      // only exits for editor/run/session/prompt actions
       let loop = true;
       while (loop) {
         const freshState = await loadState() ?? state;
         const freshConfig = await loadConfig("workstream.yaml");
         const entries = await buildEntries(freshConfig, freshState);
-        const dashboardOpts: DashboardOptions = {
+        const wt = new WorktreeManager();
+        const dashboardOpts: IdeDashboardOptions = {
           onRefresh: async () => {
             const s = await loadState() ?? state;
             const c = await loadConfig("workstream.yaml");
             return buildEntries(c, s);
           },
+          getLogFile: (name: string) => {
+            return freshState.currentRun?.workstreams?.[name]?.logFile ?? null;
+          },
+          getWorkstreamStatus: (name: string) => {
+            return freshState.currentRun?.workstreams?.[name]?.status ?? "ready";
+          },
+          getDiff: async (name: string) => {
+            const [branchDiff, uncommittedDiff] = await Promise.all([
+              wt.diffBranch(`ws/${name}`).catch(() => ""),
+              wt.diff(name).catch(() => ""),
+            ]);
+            return branchDiff + uncommittedDiff;
+          },
         };
-        const action = await openDashboard(entries, dashboardOpts);
+        const action = await openIdeDashboard(entries, dashboardOpts);
         loop = await dispatchAction(action, freshState, freshConfig);
       }
     });

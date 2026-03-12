@@ -28,10 +28,10 @@ let parsersRegistered = false;
 // ─── Theme from critique (OpenCode dark theme) ─────────────────────────────
 
 const resolved = getResolvedTheme("opencode");
-const syntaxTheme = SyntaxStyle.fromStyles(getSyntaxTheme("opencode"));
+export const syntaxTheme = SyntaxStyle.fromStyles(getSyntaxTheme("opencode"));
 
-const r = resolved as any;
-const theme = {
+export const r = resolved as any;
+export const theme = {
   background: rgbaToHex(r.background),
   backgroundPanel: rgbaToHex(r.backgroundPanel),
   backgroundElement: "#1e1e1e",
@@ -49,17 +49,17 @@ const theme = {
 
 // ─── SplitBorder (OpenCode style: heavy vertical bar) ───────────────────────
 
-const EmptyBorder = {
+export const EmptyBorder = {
   topLeft: "", bottomLeft: "", vertical: "", topRight: "", bottomRight: "",
   horizontal: " ", bottomT: "", topT: "", cross: "", leftT: "", rightT: "",
 };
-const SplitBorderChars = { ...EmptyBorder, vertical: "\u2503" };
+export const SplitBorderChars = { ...EmptyBorder, vertical: "\u2503" };
 
 // ─── Spinner (braille dots, 80ms) ───────────────────────────────────────────
 
 const SPIN = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 
-function Spinner({ color, children }: { color?: string; children?: React.ReactNode }) {
+export function Spinner({ color, children }: { color?: string; children?: React.ReactNode }) {
   const [f, setF] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setF((v: number) => (v + 1) % SPIN.length), 80);
@@ -390,6 +390,27 @@ function ResultMsg({ msg }: { msg: Extract<DisplayMessage, { role: "result" }> }
         {msg.duration != null && <span> {"\u00B7"} {fmtDuration(msg.duration)}</span>}
         {msg.cost != null && <span style={{ fg: theme.success }}> {"\u00B7"} {fmtCost(msg.cost)}</span>}
       </text>
+    </box>
+  );
+}
+
+// ─── Reusable SessionMessages (embeddable, no header/footer/keyboard) ────────
+
+export function SessionMessages({ messages, showThinking, isRunning }: {
+  messages: DisplayMessage[];
+  showThinking: boolean;
+  isRunning: boolean;
+}) {
+  const lastAst = messages.reduce((a: number, m: DisplayMessage, i: number) => m.role === "assistant" ? i : a, -1);
+  return (
+    <box flexShrink={0} gap={0} paddingBottom={1}>
+      {messages.map((msg: DisplayMessage, i: number) => {
+        if (msg.role === "user") return <UserMsg msg={msg} isFirst={i === 0} />;
+        if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} />;
+        if (msg.role === "result") return <ResultMsg msg={msg} />;
+        return null;
+      })}
+      {isRunning && <box paddingLeft={3} marginTop={1}><Spinner color={theme.accent}>Working...</Spinner></box>}
     </box>
   );
 }

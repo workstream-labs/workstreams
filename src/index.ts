@@ -13,6 +13,7 @@ import { mergeCommand } from "./cli/merge";
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
 import { logsCommand } from "./cli/logs";
+import { checkoutCommand } from "./cli/checkout";
 
 
 const program = new Command();
@@ -31,6 +32,7 @@ Quick start:
   ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
   ws merge auth                  Merge completed work
+  ws checkout auth               cd to a workstream worktree
   ws destroy --all               Tear everything down
 
 Key options:
@@ -61,5 +63,6 @@ program.addCommand(mergeCommand());
 program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
+program.addCommand(checkoutCommand());
 
 program.parse();
