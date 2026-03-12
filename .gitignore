@@ -6,3 +6,5 @@ dist/
 workstream.yaml
 .claude/
 .mcp*
+docs/.vitepress/dist/
+docs/.vitepress/cache/
