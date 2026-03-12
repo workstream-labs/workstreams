@@ -185,7 +185,7 @@ function renderView(s: ViewState): string {
   const contentH = s.termH - 3;
 
   // Header
-  const st = STATUS_STYLE[s.status] ?? STATUS_STYLE.pending;
+  const st = STATUS_STYLE[s.status] ?? STATUS_STYLE.ready;
   const statusBadge = `${st.color}${st.icon} ${s.status}${A.reset}`;
   const followBadge = s.follow ? `${A.brightGreen}\u25CF FOLLOW${A.reset}` : `${A.brightBlack}\u25CB follow${A.reset}`;
   const headerLeft = `${A.bold}${A.brightCyan}ws logs:${A.reset} ${A.bold}${A.white}${s.name}${A.reset}  ${statusBadge}`;

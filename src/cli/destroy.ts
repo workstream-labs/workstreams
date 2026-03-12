@@ -75,7 +75,19 @@ Examples:
         process.exit(1);
       }
 
-      if (!opts.yes) {
+      const wsStatus = run.workstreams[name].status;
+      if ((wsStatus === "running" || wsStatus === "queued") && !opts.yes) {
+        console.error(`Warning: "${name}" is currently ${wsStatus}.`);
+        process.stdout.write(`Destroy it anyway? [y/N] `);
+        const reader = Bun.stdin.stream().getReader();
+        const { value } = await reader.read();
+        reader.releaseLock();
+        const answer = new TextDecoder().decode(value).trim().toLowerCase();
+        if (answer !== "y" && answer !== "yes") {
+          console.log("Aborted.");
+          return;
+        }
+      } else if (!opts.yes) {
         process.stdout.write(`Destroy workstream "${name}"? [y/N] `);
         const reader = Bun.stdin.stream().getReader();
         const { value } = await reader.read();

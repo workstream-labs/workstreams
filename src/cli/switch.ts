@@ -11,6 +11,15 @@ import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },
   cursor: { label: "Cursor", mac: "Cursor", linux: "cursor" },
@@ -71,6 +80,28 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
   const { $ } = await import("bun");
   const entries: WorkstreamEntry[] = [];
 
+  // Detect and fix stale "running" states
+  let stateNeedsSave = false;
+  if (state?.currentRun) {
+    for (const ws of Object.values(state.currentRun.workstreams) as any[]) {
+      if (ws.status === "running" || ws.status === "queued") {
+        const isStale = !!state.currentRun.finishedAt  // run finished but ws still "running"
+          || (ws.pid && !isProcessAlive(ws.pid));       // PID recorded but process is dead
+        if (isStale) {
+          ws.status = "failed";
+          ws.error = "Process died unexpectedly";
+          ws.finishedAt = ws.finishedAt ?? new Date().toISOString();
+          ws.pid = undefined;
+          stateNeedsSave = true;
+        }
+      }
+    }
+    if (stateNeedsSave) {
+      const { saveState } = await import("../core/state");
+      await saveState(state);
+    }
+  }
+
   // Build all entries in parallel
   const promises = config.workstreams.map(async (def: any) => {
     const branch = `ws/${def.name}`;
@@ -81,7 +112,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
     if (state?.currentRun?.workstreams?.[def.name]) {
       status = state.currentRun.workstreams[def.name].status;
     } else if (def.prompt) {
-      status = "pending";
+      status = "ready";
     }
 
     let branchInfo = { ahead: 0, behind: 0, lastCommitAge: "", lastCommitMsg: "" };
@@ -152,7 +183,7 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
     if (!state.currentRun.workstreams[name]) {
       state.currentRun.workstreams[name] = {
         name,
-        status: "pending",
+        status: "queued",
         branch: `ws/${name}`,
         worktreePath,
         logFile: `.workstreams/logs/${name}.log`,
@@ -317,7 +348,7 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
         }
         ws = {
           name: action.name,
-          status: "pending" as const,
+          status: "queued" as const,
           branch: `ws/${action.name}`,
           worktreePath: `.workstreams/trees/${action.name}`,
           logFile: `.workstreams/logs/${action.name}.log`,

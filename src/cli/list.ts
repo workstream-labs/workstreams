@@ -31,6 +31,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   interface RowData {
     status: string;
     name: string;
+    prompt: string;
     sync: string; syncPlain: string;
     changes: string; changesPlain: string;
     duration: string;
@@ -50,7 +51,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
     if (state?.currentRun?.workstreams?.[def.name]) {
       status = state.currentRun.workstreams[def.name].status;
     } else if (def.prompt) {
-      status = "pending";
+      status = "ready";
     }
 
     let durationStr = "";
@@ -92,6 +93,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
 
       rows.push({
         status, name: def.name,
+        prompt: def.prompt ?? "",
         sync: syncColor, syncPlain,
         changes: changesColor, changesPlain,
         duration: durationStr,
@@ -102,6 +104,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
     } else {
       rows.push({
         status, name: def.name,
+        prompt: def.prompt ?? "",
         sync: "", syncPlain: "",
         changes: "", changesPlain: "",
         duration: "",
@@ -124,13 +127,13 @@ export async function listAction(configPath: string = "workstream.yaml") {
   const succeeded = rows.filter(r => r.status === "success").length;
   const failed = rows.filter(r => r.status === "failed").length;
   const running = rows.filter(r => r.status === "running").length;
-  const pending = rows.filter(r => r.status === "pending").length;
+  const pending = rows.filter(r => r.status === "ready" || r.status === "queued").length;
 
   console.log("");
 
   // Rows
   for (const row of rows) {
-    const st = STATUS_STYLE[row.status] ?? STATUS_STYLE.pending;
+    const st = STATUS_STYLE[row.status] ?? STATUS_STYLE.ready;
 
     const icon = `${st.color}${st.icon}${A.reset}`;
     const name = `${A.bold}${A.white}${row.name}${A.reset}`;
@@ -139,6 +142,10 @@ export async function listAction(configPath: string = "workstream.yaml") {
     if (!row.hasWorktree) {
       const extra = row.commit ? `  ${row.commit}` : "";
       console.log(`  ${icon} ${namePadded}${A.dim}no worktree${A.reset}${extra}`);
+      if (row.prompt) {
+        const truncated = row.prompt.length > 60 ? row.prompt.slice(0, 57) + "…" : row.prompt;
+        console.log(`      ${A.dim}${truncated}${A.reset}`);
+      }
       continue;
     }
 
@@ -149,6 +156,10 @@ export async function listAction(configPath: string = "workstream.yaml") {
     const commit = row.commit ? `${A.dim}${row.commit}${A.reset}` : "";
 
     console.log(`  ${icon} ${namePadded}${syncPadded}${changesPadded}${durPadded}${commentsPadded}${commit}`);
+    if (row.prompt) {
+      const truncated = row.prompt.length > 60 ? row.prompt.slice(0, 57) + "…" : row.prompt;
+      console.log(`      ${A.dim}${truncated}${A.reset}`);
+    }
   }
 
   // Footer summary
@@ -156,7 +167,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
   if (succeeded) parts.push(`${A.green}${STATUS_STYLE.success.icon} ${succeeded} passed${A.reset}`);
   if (failed) parts.push(`${A.red}${STATUS_STYLE.failed.icon} ${failed} failed${A.reset}`);
   if (running) parts.push(`${A.brightYellow}${STATUS_STYLE.running.icon} ${running} running${A.reset}`);
-  if (pending) parts.push(`${A.dim}${STATUS_STYLE.pending.icon} ${pending} pending${A.reset}`);
+  if (pending) parts.push(`${A.dim}${STATUS_STYLE.ready.icon} ${pending} ready${A.reset}`);
 
   if (parts.length > 0) {
     console.log("");
@@ -174,7 +185,7 @@ Examples:
   ws list                Show status of all workstreams
   ws list -c custom.yaml Use a custom config file
 
-Statuses: pending, running, success, failed, workspace (no prompt).
+Statuses: ready, queued, running, success, failed, workspace (no prompt).
 `)
     .action(async (opts: { config: string }) => {
       await listAction(opts.config);

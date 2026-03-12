@@ -1,5 +1,4 @@
 export type WorkstreamStatus =
-  | "pending"
   | "queued"
   | "running"
   | "success"

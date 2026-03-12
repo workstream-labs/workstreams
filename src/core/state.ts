@@ -1,4 +1,5 @@
 import type { ProjectState } from "./types";
+import { writeFileSync } from "fs";
 
 const STATE_FILE = ".workstreams/state.json";
 
@@ -18,4 +19,9 @@ export async function loadState(): Promise<ProjectState | null> {
 
 export async function saveState(state: ProjectState): Promise<void> {
   await Bun.write(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+/** Synchronous save for signal handlers where we can't await */
+export function saveStateSync(state: ProjectState): void {
+  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
