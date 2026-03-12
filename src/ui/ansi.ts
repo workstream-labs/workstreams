@@ -8,15 +8,9 @@ export const A = {
   reset: CSI + "0m",
   bold: CSI + "1m",
   dim: CSI + "2m",
-  italic: CSI + "3m",
-  underline: CSI + "4m",
   // fg
-  black: CSI + "30m",
   red: CSI + "31m",
   green: CSI + "32m",
-  yellow: CSI + "33m",
-  blue: CSI + "34m",
-  magenta: CSI + "35m",
   cyan: CSI + "36m",
   white: CSI + "37m",
   brightBlack: CSI + "90m",
@@ -24,15 +18,9 @@ export const A = {
   brightGreen: CSI + "92m",
   brightYellow: CSI + "93m",
   brightBlue: CSI + "94m",
-  brightMagenta: CSI + "95m",
   brightCyan: CSI + "96m",
   brightWhite: CSI + "97m",
   // bg
-  bgBlack: CSI + "40m",
-  bgRed: CSI + "41m",
-  bgGreen: CSI + "42m",
-  bgBlue: CSI + "44m",
-  bgWhite: CSI + "47m",
   bgBrightBlack: CSI + "100m",
 };
 
@@ -42,14 +30,6 @@ export const fg256 = (n: number) => `\x1b[38;5;${n}m`;
 export const C = {
   selectedBg: bg256(24),
   footerBg: bg256(235),
-  addLineBg: bg256(22),
-  addWordBg: bg256(28),
-  delLineBg: bg256(52),
-  delWordBg: bg256(88),
-  hunkBg: bg256(17),
-  hunkAt: fg256(67),
-  hunkCtx: fg256(110),
-  scrollTrack: fg256(240),
 };
 
 export function moveTo(row: number, col: number) {
@@ -91,8 +71,7 @@ export const STATUS_STYLE: Record<string, { color: string; icon: string }> = {
   success: { color: A.brightGreen, icon: "\u2713" },
   failed: { color: A.brightRed, icon: "\u2717" },
   running: { color: A.brightYellow, icon: "\u25CF" },
-  pending: { color: A.brightBlack, icon: "\u25CB" },
   queued: { color: A.cyan, icon: "\u25C9" },
-  waiting: { color: A.brightYellow, icon: "\u23F8" },
+  ready: { color: A.brightBlack, icon: "\u25CB" },
   workspace: { color: A.brightBlue, icon: "\u25C7" },
 };

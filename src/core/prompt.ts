@@ -13,14 +13,3 @@ export function prompt(message: string): Promise<string> {
     });
   });
 }
-
-export async function promptChoice(message: string, choices: string[]): Promise<number> {
-  console.log(message);
-  for (let i = 0; i < choices.length; i++) {
-    console.log(`  ${i + 1}. ${choices[i]}`);
-  }
-  const answer = await prompt("Choice: ");
-  const n = parseInt(answer, 10);
-  if (isNaN(n) || n < 1 || n > choices.length) return -1;
-  return n;
-}

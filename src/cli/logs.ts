@@ -43,7 +43,7 @@ Interactive viewer keys: j/k scroll, d/u half-page, g/G top/bottom,
 
         const options = names.map(n => {
           const ws = workstreams[n];
-          const st = STATUS_STYLE[ws.status] ?? STATUS_STYLE.pending;
+          const st = STATUS_STYLE[ws.status] ?? STATUS_STYLE.ready;
           return {
             label: n,
             description: `${st.icon} ${ws.status}`,

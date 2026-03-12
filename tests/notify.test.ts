@@ -18,8 +18,8 @@ describe("notifyStatus", () => {
     expect(() => notifyStatus("test-ws", "running")).not.toThrow();
   });
 
-  it("does not throw for pending status", () => {
-    expect(() => notifyStatus("test-ws", "pending")).not.toThrow();
+  it("does not throw for queued status", () => {
+    expect(() => notifyStatus("test-ws", "queued")).not.toThrow();
   });
 });
 

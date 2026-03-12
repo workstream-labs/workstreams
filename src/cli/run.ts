@@ -91,7 +91,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
         }
         state.currentRun.workstreams[name] = {
           name,
-          status: "pending",
+          status: "queued",
           branch: `ws/${name}`,
           worktreePath: `.workstreams/trees/${name}`,
           logFile: `.workstreams/logs/${name}.log`,
@@ -116,14 +116,26 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
       // ─── Run all workstreams ──────────────────────────────────────
       const defsToRun = config.workstreams;
 
-      // Filter: must have prompt, must not already have a session
+      // Filter: must have prompt, must not already have a session or be active
       const runnableDefs = defsToRun.filter((w) => {
         if (!w.prompt) return false;
         const existing = state.currentRun?.workstreams?.[w.name];
         if (existing?.sessionId) return false; // already ran, skip
-        if (existing?.status === "running") return false; // currently running, skip
+        if (existing?.status === "running" || existing?.status === "queued") return false;
         return true;
       });
+
+      // Warn about skipped workstreams
+      const stuckNames = defsToRun
+        .filter((w) => {
+          const existing = state.currentRun?.workstreams?.[w.name];
+          return existing?.status === "running" || existing?.status === "queued";
+        })
+        .map((w) => w.name);
+      if (stuckNames.length > 0) {
+        console.log(`Skipping active workstreams: ${stuckNames.join(", ")}`);
+        console.log(`  If stuck, use \`ws destroy <name>\` to clean up.`);
+      }
 
       if (runnableDefs.length === 0) {
         const skipped = defsToRun.filter((w) => state.currentRun?.workstreams?.[w.name]?.sessionId);
@@ -150,7 +162,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
       for (const def of runnableDefs) {
         run.workstreams[def.name] = {
           name: def.name,
-          status: "pending",
+          status: "queued",
           branch: `ws/${def.name}`,
           worktreePath: `.workstreams/trees/${def.name}`,
           logFile: `.workstreams/logs/${def.name}.log`,
@@ -191,7 +203,7 @@ async function handleResume(
     process.exit(1);
   }
 
-  if (ws.status === "pending" || ws.status === "queued") {
+  if (ws.status === "queued") {
     console.error(`Error: "${name}" is in a stale state (${ws.status}). Use \`ws destroy ${name}\` to clean up.`);
     process.exit(1);
   }
@@ -257,7 +269,7 @@ async function runExecutor(name: string | undefined, configPath: string) {
     : config.workstreams.filter((w) => {
         // Only run workstreams that are in the current run and pending
         const ws = state.currentRun!.workstreams[w.name];
-        return ws && (ws.status === "pending" || ws.status === "queued");
+        return ws && ws.status === "queued";
       });
 
   const graph = buildGraph(defsToRun);
@@ -307,6 +319,11 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
       prompt: resumePrompt,
       logFile: ws.logFile,
       agentConfig: resumeAgentConfig,
+      onSessionId: async (id) => {
+        ws.sessionId = id;
+        await saveState(state);
+        await logLine(`Session ID captured: ${id}`);
+      },
       onPid: async (pid) => {
         ws.pid = pid;
         await saveState(state);

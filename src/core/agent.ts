@@ -50,6 +50,14 @@ export class AgentAdapter {
       await appendFile(logFile, data);
     };
 
+    // Write the prompt as a synthetic user message so it shows up in the session viewer
+    const syntheticUserMsg = JSON.stringify({
+      type: "user",
+      message: { content: prompt },
+      timestamp: new Date().toISOString(),
+    });
+    await appendLog(syntheticUserMsg + "\n");
+
     try {
       const proc = Bun.spawn([agentConfig.command, ...args], {
         cwd: workDir,

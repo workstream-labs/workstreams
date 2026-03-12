@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import {
-  A, C, bg256, fg256,
+  A, C, bg256,
   moveTo, clearScreen, hideCursor, showCursor,
   enterAltScreen, exitAltScreen,
   stripAnsi, truncate, pad, STATUS_STYLE,
@@ -13,7 +13,7 @@ import { renderModal, renderInputModal } from "./modal.js";
 export interface WorkstreamEntry {
   name: string;
   branch: string;
-  status: string;         // "success", "failed", "running", "pending", or "workspace"
+  status: string;         // "success", "failed", "running", "queued", "ready", or "workspace"
   prompt?: string;
   hasWorktree: boolean;
   ahead: number;
@@ -56,7 +56,8 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   });
 
   // ─── No session (pre-first-run) ─────────────────────────────────
-  if (!entry.hasSession && entry.status !== "running") {
+  const isActive = entry.status === "running" || entry.status === "queued";
+  if (!entry.hasSession && !isActive) {
     options.push({
       label: entry.prompt ? "Edit prompt" : "Set prompt",
       description: entry.prompt
@@ -75,7 +76,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   }
 
   // ─── Has session, finished ──────────────────────────────────────
-  if (entry.hasSession && entry.status !== "running") {
+  if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
       description: "Continue in an interactive terminal session",
@@ -111,10 +112,10 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
     });
   }
 
-  if (entry.status === "running" || entry.status === "success" || entry.status === "failed") {
+  if (entry.status === "queued" || entry.status === "running" || entry.status === "success" || entry.status === "failed") {
     options.push({
       label: "View logs",
-      description: "View agent output logs" + (entry.status === "running" ? " (live)" : ""),
+      description: "View agent output logs" + (entry.status === "running" ? " (live)" : entry.status === "queued" ? " (starting)" : ""),
       action: "log",
     });
   }
@@ -196,15 +197,6 @@ export async function getDiffStats(branch: string): Promise<{
   }
 }
 
-export async function getBranchDiff(branch: string): Promise<string> {
-  try {
-    const result = await $`git diff HEAD...${branch}`.quiet();
-    return result.stdout.toString();
-  } catch {
-    return "";
-  }
-}
-
 // ─── Layout constants ────────────────────────────────────────────────────────
 
 const HEADER_ROWS = 2;
@@ -214,7 +206,7 @@ const CARD_HEIGHT = 4; // 3 content lines + 1 blank separator
 // ─── Card rendering ─────────────────────────────────────────────────────────
 
 function renderCard(entry: WorkstreamEntry, isSelected: boolean, cardW: number, spinnerFrame?: number): string[] {
-  const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.pending;
+  const st = STATUS_STYLE[entry.status] ?? STATUS_STYLE.ready;
   const icon = entry.status === "running" && spinnerFrame !== undefined
     ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
     : st.icon;

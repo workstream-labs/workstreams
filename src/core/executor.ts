@@ -6,7 +6,7 @@ import type {
 import type { WorkstreamGraph } from "./dag";
 import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
-import { saveState } from "./state";
+import { saveState, saveStateSync } from "./state";
 import type { EventBus } from "./events";
 import { notifyStatus, notifyRunComplete } from "./notify";
 
@@ -72,7 +72,7 @@ export class Executor {
       if (!this.run.workstreams[name]) {
         this.run.workstreams[name] = {
           name,
-          status: "pending",
+          status: "queued",
           branch: `ws/${name}`,
           worktreePath: `.workstreams/trees/${name}`,
           logFile: `.workstreams/logs/${name}.log`,
@@ -229,9 +229,10 @@ export class Executor {
         ws.status = "failed";
         ws.error = "Aborted by user";
         ws.finishedAt = new Date().toISOString();
+        ws.pid = undefined;
       }
       this.run.finishedAt = new Date().toISOString();
-      saveState(this.state);
+      saveStateSync(this.state);
     };
 
     process.on("SIGINT", cleanup);
