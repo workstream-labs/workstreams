@@ -1,5 +1,7 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
+import { loadState, saveState } from "../core/state";
+import { parse, stringify } from "yaml";
+import { unlink } from "fs/promises";
 
 export function mergeCommand() {
   return new Command("merge")
@@ -130,9 +132,35 @@ staging multiple workstreams without committing between them would conflict.
           const treePath = `.workstreams/trees/${n}`;
           await $`git worktree remove ${treePath} --force`.quiet().catch(() => {});
           await $`git branch -D ${branch}`.quiet().catch(() => {});
+
+          // Remove from state
+          if (state.currentRun?.workstreams[n]) {
+            delete state.currentRun.workstreams[n];
+            if (Object.keys(state.currentRun.workstreams).length === 0) {
+              state.currentRun = undefined;
+            }
+          }
+
+          // Remove from workstream.yaml
+          const configFile = Bun.file("workstream.yaml");
+          if (await configFile.exists()) {
+            const raw = parse(await configFile.text());
+            if (raw.workstreams && raw.workstreams[n]) {
+              delete raw.workstreams[n];
+              await Bun.write("workstream.yaml", stringify(raw));
+            }
+          }
+
+          // Delete comments and log files
+          await unlink(`.workstreams/comments/${n}.json`).catch(() => {});
+          await unlink(`.workstreams/logs/${n}.log`).catch(() => {});
+
           console.log(`  Cleaned up worktree and branch`);
         }
       }
+
+      // Persist state changes (removed workstreams)
+      await saveState(state);
 
       if (into && into !== currentBranch) {
         await $`git checkout ${currentBranch}`.quiet().catch(() => {});

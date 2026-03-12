@@ -476,7 +476,7 @@ function SessionApp({ name, status, messages: init, logFile }: {
         <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={1}
           border={["left"]} customBorderChars={SplitBorderChars} borderColor={theme.border}
           backgroundColor={theme.backgroundPanel} flexDirection="row" justifyContent="space-between">
-          <text fg={theme.text}><b># {name}</b></text>
+          <text fg={theme.text}><b>{name}</b></text>
           <box flexDirection="row" gap={2} flexShrink={0}>
             <text fg={sColor}>{sIcon} {liveStatus}</text>
             {follow && <text fg={theme.success}>{"\u25CF"} FOLLOW</text>}
@@ -548,7 +548,7 @@ function FallbackApp({ name, status, logFile }: { name: string; status: string; 
   return (
     <box width="100%" height="100%" backgroundColor={theme.background} flexDirection="column">
       <box flexShrink={0} paddingLeft={2} paddingTop={1} paddingBottom={1} backgroundColor={theme.backgroundPanel}>
-        <text fg={theme.text}><b># {name}</b> <span style={{ fg: theme.textMuted }}>({status})</span></text>
+        <text fg={theme.text}><b>{name}</b> <span style={{ fg: theme.textMuted }}>({status})</span></text>
       </box>
       <scrollbox ref={scrollRef} flexGrow={1} paddingLeft={2} paddingRight={1}
         verticalScrollbarOptions={{ trackOptions: { backgroundColor: theme.background, foregroundColor: theme.borderActive } }}>
