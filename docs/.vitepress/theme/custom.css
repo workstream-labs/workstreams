@@ -1,0 +1,18 @@
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  --vp-home-hero-image-background-image: linear-gradient(
+    135deg,
+    #6366f140 50%,
+    #8b5cf640 50%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+.VPHero .clip {
+  white-space: nowrap;
+}
+
+.vp-doc div[class*="language-"] code {
+  font-size: 0.875rem;
+}
