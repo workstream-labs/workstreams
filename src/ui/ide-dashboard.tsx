@@ -9,6 +9,7 @@ import {
   createCliRenderer,
   addDefaultParsers,
   type ScrollBoxRenderable,
+  type DiffRenderable,
 } from "@opentuah/core";
 import {
   createRoot,
@@ -40,6 +41,12 @@ import {
 } from "./session-viewer.js";
 import { parseSessionJsonlContent, type DisplayMessage } from "../core/session-reader.js";
 import type { WorkstreamEntry, DashboardAction } from "./workstream-picker.js";
+import {
+  loadComments,
+  saveComments,
+  type ReviewComment,
+  type WorkstreamComments,
+} from "../core/comments";
 
 let parsersRegistered = false;
 
@@ -149,6 +156,100 @@ const FILE_STATUS_LETTER: Record<string, string> = {
 const FILE_STATUS_COLOR: Record<string, string> = {
   added: "#2d8a47", deleted: "#c53b53", modified: "#e5c07b", renamed: "#00b8d9",
 };
+
+// ─── Diff line mapping helpers ────────────────────────────────────────────────
+
+interface LineInfo {
+  type: "context" | "add" | "remove";
+  oldLine?: number;
+  newLine?: number;
+}
+
+function parseDiffToLineMap(rawDiff: string): LineInfo[] {
+  const patches = parsePatch(rawDiff);
+  const map: LineInfo[] = [];
+  for (const patch of patches) {
+    for (const hunk of patch.hunks) {
+      let old = hunk.oldStart, neu = hunk.newStart;
+      for (const ln of hunk.lines) {
+        const ch = ln[0];
+        if (ch === " ") map.push({ type: "context", oldLine: old++, newLine: neu++ });
+        else if (ch === "-") map.push({ type: "remove", oldLine: old++ });
+        else if (ch === "+") map.push({ type: "add", newLine: neu++ });
+      }
+    }
+  }
+  return map;
+}
+
+interface RendererLineInfo {
+  side: "old" | "new";
+  lineType: "add" | "remove" | "context";
+  line: number | undefined;
+  lineContent: string | undefined;
+}
+
+function queryRendererLine(
+  diffRef: React.RefObject<DiffRenderable | null>,
+  cursorLine: number,
+  viewMode: "unified" | "split",
+): RendererLineInfo | null {
+  const dr = diffRef.current as any;
+  if (!dr) return null;
+
+  const getContent = (side: any, idx: number): string | undefined => {
+    const content: string | undefined = side?.target?.content;
+    if (!content) return undefined;
+    return content.split("\n")[idx];
+  };
+
+  const signToType = (sign: string | undefined): "add" | "remove" | "context" =>
+    sign === "-" ? "remove" : sign === "+" ? "add" : "context";
+
+  if (viewMode === "unified") {
+    const left = dr.leftSide;
+    if (!left) return null;
+    const lineNum = left.getLineNumbers()?.get(cursorLine);
+    const sign = left.getLineSigns()?.get(cursorLine)?.after?.trim();
+    const lineType = signToType(sign);
+    const lineContent = getContent(left, cursorLine);
+    return { side: lineType === "remove" ? "old" : "new", lineType, line: lineNum, lineContent };
+  }
+
+  const left = dr.leftSide;
+  const right = dr.rightSide;
+  if (!left && !right) return null;
+  const leftNum = left?.getLineNumbers()?.get(cursorLine);
+  const rightNum = right?.getLineNumbers()?.get(cursorLine);
+  const leftSign = left?.getLineSigns()?.get(cursorLine)?.after?.trim();
+  const rightSign = right?.getLineSigns()?.get(cursorLine)?.after?.trim();
+  const hasLeft = leftNum !== undefined;
+  const hasRight = rightNum !== undefined;
+
+  if (hasLeft && leftSign === "-") return { side: "old", lineType: "remove", line: leftNum, lineContent: getContent(left, cursorLine) };
+  if (hasRight && rightSign === "+") return { side: "new", lineType: "add", line: rightNum, lineContent: getContent(right, cursorLine) };
+  return { side: "new", lineType: "context", line: rightNum ?? leftNum, lineContent: getContent(right ?? left, cursorLine) };
+}
+
+function extractDiffContext(rawDiff: string, cursorLine: number, windowSize = 3): string | undefined {
+  const patches = parsePatch(rawDiff);
+  const allLines: string[] = [];
+  for (const patch of patches) {
+    for (const hunk of patch.hunks) {
+      for (const ln of hunk.lines) {
+        if (ln[0] === "\\") continue;
+        allLines.push(ln);
+      }
+    }
+  }
+  if (cursorLine < 0 || cursorLine >= allLines.length) return undefined;
+  const start = Math.max(0, cursorLine - windowSize);
+  const end = Math.min(allLines.length - 1, cursorLine + windowSize);
+  return allLines.slice(start, end + 1).map((ln, i) => {
+    const prefix = start + i === cursorLine ? "► " : "  ";
+    return prefix + ln;
+  }).join("\n");
+}
 
 // ─── Left panel constants ────────────────────────────────────────────────────
 
@@ -392,15 +493,19 @@ function DiffFileItem({ file, selected, focused, width }: {
 
 const DIFF_FILE_PANEL_W = 30;
 
-function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef }: {
+function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, commentedLineIndices, bottomSlot }: {
   rawDiff: string | null;
   loading: boolean;
   focused: boolean;
   fileIndex: number;
   subFocus: "files" | "diff";
   diffScrollRef: React.RefObject<ScrollBoxRenderable | null>;
+  diffRef: React.RefObject<DiffRenderable | null>;
+  viewMode: "unified" | "split";
+  cursorLine: number;
+  commentedLineIndices: Set<number>;
+  bottomSlot?: React.ReactNode;
 }) {
-  const { width } = useTerminalDimensions();
   const fileScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
 
   const files = React.useMemo(() => {
@@ -413,6 +518,20 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
 
   // Clamp file index
   const clampedIdx = Math.min(fileIndex, Math.max(0, files.length - 1));
+
+  // Cursor and comment marker highlighting
+  React.useEffect(() => {
+    const dr = diffRef.current;
+    if (!dr) return;
+    dr.clearAllLineColors();
+    const commentColor = "#e5c07b";
+    for (const idx of commentedLineIndices) {
+      dr.setLineColor(idx, { gutter: commentColor, content: commentColor + "22" });
+    }
+    if (cursorLine >= 0 && focused && subFocus === "diff") {
+      dr.setLineColor(cursorLine, { gutter: theme.accent, content: theme.accent + "33" });
+    }
+  }, [cursorLine, commentedLineIndices, focused, subFocus]);
 
   if (loading) {
     return (
@@ -434,8 +553,6 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   const fileName = file ? getFileName(file).replace(/^[ab]\//, "") : "";
   const filetype = fileName ? detectFiletype(fileName) : undefined;
   const { additions, deletions } = file ? countChanges(file.hunks) : { additions: 0, deletions: 0 };
-  const diffPanelW = Math.max(40, width - LEFT_PANEL_WIDTH - DIFF_FILE_PANEL_W);
-  const viewMode = getViewMode(additions, deletions, diffPanelW);
 
   // Total stats
   let totalAdd = 0, totalDel = 0;
@@ -501,45 +618,99 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
         </box>
 
         {/* Diff content */}
-        <scrollbox
-          ref={diffScrollRef}
-          scrollY
-          style={{
-            flexGrow: 1,
-            flexShrink: 1,
-            rootOptions: { backgroundColor: theme.background, border: false },
-            contentOptions: { minHeight: 0 },
-            scrollbarOptions: {
-              showArrows: false,
-              trackOptions: { foregroundColor: theme.textMuted, backgroundColor: theme.background },
-            },
-          }}
-          focused={false}
-        >
-          {file && (
-            <box style={{ backgroundColor: diffColors.bgPanel }}>
-              <diff
-                diff={file.rawDiff ?? ""}
-                view={viewMode}
-                fg={diffColors.text}
-                filetype={filetype}
-                syntaxStyle={syntaxTheme}
-                showLineNumbers={true}
-                wrapMode="word"
-                addedBg={diffColors.diffAddedBg}
-                removedBg={diffColors.diffRemovedBg}
-                contextBg={diffColors.diffContextBg}
-                addedContentBg={diffColors.diffAddedBg}
-                removedContentBg={diffColors.diffRemovedBg}
-                contextContentBg={diffColors.diffContextBg}
-                lineNumberFg={diffColors.diffLineNumber}
-                lineNumberBg={diffColors.bgPanel}
-                addedLineNumberBg={diffColors.diffAddedLineNumberBg}
-                removedLineNumberBg={diffColors.diffRemovedLineNumberBg}
-              />
-            </box>
-          )}
-        </scrollbox>
+        <box style={{ flexDirection: "column", flexGrow: 1, flexShrink: 1 }}>
+          <scrollbox
+            ref={diffScrollRef}
+            scrollY
+            style={{
+              flexGrow: 1,
+              flexShrink: 1,
+              rootOptions: { backgroundColor: theme.background, border: false },
+              contentOptions: { minHeight: 0 },
+              scrollbarOptions: {
+                showArrows: false,
+                trackOptions: { foregroundColor: theme.textMuted, backgroundColor: theme.background },
+              },
+            }}
+            focused={false}
+          >
+            {file && (
+              <box style={{ backgroundColor: diffColors.bgPanel }}>
+                <diff
+                  ref={diffRef}
+                  diff={file.rawDiff ?? ""}
+                  view={viewMode}
+                  fg={diffColors.text}
+                  filetype={filetype}
+                  syntaxStyle={syntaxTheme}
+                  showLineNumbers={true}
+                  wrapMode="word"
+                  addedBg={diffColors.diffAddedBg}
+                  removedBg={diffColors.diffRemovedBg}
+                  contextBg={diffColors.diffContextBg}
+                  addedContentBg={diffColors.diffAddedBg}
+                  removedContentBg={diffColors.diffRemovedBg}
+                  contextContentBg={diffColors.diffContextBg}
+                  lineNumberFg={diffColors.diffLineNumber}
+                  lineNumberBg={diffColors.bgPanel}
+                  addedLineNumberBg={diffColors.diffAddedLineNumberBg}
+                  removedLineNumberBg={diffColors.diffRemovedLineNumberBg}
+                />
+              </box>
+            )}
+          </scrollbox>
+          {bottomSlot}
+        </box>
+      </box>
+    </box>
+  );
+}
+
+// ─── Inline comment form ─────────────────────────────────────────────────────
+
+function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isEditing }: {
+  fileName: string;
+  fileLine?: number;
+  onTextChange: (v: string) => void;
+  initialValue?: string;
+  isEditing?: boolean;
+}) {
+  const loc = fileLine !== undefined ? `${fileName}:${fileLine}` : fileName;
+  return (
+    <box
+      style={{
+        flexShrink: 0,
+        minHeight: 8,
+        borderStyle: "single",
+        borderColor: theme.border,
+        margin: 1,
+        padding: 1,
+        flexDirection: "column",
+      }}
+    >
+      <box flexDirection="row">
+        <text fg={theme.textMuted}>{isEditing ? "editing " : "comment on "}</text>
+        <text fg={theme.text}>{loc}</text>
+      </box>
+      <textarea
+        placeholder="Write a comment..."
+        initialValue={initialValue}
+        focused={true}
+        onInput={onTextChange}
+        style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
+      />
+      <box flexDirection="row" marginTop={1}>
+        <text fg={theme.text}>ctrl+s</text>
+        <text fg={theme.textMuted}> {isEditing ? "update" : "submit"}  </text>
+        <text fg={theme.text}>esc</text>
+        <text fg={theme.textMuted}> cancel</text>
+        {isEditing && (
+          <>
+            <text fg={theme.textMuted}>  </text>
+            <text fg="#c53b53">ctrl+d</text>
+            <text fg={theme.textMuted}> delete</text>
+          </>
+        )}
       </box>
     </box>
   );
@@ -644,9 +815,11 @@ function PromptInput({ title, initialValue, onSubmit, onCancel }: {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 
-function Footer({ focusPanel, rightMode }: {
+function Footer({ focusPanel, rightMode, diffSubFocus, viewMode }: {
   focusPanel: FocusPanel;
   rightMode: RightMode;
+  diffSubFocus: "files" | "diff";
+  viewMode: "unified" | "split";
 }) {
   return (
     <box
@@ -681,9 +854,15 @@ function Footer({ focusPanel, rightMode }: {
       ) : (
         <>
           <text fg={theme.text}>{"↑↓"}</text>
-          <text fg={theme.textMuted}> {" navigate"}  </text>
-          <text fg={theme.text}>Tab</text>
-          <text fg={theme.textMuted}> sub-panel  </text>
+          <text fg={theme.textMuted}> {diffSubFocus === "files" ? "navigate" : "cursor"}  </text>
+          {diffSubFocus === "diff" && (
+            <>
+              <text fg={theme.text}>c</text>
+              <text fg={theme.textMuted}> comment  </text>
+            </>
+          )}
+          <text fg={theme.text}>s</text>
+          <text fg={theme.textMuted}> {viewMode}  </text>
         </>
       )}
       <text fg={theme.text}>1</text>
@@ -728,6 +907,21 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [diffFileIndex, setDiffFileIndex] = React.useState(0);
   const [diffSubFocus, setDiffSubFocus] = React.useState<"files" | "diff">("files");
   const diffScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
+  const diffElementRef = React.useRef<DiffRenderable | null>(null);
+  const [viewOverride, setViewOverride] = React.useState<"split" | "unified" | null>(null);
+  const [cursorLine, setCursorLine] = React.useState(0);
+
+  // ─── Comment state ──────────────────────────────────────────
+  const [showCommentForm, setShowCommentForm] = React.useState(false);
+  const commentTextRef = React.useRef("");
+  const [commentSide, setCommentSide] = React.useState<"old" | "new">("new");
+  const [commentFileLine, setCommentFileLine] = React.useState<number | undefined>();
+  const [commentLineContent, setCommentLineContent] = React.useState<string | undefined>();
+  const commentLineTypeRef = React.useRef<"add" | "remove" | "context" | undefined>();
+  const commentDiffContextRef = React.useRef<string | undefined>();
+  const [comments, setComments] = React.useState<WorkstreamComments | null>(null);
+  const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
+  const [flashMessage, setFlashMessage] = React.useState<string | null>(null);
 
   // ─── Overlay state ───────────────────────────────────────────
   const [showActionPicker, setShowActionPicker] = React.useState(false);
@@ -740,6 +934,52 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const selectedEntry = entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
   const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
+
+  // ─── Diff derived state ─────────────────────────────────────
+  const diffFiles = React.useMemo(() => {
+    if (!diffData) return [] as ProcessedFile[];
+    return processFiles(
+      parseGitDiffFiles(stripSubmoduleHeaders(diffData), parsePatch),
+      formatPatch,
+    ) as ProcessedFile[];
+  }, [diffData]);
+
+  const clampedDiffIdx = Math.min(diffFileIndex, Math.max(0, diffFiles.length - 1));
+  const currentDiffFile = diffFiles[clampedDiffIdx] as ProcessedFile | undefined;
+  const currentFileName = currentDiffFile ? getFileName(currentDiffFile).replace(/^[ab]\//, "") : "";
+
+  const lineMap = React.useMemo(
+    () => currentDiffFile ? parseDiffToLineMap(currentDiffFile.rawDiff) : [],
+    [currentDiffFile],
+  );
+
+  const { additions: fileAdditions, deletions: fileDeletions } = currentDiffFile
+    ? countChanges(currentDiffFile.hunks)
+    : { additions: 0, deletions: 0 };
+  const diffPanelW = Math.max(40, width - LEFT_PANEL_WIDTH - DIFF_FILE_PANEL_W);
+  const viewMode: "unified" | "split" = viewOverride ?? getViewMode(fileAdditions, fileDeletions, diffPanelW);
+
+  const fileComments = React.useMemo(
+    () => comments?.comments.filter((c: ReviewComment) => c.filePath === currentFileName) ?? [],
+    [comments, currentFileName],
+  );
+
+  const commentedLineIndices = React.useMemo(() => {
+    const result = new Set<number>();
+    const annotated = fileComments.filter((c: ReviewComment) => c.line !== undefined);
+    if (annotated.length === 0) return result;
+    lineMap.forEach((info: LineInfo, idx: number) => {
+      for (const c of annotated) {
+        if (info.type === "add" && info.newLine === c.line && c.side !== "old") result.add(idx);
+        else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") result.add(idx);
+        else if (info.type === "context") {
+          if (info.newLine === c.line && c.side === "new") result.add(idx);
+          else if (info.oldLine === c.line && c.side === "old") result.add(idx);
+        }
+      }
+    });
+    return result;
+  }, [fileComments, lineMap]);
 
   // ─── Spinner animation ─────────────────────────────────────
   React.useEffect(() => {
@@ -825,7 +1065,26 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setDiffData(null);
     setDiffFileIndex(0);
     setDiffSubFocus("files");
+    setViewOverride(null);
+    setCursorLine(0);
+    setShowCommentForm(false);
   }, [selectedName]);
+
+  // ─── Reset cursor when diff file changes ───────────────────
+  React.useEffect(() => {
+    setCursorLine(0);
+    diffElementRef.current?.clearAllLineColors();
+    setEditingCommentIndex(null);
+  }, [diffFileIndex]);
+
+  // ─── Load comments ─────────────────────────────────────────
+  const refreshComments = React.useCallback(async () => {
+    if (!selectedEntry) return;
+    const data = await loadComments(selectedEntry.name);
+    setComments(data);
+  }, [selectedName]);
+
+  React.useEffect(() => { refreshComments(); }, [refreshComments]);
 
   // ─── Load diff data on demand ──────────────────────────────
   React.useEffect(() => {
@@ -854,9 +1113,72 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     else if (itemTop + ITEM_HEIGHT >= top + viewportH) sb.scrollTo(itemTop - viewportH + ITEM_HEIGHT + 1);
   };
 
+  // ─── Diff scroll + comment helpers ──────────────────────────
+  const scrollCursorIntoView = (line: number) => {
+    const sb = diffScrollRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    const top = sb.scrollTop;
+    const bottom = top + viewportH;
+    const margin = 2;
+    if (line < top + margin) sb.scrollTo(Math.max(0, line - margin));
+    else if (line >= bottom - margin) sb.scrollTo(line - viewportH + margin + 1);
+  };
+
+  const handleCommentSubmit = async () => {
+    const text = commentTextRef.current;
+    if (!text.trim()) { setShowCommentForm(false); return; }
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    let updated: WorkstreamComments;
+    if (editingCommentIndex !== null) {
+      const updatedList = [...current.comments];
+      updatedList[editingCommentIndex] = { ...updatedList[editingCommentIndex], text: text.trim() };
+      updated = { ...current, comments: updatedList };
+    } else {
+      const newComment: ReviewComment = {
+        filePath: currentFileName,
+        line: commentFileLine,
+        side: commentSide,
+        lineType: commentLineTypeRef.current,
+        lineContent: commentLineContent,
+        diffContext: commentDiffContextRef.current,
+        text: text.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      updated = { ...current, comments: [...current.comments, newComment] };
+    }
+    await saveComments(updated);
+    await refreshComments();
+    setShowCommentForm(false);
+    setEditingCommentIndex(null);
+    setFlashMessage("\u2714 comment saved");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleCommentDelete = async () => {
+    if (editingCommentIndex === null) return;
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    const updatedList = [...current.comments];
+    updatedList.splice(editingCommentIndex, 1);
+    await saveComments({ ...current, comments: updatedList });
+    await refreshComments();
+    setShowCommentForm(false);
+    setEditingCommentIndex(null);
+    setFlashMessage("\u2714 comment deleted");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
   // ─── Keyboard handler ──────────────────────────────────────
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
+
+    // ─── Comment form mode ──────────────────────────────
+    if (showCommentForm) {
+      if (n === "escape") { setShowCommentForm(false); return; }
+      if (key.ctrl && n === "s") { handleCommentSubmit(); return; }
+      if (key.ctrl && n === "d" && editingCommentIndex !== null) { handleCommentDelete(); return; }
+      return; // let textarea handle other keys
+    }
 
     // ─── Prompt input mode ─────────────────────────────
     if (promptMode) {
@@ -1012,6 +1334,12 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
     // ─── Right panel: Diff mode ────────────────────────
     if (rightMode === "diff") {
+      // Split/unified toggle (works in both sub-focuses)
+      if (n === "s") {
+        setViewOverride(viewMode === "split" ? "unified" : "split");
+        return;
+      }
+
       if (diffSubFocus === "files") {
         if (n === "j" || n === "down") {
           setDiffFileIndex((v: number) => v + 1); // clamped in DiffPanel
@@ -1028,14 +1356,57 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         return;
       }
 
-      // Diff sub-focus: diff content
+      // Diff sub-focus: diff content — cursor-based navigation
+      if (n === "j" || n === "down") {
+        const next = Math.min(cursorLine + 1, lineMap.length - 1);
+        setCursorLine(next);
+        scrollCursorIntoView(next);
+        return;
+      }
+      if (n === "k" || n === "up") {
+        const prev = Math.max(cursorLine - 1, 0);
+        setCursorLine(prev);
+        scrollCursorIntoView(prev);
+        return;
+      }
+
+      // Comment on current line
+      if (n === "c") {
+        const info = queryRendererLine(diffElementRef, cursorLine, viewMode);
+        if (!info) return;
+        const existingIdx = comments?.comments.findIndex(
+          c => c.filePath === currentFileName && c.line === info.line && c.side === info.side
+        ) ?? -1;
+        if (existingIdx >= 0) {
+          commentTextRef.current = comments!.comments[existingIdx].text;
+          setEditingCommentIndex(existingIdx);
+        } else {
+          commentTextRef.current = "";
+          setEditingCommentIndex(null);
+        }
+        commentLineTypeRef.current = info.lineType;
+        commentDiffContextRef.current = currentDiffFile ? extractDiffContext(currentDiffFile.rawDiff, cursorLine) : undefined;
+        setCommentSide(info.side);
+        setCommentFileLine(info.line);
+        setCommentLineContent(info.lineContent);
+        setShowCommentForm(true);
+        return;
+      }
+
       const sb = diffScrollRef.current;
-      if (n === "j" || n === "down") { sb?.scrollBy(1); return; }
-      if (n === "k" || n === "up") { sb?.scrollBy(-1); return; }
       if (key.ctrl && n === "d") { sb?.scrollBy(0.5, "viewport"); return; }
       if (key.ctrl && n === "u") { sb?.scrollBy(-0.5, "viewport"); return; }
-      if (key.shift && n === "g") { sb?.scrollBy(100_000); return; }
-      if (n === "g" && !key.shift) { sb?.scrollTo(0); return; }
+      if (key.shift && n === "g") {
+        const last = Math.max(0, lineMap.length - 1);
+        setCursorLine(last);
+        sb?.scrollBy(100_000);
+        return;
+      }
+      if (n === "g" && !key.shift) {
+        setCursorLine(0);
+        sb?.scrollTo(0);
+        return;
+      }
       return;
     }
   });
@@ -1078,13 +1449,35 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               fileIndex={diffFileIndex}
               subFocus={diffSubFocus}
               diffScrollRef={diffScrollRef}
+              diffRef={diffElementRef}
+              viewMode={viewMode}
+              cursorLine={cursorLine}
+              commentedLineIndices={commentedLineIndices}
+              bottomSlot={
+                <>
+                  {flashMessage && (
+                    <box style={{ flexDirection: "row", justifyContent: "center", paddingBottom: 1, flexShrink: 0 }}>
+                      <text fg="#2d8a47">{flashMessage}</text>
+                    </box>
+                  )}
+                  {showCommentForm && (
+                    <InlineCommentForm
+                      fileName={currentFileName}
+                      fileLine={commentFileLine}
+                      onTextChange={(v) => { commentTextRef.current = v; }}
+                      initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
+                      isEditing={editingCommentIndex !== null}
+                    />
+                  )}
+                </>
+              }
             />
           )}
         </box>
       </box>
 
       {/* Footer */}
-      <Footer focusPanel={focusPanel} rightMode={rightMode} />
+      <Footer focusPanel={focusPanel} rightMode={rightMode} diffSubFocus={diffSubFocus} viewMode={viewMode} />
 
       {/* Overlays */}
       {showActionPicker && selectedEntry && (
