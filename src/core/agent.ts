@@ -66,6 +66,8 @@ export class AgentAdapter {
         stderr: "pipe",
       });
 
+      if (options.onPid) await options.onPid(proc.pid);
+
       let sessionId: string | undefined;
 
       // Stream stdout to log file as raw stream-json.
