@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import {
-  A, C, bg256, fg256,
+  A, C, bg256,
   moveTo, clearScreen, hideCursor, showCursor,
   enterAltScreen, exitAltScreen,
   stripAnsi, truncate, pad, STATUS_STYLE,
@@ -194,15 +194,6 @@ export async function getDiffStats(branch: string): Promise<{
     };
   } catch {
     return { filesChanged: 0, additions: 0, deletions: 0 };
-  }
-}
-
-export async function getBranchDiff(branch: string): Promise<string> {
-  try {
-    const result = await $`git diff HEAD...${branch}`.quiet();
-    return result.stdout.toString();
-  } catch {
-    return "";
   }
 }
 

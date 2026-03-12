@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadConfig } from "../core/config";
 import { loadState } from "../core/state";
 import { getBranchInfo, getDiffStats } from "../ui/workstream-picker.js";
-import { A, STATUS_STYLE, pad, fg256 } from "../ui/ansi.js";
+import { A, STATUS_STYLE, pad } from "../ui/ansi.js";
 import { loadComments } from "../core/comments";
 
 function formatDuration(ms: number): string {

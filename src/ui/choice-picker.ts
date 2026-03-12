@@ -1,8 +1,8 @@
 import {
-  A, C, bg256, fg256,
+  A,
   moveTo, clearScreen, hideCursor, showCursor,
   enterAltScreen, exitAltScreen,
-  stripAnsi, pad,
+  stripAnsi,
 } from "./ansi.js";
 import { renderModal } from "./modal.js";
 
