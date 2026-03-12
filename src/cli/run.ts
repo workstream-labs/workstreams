@@ -312,6 +312,7 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
   };
 
   await logLine(`Resuming workstream "${name}"`);
+  await logLine(`Prompt: ${resumePrompt}`);
 
   try {
     const result = await agent.run({

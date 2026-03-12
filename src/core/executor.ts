@@ -143,6 +143,7 @@ export class Executor {
     const spinner = new Spinner(name);
     spinner.start();
     await logLine(`Workstream "${name}" starting`);
+    await logLine(`Prompt: ${node.def.prompt}`);
 
     try {
       // Serialize worktree creation to avoid git lock races
