@@ -3,7 +3,7 @@ import { resolve } from "path";
 import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
-import { loadComments } from "../core/comments";
+import { loadComments, formatCommentsAsPrompt } from "../core/comments";
 import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
 import { getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
@@ -471,17 +471,12 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
           onSendPrompt: async (name: string, prompt: string) => {
             // Load fresh state every time (dashboard stays open)
             const s = await loadState() ?? state;
-            const c = await loadConfig("workstream.yaml");
             const ws = s.currentRun?.workstreams?.[name];
-            const hasSession = !!ws?.sessionId;
 
-            if (hasSession) {
-              // Resume: save as pending prompt
-              await savePendingPrompt(name, prompt);
-            } else {
-              // Fresh run: save prompt to workstream.yaml
-              await actionSetPrompt(name, prompt);
-            }
+            // Don't send if agent is already active
+            if (ws?.status === "running" || ws?.status === "queued") return;
+
+            const hasSession = !!ws?.sessionId;
 
             // Ensure run state exists
             if (!s.currentRun) {
@@ -500,19 +495,59 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
                 logFile: `.workstreams/logs/${name}.log`,
               };
             }
-            s.currentRun.finishedAt = undefined;
-            await appendWorkstreamStatus(s.currentRun.workstreams[name]);
-            await saveState(s);
 
-            // Spawn background run
-            const bgArgs = ["bun", Bun.main, "run", name];
-            const proc = Bun.spawn(bgArgs, {
-              cwd: process.cwd(),
-              stdin: "ignore",
-              stdout: "ignore",
-              stderr: "ignore",
-            });
-            proc.unref();
+            s.currentRun.finishedAt = undefined;
+
+            if (hasSession) {
+              // Resume: combine prompt with any pending comments, spawn background directly.
+              // This avoids the middleman process whose status checks can race with
+              // the previous run's cleanup (clearPendingPrompt).
+              const commentsData = await loadComments(name);
+              const commentsPrompt = formatCommentsAsPrompt(commentsData);
+              const parts: string[] = [];
+              if (commentsPrompt) parts.push(commentsPrompt);
+              parts.push(prompt);
+              const combinedPrompt = parts.join("\n\n---\n\n");
+
+              const wsState = s.currentRun.workstreams[name];
+              wsState.status = "running";
+              wsState.startedAt = new Date().toISOString();
+              wsState.finishedAt = undefined;
+              wsState.exitCode = undefined;
+              wsState.error = undefined;
+              await appendWorkstreamStatus(wsState);
+              await saveState(s);
+
+              // Spawn background resume worker directly
+              const bgArgs = ["bun", Bun.main, "run", name, "-c", "workstream.yaml", "-p", combinedPrompt];
+              const proc = Bun.spawn(bgArgs, {
+                cwd: process.cwd(),
+                env: { ...process.env, WS_BACKGROUND: "1", WS_RESUME_MODE: "1" },
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+              });
+              proc.unref();
+            } else {
+              // Fresh run: save prompt to workstream.yaml, spawn executor directly
+              await actionSetPrompt(name, prompt);
+
+              const wsState = s.currentRun.workstreams[name];
+              wsState.status = "queued";
+              await appendWorkstreamStatus(wsState);
+              await saveState(s);
+
+              // Spawn background executor directly
+              const bgArgs = ["bun", Bun.main, "run", "-c", "workstream.yaml", name];
+              const proc = Bun.spawn(bgArgs, {
+                cwd: process.cwd(),
+                env: { ...process.env, WS_BACKGROUND: "1" },
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+              });
+              proc.unref();
+            }
           },
           onInterrupt: async (name: string) => {
             // Load fresh state to get current PID

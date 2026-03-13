@@ -788,33 +788,29 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, attachmen
         marginTop: 0,
       }}
     >
-      {/* Attachment pills */}
-      {hasAttachments && (
-        <box flexDirection="row" paddingLeft={2} paddingBottom={0} gap={1}>
-          {attachments.map((a, i) => {
-            const basename = a.split("/").pop() ?? a;
-            const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg|heic)$/i.test(basename);
-            return (
-              <box
-                key={i}
-                flexDirection="row"
-                style={{
-                  borderStyle: "rounded",
-                  borderColor: theme.border,
-                  paddingLeft: 1,
-                  paddingRight: 1,
-                }}
-              >
-                <text fg={theme.accent}>{isImage ? "\u25A3" : "\u25A1"} </text>
-                <text fg={theme.text}>{basename}</text>
-              </box>
-            );
-          })}
-        </box>
-      )}
-
-      {/* Main input container */}
-      <box
+      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+        <box flexGrow={1} />
+        {isRunning ? (
+          <box flexDirection="row">
+            <text fg={theme.text} bold>^X</text>
+            <text fg={theme.textMuted}> interrupt</text>
+          </box>
+        ) : (
+          <box flexDirection="row">
+            <text fg={theme.text} bold>{"\u21B5"}</text>
+            <text fg={theme.textMuted}> send</text>
+          </box>
+        )}
+      </box>
+      <box flexDirection="row" paddingLeft={1}>
+        <text fg={theme.textMuted} dim>{displayModel}</text>
+      </box>
+      <textarea
+        key={inputKey}
+        placeholder={isRunning ? "Agent is working... (^X to interrupt)" : "Send a message..."}
+        initialValue=""
+        focused={focused}
+        onInput={onInput}
         style={{
           flexDirection: "column",
           borderStyle: "rounded",
