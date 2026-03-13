@@ -456,7 +456,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             return buildEntries(c, s);
           },
           getLogFile: (name: string) => {
-            return freshState.currentRun?.workstreams?.[name]?.logFile ?? null;
+            return freshState.currentRun?.workstreams?.[name]?.logFile ?? `.workstreams/logs/${name}.log`;
           },
           getWorkstreamStatus: (name: string) => {
             return freshState.currentRun?.workstreams?.[name]?.status ?? "ready";
@@ -468,13 +468,13 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             ]);
             return branchDiff + uncommittedDiff;
           },
-          onSendPrompt: async (name: string, prompt: string) => {
+          onSendPrompt: async (name: string, prompt: string): Promise<boolean> => {
             // Load fresh state every time (dashboard stays open)
             const s = await loadState() ?? state;
             const ws = s.currentRun?.workstreams?.[name];
 
             // Don't send if agent is already active
-            if (ws?.status === "running" || ws?.status === "queued") return;
+            if (ws?.status === "running" || ws?.status === "queued") return false;
 
             const hasSession = !!ws?.sessionId;
 
@@ -548,6 +548,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
               });
               proc.unref();
             }
+            return true;
           },
           onInterrupt: async (name: string) => {
             // Load fresh state to get current PID
@@ -555,6 +556,15 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             const ws = s?.currentRun?.workstreams?.[name];
             if (ws?.pid) {
               try { process.kill(ws.pid, "SIGINT"); } catch {}
+              // Immediately mark as failed so the next prompt isn't blocked
+              // by the race between interrupt and background process cleanup.
+              // The background process will also write a "failed" marker when
+              // it detects the exit, but this ensures the state is updated
+              // before the user can send another prompt.
+              ws.status = "failed";
+              ws.finishedAt = new Date().toISOString();
+              ws.pid = undefined;
+              await appendWorkstreamStatus(ws);
             }
           },
         };

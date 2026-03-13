@@ -61,14 +61,14 @@ export interface IdeDashboardOptions {
   getLogFile: (name: string) => string | null;
   getWorkstreamStatus: (name: string) => string;
   getDiff: (name: string) => Promise<string>;
-  onSendPrompt: (name: string, prompt: string) => Promise<void>;
+  onSendPrompt: (name: string, prompt: string) => Promise<boolean>;
   onInterrupt: (name: string) => Promise<void>;
 }
 
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"] | "set-prompt-input" | "pending-prompt-input";
+  action: DashboardAction["type"];
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -83,44 +83,12 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   });
 
   const isActive = entry.status === "running" || entry.status === "queued";
-  if (!entry.hasSession && !isActive) {
-    options.push({
-      label: entry.prompt ? "Edit prompt" : "Set prompt",
-      description: entry.prompt
-        ? "Modify the workstream prompt in workstream.yaml"
-        : "Add a prompt to this workspace in workstream.yaml",
-      action: "set-prompt-input",
-    });
-    if (entry.prompt) {
-      options.push({
-        label: "Run",
-        description: "Run the agent with the configured prompt",
-        action: "run",
-      });
-    }
-  }
-
   if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
       description: "Continue in an interactive terminal session",
       action: "open-session",
     });
-    options.push({
-      label: entry.hasPendingPrompt ? "Edit prompt" : "Set prompt",
-      description: "Set instructions to continue with",
-      action: "pending-prompt-input",
-    });
-    if (entry.hasPendingPrompt || entry.commentCount > 0) {
-      const pending: string[] = [];
-      if (entry.commentCount > 0) pending.push(`${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""}`);
-      if (entry.hasPendingPrompt) pending.push("prompt");
-      options.push({
-        label: "Run",
-        description: `Send ${pending.join(" + ")} to the agent`,
-        action: "run",
-      });
-    }
   }
 
   return options;
@@ -454,17 +422,6 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
     if (follow && scrollRef.current) scrollRef.current.scrollBy(100_000);
   }, [messages, follow]);
 
-  if (messages.length === 0 && status !== "running") {
-    return (
-      <box flexGrow={1} justifyContent="center" alignItems="center">
-        <box flexDirection="column" alignItems="center" gap={1}>
-          <text fg={theme.textMuted}>{"\u25CB"} No logs yet</text>
-          <text fg={theme.textMuted}>Run this workstream to see agent output</text>
-        </box>
-      </box>
-    );
-  }
-
   return (
     <scrollbox
       ref={scrollRef}
@@ -768,16 +725,14 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput, attachments }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
-  attachments?: string[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
-  const hasAttachments = attachments && attachments.length > 0;
 
   return (
     <box
@@ -788,29 +743,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, attachmen
         marginTop: 0,
       }}
     >
-      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-        <box flexGrow={1} />
-        {isRunning ? (
-          <box flexDirection="row">
-            <text fg={theme.text} bold>^X</text>
-            <text fg={theme.textMuted}> interrupt</text>
-          </box>
-        ) : (
-          <box flexDirection="row">
-            <text fg={theme.text} bold>{"\u21B5"}</text>
-            <text fg={theme.textMuted}> send</text>
-          </box>
-        )}
-      </box>
-      <box flexDirection="row" paddingLeft={1}>
-        <text fg={theme.textMuted} dim>{displayModel}</text>
-      </box>
-      <textarea
-        key={inputKey}
-        placeholder={isRunning ? "Agent is working... (^X to interrupt)" : "Send a message..."}
-        initialValue=""
-        focused={focused}
-        onInput={onInput}
+      <box
         style={{
           flexDirection: "column",
           borderStyle: "rounded",
@@ -859,13 +792,74 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, attachmen
             </box>
           ) : (
             <box flexDirection="row" gap={1}>
-              <text fg={theme.textMuted}>^I</text>
-              <text fg={theme.textMuted}> attach</text>
-              <text fg={theme.textMuted}> </text>
               <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
               <text fg={theme.textMuted}> send</text>
             </box>
           )}
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function WelcomeChatInput({ modelName, focused, inputKey, onInput }: {
+  modelName: string | undefined;
+  focused: boolean;
+  inputKey: number;
+  onInput: (v: string) => void;
+}) {
+  const displayModel = modelName ? formatModelName(modelName) : "claude";
+
+  return (
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+      {/* Welcome header */}
+      <box flexDirection="column" alignItems="center" marginBottom={2}>
+        <text fg={theme.accent} bold>{"\u2726"} {displayModel}</text>
+        <text fg={theme.text} bold>What should we work on?</text>
+      </box>
+
+      {/* Centered input */}
+      <box
+        width="80%"
+        style={{
+          flexDirection: "column",
+          borderStyle: "rounded",
+          borderColor: focused ? theme.accent : theme.border,
+          backgroundColor: focused ? theme.backgroundElement : theme.background,
+        }}
+      >
+        <textarea
+          key={inputKey}
+          placeholder={"Message " + displayModel + "..."}
+          initialValue=""
+          focused={focused}
+          onInput={onInput}
+          style={{
+            minHeight: 1,
+            maxHeight: 4,
+            paddingLeft: 1,
+            paddingRight: 1,
+          }}
+        />
+
+        {/* Bottom bar */}
+        <box
+          flexDirection="row"
+          style={{
+            alignItems: "center",
+            paddingLeft: 1,
+            paddingRight: 1,
+          }}
+        >
+          <box flexDirection="row">
+            <text fg={theme.accent}>{"\u2726"} </text>
+            <text fg={theme.accent}>{displayModel}</text>
+          </box>
+          <box flexGrow={1} />
+          <box flexDirection="row" gap={1}>
+            <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
+            <text fg={theme.textMuted}> send</text>
+          </box>
         </box>
       </box>
     </box>
@@ -924,50 +918,6 @@ function ActionPicker({ entry, options, selected, width }: {
         <text fg={theme.textMuted}> confirm  </text>
         <text fg={theme.text}>esc</text>
         <text fg={theme.textMuted}> back</text>
-      </box>
-    </box>
-  );
-}
-
-// ─── Prompt input overlay ────────────────────────────────────────────────────
-
-function PromptInput({ title, initialValue, onSubmit, onCancel, onInput }: {
-  title: string;
-  initialValue: string;
-  onSubmit: (value: string) => void;
-  onCancel: () => void;
-  onInput?: (value: string) => void;
-}) {
-  const [value, setValue] = React.useState(initialValue);
-
-  return (
-    <box
-      style={{
-        position: "absolute",
-        left: "15%",
-        top: 5,
-        width: "70%",
-        backgroundColor: theme.backgroundPanel,
-        borderStyle: "single",
-        borderColor: theme.accent,
-        padding: 1,
-        flexDirection: "column",
-        zIndex: 10,
-      }}
-    >
-      <text fg={theme.text} bold>{title}</text>
-      <textarea
-        placeholder="Enter prompt..."
-        initialValue={initialValue}
-        focused={true}
-        onInput={(v: string) => { setValue(v); onInput?.(v); }}
-        style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
-      />
-      <box flexDirection="row" marginTop={1}>
-        <text fg={theme.text}>ctrl+s</text>
-        <text fg={theme.textMuted}> submit  </text>
-        <text fg={theme.text}>esc</text>
-        <text fg={theme.textMuted}> cancel</text>
       </box>
     </box>
   );
@@ -1103,8 +1053,6 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
             <>
               <text fg={theme.text}>{"\u21B5"}</text>
               <text fg={theme.textMuted}> send  </text>
-              <text fg={theme.text}>^I</text>
-              <text fg={theme.textMuted}> attach  </text>
             </>
           )}
           <text fg={theme.text}>^D/^U</text>
@@ -1132,23 +1080,6 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
       <text fg={theme.textMuted}> quit</text>
     </box>
   );
-}
-
-// ─── Image attachment picker ──────────────────────────────────────────────────
-
-async function pickImageAttachment(): Promise<string | null> {
-  // Use macOS native file picker via osascript
-  if (process.platform === "darwin") {
-    try {
-      const { execSync } = require("child_process");
-      const result = execSync(
-        `osascript -e 'set theFile to choose file with prompt "Select an image or screenshot" of type {"public.image", "public.png", "public.jpeg"} without multiple selections allowed' -e 'POSIX path of theFile'`,
-        { encoding: "utf-8", timeout: 30000 },
-      ).trim();
-      if (result) return result;
-    } catch { /* user cancelled or error */ }
-  }
-  return null;
 }
 
 // ─── Main IDE Dashboard ──────────────────────────────────────────────────────
@@ -1203,8 +1134,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [showActionPicker, setShowActionPicker] = React.useState(false);
   const [actionPickerOptions, setActionPickerOptions] = React.useState<ActionOption[]>([]);
   const [actionPickerSelected, setActionPickerSelected] = React.useState(0);
-  const [promptMode, setPromptMode] = React.useState<"set-prompt" | "pending-prompt" | null>(null);
-  const promptValueRef = React.useRef("");
   const [showAddModal, setShowAddModal] = React.useState(false);
   const addModalNameRef = React.useRef("");
   const addModalPromptRef = React.useRef("");
@@ -1213,16 +1142,17 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
   const chatInputValueRef = React.useRef("");
-  const [chatAttachments, setChatAttachments] = React.useState<string[]>([]);
 
   // ─── Derived ─────────────────────────────────────────────────
   const isAddButtonSelected = selectedIdx === entries.length;
   const selectedEntry = isAddButtonSelected ? undefined : entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
   const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
-  const hasOverlay = showActionPicker || promptMode !== null;
-  const chatInputFocused = focusPanel === "right" && rightMode === "logs" && !showActionPicker && !promptMode;
+  const hasOverlay = showActionPicker;
+  const chatInputFocused = focusPanel === "right" && rightMode === "logs" && !showActionPicker;
   const isAgentActive = selectedEntry?.status === "running" || selectedEntry?.status === "queued";
+  const hasMessages = messages.length > 0;
+  const isEmptyState = !hasMessages && !isAgentActive;
 
   // ─── Diff derived state ─────────────────────────────────────
   const diffFiles = React.useMemo(() => {
@@ -1340,14 +1270,18 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     };
 
     go();
-    const status = options.getWorkstreamStatus(selectedEntry.name);
-    setFollow(status === "running");
+    setFollow(isAgentActive);
 
     return () => {
       cancelled = true;
       if (watcher) watcher.close();
     };
   }, [selectedName]);
+
+  // ─── Auto-follow when agent becomes active ─────────────────
+  React.useEffect(() => {
+    if (isAgentActive) setFollow(true);
+  }, [isAgentActive]);
 
   // ─── Reset diff state on workstream change ──────────────────
   React.useEffect(() => {
@@ -1486,24 +1420,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       return; // let textarea handle other keys
     }
 
-    // ─── Prompt input mode ─────────────────────────────
-    if (promptMode) {
-      if (n === "escape") { setPromptMode(null); return; }
-      if (key.ctrl && n === "s") {
-        const value = promptValueRef.current.trim();
-        if (value && selectedEntry) {
-          if (promptMode === "set-prompt") {
-            onAction({ type: "set-prompt", name: selectedEntry.name, prompt: value });
-          } else {
-            onAction({ type: "save-pending-prompt", name: selectedEntry.name, prompt: value });
-          }
-        }
-        setPromptMode(null);
-        return;
-      }
-      return; // let textarea handle other keys
-    }
-
     // ─── Action picker mode ────────────────────────────
     if (showActionPicker) {
       if (n === "escape" || n === "q") { setShowActionPicker(false); return; }
@@ -1519,17 +1435,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         const opt = actionPickerOptions[actionPickerSelected];
         if (!opt || !selectedEntry) return;
         setShowActionPicker(false);
-        if (opt.action === "set-prompt-input") {
-          promptValueRef.current = selectedEntry.prompt ?? "";
-          setPromptMode("set-prompt");
-          return;
-        }
-        if (opt.action === "pending-prompt-input") {
-          promptValueRef.current = selectedEntry.pendingPromptText ?? "";
-          setPromptMode("pending-prompt");
-          return;
-        }
-        // Actions that leave the dashboard
         onAction({ type: opt.action, name: selectedEntry.name } as DashboardAction);
         return;
       }
@@ -1542,10 +1447,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       if (n === "return") {
         const prompt = chatInputValueRef.current.trim();
         if (prompt && selectedEntry && !isAgentActive) {
-          options.onSendPrompt(selectedEntry.name, prompt);
+          options.onSendPrompt(selectedEntry.name, prompt).then((sent) => {
+            if (!sent) {
+              setFlashMessage("Agent is busy — try again in a moment");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
+          });
           chatInputValueRef.current = "";
           setChatInputKey(k => k + 1);
-          setChatAttachments([]);
           setFollow(true);
         }
         return;
@@ -1554,13 +1463,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         if (selectedEntry && isAgentActive) {
           options.onInterrupt(selectedEntry.name);
         }
-        return;
-      }
-      // Attach image/screenshot
-      if (key.ctrl && n === "i") {
-        pickImageAttachment().then(filePath => {
-          if (filePath) setChatAttachments(prev => [...prev, filePath]);
-        });
         return;
       }
       if (n === "escape" || (n === "tab" && !key.shift)) {
@@ -1779,21 +1681,36 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
           {rightMode === "logs" ? (
             <box flexDirection="column" flexGrow={1} flexShrink={1}>
-              <LogsPanel
-                messages={messages}
-                status={selectedStatus}
-                follow={follow}
-                showThinking={showThinking}
-                scrollRef={logsScrollRef}
-              />
-              <ChatInput
-                modelName={extractModelName(messages)}
-                isRunning={isAgentActive}
-                focused={chatInputFocused}
-                inputKey={chatInputKey}
-                onInput={(v: string) => { chatInputValueRef.current = v; }}
-                attachments={chatAttachments}
-              />
+              {isEmptyState ? (
+                <WelcomeChatInput
+                  modelName={extractModelName(messages)}
+                  focused={chatInputFocused}
+                  inputKey={chatInputKey}
+                  onInput={(v: string) => { chatInputValueRef.current = v; }}
+                />
+              ) : (
+                <>
+                  <LogsPanel
+                    messages={messages}
+                    status={selectedStatus}
+                    follow={follow}
+                    showThinking={showThinking}
+                    scrollRef={logsScrollRef}
+                  />
+                  {rightMode === "logs" && flashMessage && (
+                    <box style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}>
+                      <text fg={theme.warning}>{flashMessage}</text>
+                    </box>
+                  )}
+                  <ChatInput
+                    modelName={extractModelName(messages)}
+                    isRunning={isAgentActive}
+                    focused={chatInputFocused}
+                    inputKey={chatInputKey}
+                    onInput={(v: string) => { chatInputValueRef.current = v; }}
+                  />
+                </>
+              )}
             </box>
           ) : (
             <DiffPanel
@@ -1839,23 +1756,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           options={actionPickerOptions}
           selected={actionPickerSelected}
           width={width}
-        />
-      )}
-
-      {promptMode && selectedEntry && (
-        <PromptInput
-          title={promptMode === "set-prompt" ? "Set prompt" : "Set continuation prompt"}
-          initialValue={promptValueRef.current}
-          onSubmit={(v) => {
-            if (promptMode === "set-prompt") {
-              onAction({ type: "set-prompt", name: selectedEntry.name, prompt: v });
-            } else {
-              onAction({ type: "save-pending-prompt", name: selectedEntry.name, prompt: v });
-            }
-            setPromptMode(null);
-          }}
-          onCancel={() => setPromptMode(null)}
-          onInput={(v) => { promptValueRef.current = v; }}
         />
       )}
 

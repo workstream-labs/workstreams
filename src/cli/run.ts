@@ -305,13 +305,23 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
     await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
   };
 
+  // Guard: if sessionId is missing, we can't resume — fail early with a clear message
+  if (!ws.sessionId) {
+    ws.status = "failed";
+    ws.error = "No session ID available for resume";
+    ws.finishedAt = new Date().toISOString();
+    await logLine(`FAILED: ${ws.error}`);
+    await appendWorkstreamStatus(ws);
+    process.exit(1);
+  }
+
   // Build agent config with --resume flag
   // Insert --resume before -p to handle wrapper commands (e.g. aifx agent run claude --resume <id> ... -p)
   const baseArgs = config.agent.args ?? [];
   const pIndex = baseArgs.lastIndexOf("-p");
   const resumeArgs = pIndex >= 0
-    ? [...baseArgs.slice(0, pIndex), "--resume", ws.sessionId!, ...baseArgs.slice(pIndex)]
-    : [...baseArgs, "--resume", ws.sessionId!];
+    ? [...baseArgs.slice(0, pIndex), "--resume", ws.sessionId, ...baseArgs.slice(pIndex)]
+    : [...baseArgs, "--resume", ws.sessionId];
   const resumeAgentConfig: AgentConfig = {
     ...config.agent,
     args: resumeArgs,
