@@ -509,11 +509,6 @@ export async function openDashboard(
   entries: WorkstreamEntry[],
   options?: DashboardOptions,
 ): Promise<DashboardAction> {
-  if (entries.length === 0) {
-    console.log("No workstreams found.");
-    return { type: "quit" };
-  }
-
   const state: DashboardState = {
     entries,
     filteredIndices: entries.map((_, i) => i),

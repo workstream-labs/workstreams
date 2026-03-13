@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { validateWorkstreamName } from "../src/core/config";
 
 describe("config validation", () => {
   it("parses a valid config", async () => {
@@ -128,5 +129,83 @@ agent:
     await Bun.write(tmpPath, yaml);
     const config = await loadConfig(tmpPath);
     expect(config.workstreams).toHaveLength(0);
+  });
+
+  it("rejects workstream names with spaces", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  - name: "my task"
+    prompt: "hi"
+`;
+    const tmpPath = "/tmp/test-ws-spaces.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("Invalid workstream name");
+  });
+
+  it("rejects workstream names with special characters", async () => {
+    const { loadConfig } = await import("../src/core/config");
+    const yaml = `
+agent:
+  command: echo
+workstreams:
+  "my~task":
+    prompt: "hi"
+`;
+    const tmpPath = "/tmp/test-ws-special.yaml";
+    await Bun.write(tmpPath, yaml);
+    expect(loadConfig(tmpPath)).rejects.toThrow("Invalid workstream name");
+  });
+});
+
+describe("validateWorkstreamName", () => {
+  it("accepts valid names", () => {
+    expect(validateWorkstreamName("add-tests")).toBeNull();
+    expect(validateWorkstreamName("dark-mode")).toBeNull();
+    expect(validateWorkstreamName("feature_123")).toBeNull();
+    expect(validateWorkstreamName("v2.0")).toBeNull();
+    expect(validateWorkstreamName("A")).toBeNull();
+  });
+
+  it("rejects empty names", () => {
+    expect(validateWorkstreamName("")).toContain("non-empty");
+  });
+
+  it("rejects names with spaces", () => {
+    expect(validateWorkstreamName("my task")).toContain("Invalid");
+    expect(validateWorkstreamName("add tests")).toContain("Invalid");
+  });
+
+  it("rejects names with leading/trailing spaces", () => {
+    expect(validateWorkstreamName(" foo")).toContain("leading or trailing spaces");
+    expect(validateWorkstreamName("foo ")).toContain("leading or trailing spaces");
+  });
+
+  it("rejects names with special characters", () => {
+    expect(validateWorkstreamName("my~task")).toContain("Invalid");
+    expect(validateWorkstreamName("my:task")).toContain("Invalid");
+    expect(validateWorkstreamName("my*task")).toContain("Invalid");
+    expect(validateWorkstreamName("my?task")).toContain("Invalid");
+    expect(validateWorkstreamName("my[task")).toContain("Invalid");
+    expect(validateWorkstreamName("my\\task")).toContain("Invalid");
+  });
+
+  it("rejects names starting with a dash or dot", () => {
+    expect(validateWorkstreamName("-foo")).toContain("Invalid");
+    expect(validateWorkstreamName(".foo")).toContain("Invalid");
+  });
+
+  it("rejects names ending with .lock", () => {
+    expect(validateWorkstreamName("foo.lock")).toContain(".lock");
+  });
+
+  it("rejects names with consecutive dots", () => {
+    expect(validateWorkstreamName("foo..bar")).toContain("..");
+  });
+
+  it("rejects names exceeding 100 characters", () => {
+    expect(validateWorkstreamName("a".repeat(101))).toContain("too long");
   });
 });
