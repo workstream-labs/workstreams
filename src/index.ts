@@ -10,7 +10,6 @@ import { listCommand } from "./cli/list";
 import { diffCommand } from "./cli/diff";
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
-import { logsCommand } from "./cli/logs";
 import { checkoutCommand } from "./cli/checkout";
 
 
@@ -27,7 +26,6 @@ Quick start:
   ws run                         Spawn agents for all workstreams
   ws run auth -p "fix tests"     Resume with new instructions
   ws list                        Check status
-  ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
   ws checkout auth               cd to a workstream worktree
   ws destroy --all               Tear everything down
@@ -43,8 +41,6 @@ Key options:
   prompt    -p, --prompt <text>    Set or update a workstream's prompt
   switch    -e, --editor <editor>  Open directly in a specific editor
             --no-editor            Print worktree path without opening editor
-  logs      --raw                  Print raw log output instead of interactive viewer
-
 Run "ws <command> --help" for detailed usage and examples.
 `);
 
@@ -54,7 +50,6 @@ program.addCommand(runCommand());
 program.addCommand(listCommand());
 program.addCommand(switchCommand());
 program.addCommand(diffCommand());
-program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
 program.addCommand(checkoutCommand());
