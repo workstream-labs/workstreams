@@ -436,12 +436,6 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
         return;
       }
 
-      // No name — open interactive dashboard
-      if (config.workstreams.length === 0) {
-        console.log("No workstreams defined. Add one with: ws create <name>");
-        return;
-      }
-
       // Dashboard loop: IDE dashboard handles logs/diff inline,
       // only exits for editor/run/session/prompt actions
       let loop = true;

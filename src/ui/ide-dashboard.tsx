@@ -1455,7 +1455,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               if (options.onRefresh) {
                 const updated = await options.onRefresh();
                 setEntries(updated);
-                setSelectedIdx(v => Math.min(v, updated.length - 1));
+                setSelectedIdx(v => Math.min(v, updated.length));
               }
             } else {
               setFlashMessage("Failed to delete workstream");
@@ -1805,11 +1805,6 @@ export async function openIdeDashboard(
   if (!parsersRegistered) {
     addDefaultParsers(parsersConfig.parsers);
     parsersRegistered = true;
-  }
-
-  if (entries.length === 0) {
-    console.log("No workstreams found.");
-    return { type: "quit" };
   }
 
   return new Promise<DashboardAction>(async (resolve) => {

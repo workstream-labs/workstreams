@@ -2,6 +2,21 @@ import { parse } from "yaml";
 import { ConfigError } from "./errors";
 import type { AgentConfig, WorkstreamConfig, WorkstreamDef } from "./types";
 
+const VALID_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+export function validateWorkstreamName(name: string): string | null {
+  if (!name) return "Workstream name must be a non-empty string";
+  if (name !== name.trim()) return `Workstream name must not have leading or trailing spaces: "${name}"`;
+  if (name.length > 100) return `Workstream name is too long (max 100 characters): "${name}"`;
+  if (!VALID_NAME_RE.test(name))
+    return `Invalid workstream name "${name}". Names must start with a letter or number and contain only letters, numbers, hyphens, underscores, or dots.`;
+  if (name.endsWith(".lock") || name.endsWith("."))
+    return `Workstream name must not end with ".lock" or ".": "${name}"`;
+  if (name.includes(".."))
+    return `Workstream name must not contain "..": "${name}"`;
+  return null;
+}
+
 export async function loadConfig(path: string): Promise<WorkstreamConfig> {
   const file = Bun.file(path);
   if (!(await file.exists())) {
@@ -54,6 +69,10 @@ function validateConfig(raw: any): WorkstreamConfig {
   for (const [name, def] of entries) {
     if (typeof name !== "string" || !name) {
       throw new ConfigError("Workstream name must be a non-empty string");
+    }
+    const nameError = validateWorkstreamName(name);
+    if (nameError) {
+      throw new ConfigError(nameError);
     }
     if (names.has(name)) {
       throw new ConfigError(`Duplicate workstream name: "${name}"`);

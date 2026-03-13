@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { parse, stringify } from "yaml";
 import { WorktreeManager } from "../core/worktree";
+import { validateWorkstreamName } from "../core/config";
 import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
 
 const ERR_NO_CONFIG = "Error: workstream.yaml not found. Run `ws init` first.";
@@ -18,6 +19,12 @@ Examples:
   ws create sandbox              Create a prompt-less workspace (manual work only)
 `)
     .action(async (name: string, opts: { prompt?: string; base?: string }) => {
+      const nameError = validateWorkstreamName(name);
+      if (nameError) {
+        console.error(`Error: ${nameError}`);
+        process.exit(1);
+      }
+
       const configFile = Bun.file("workstream.yaml");
       if (!(await configFile.exists())) {
         console.error(ERR_NO_CONFIG);
