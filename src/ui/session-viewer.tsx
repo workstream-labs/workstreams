@@ -192,7 +192,7 @@ function TextPartView({ part }: { part: Extract<AssistantPart, { type: "text" }>
   if (!txt) return null;
   return (
     <box paddingLeft={3} marginTop={1} flexShrink={0}>
-      <code filetype="markdown" drawUnstyledText={false} streaming={true}
+      <markdown streaming={true}
         syntaxStyle={syntaxTheme} content={txt} conceal={true} fg={theme.text} />
     </box>
   );
@@ -200,8 +200,11 @@ function TextPartView({ part }: { part: Extract<AssistantPart, { type: "text" }>
 
 // Diff block for Edit tool — auto-switches split/unified based on width
 function EditDiff({ fp, ft, diffStr }: { fp: string; ft: string; diffStr: string }) {
-  const { width } = useTerminalDimensions();
-  const view = width > 120 ? "split" : "unified";
+  const { width: termWidth } = useTerminalDimensions();
+  // When embedded in the IDE dashboard, the available width is narrower
+  // than the terminal (left panel takes ~32 cols). Use a higher threshold
+  // so split mode only activates when there's enough room.
+  const view = termWidth > 180 ? "split" : "unified";
   return (
     <BlockTool title={`\u2190 Edit ${fp}`}>
       <box paddingLeft={1}>

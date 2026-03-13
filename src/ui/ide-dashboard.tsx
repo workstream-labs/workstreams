@@ -63,6 +63,9 @@ export interface IdeDashboardOptions {
   getDiff: (name: string) => Promise<string>;
   onSendPrompt: (name: string, prompt: string) => Promise<boolean>;
   onInterrupt: (name: string) => Promise<void>;
+  onOpenEditor?: (name: string) => Promise<boolean>;
+  onCreateWorkstream?: (name: string) => Promise<boolean>;
+  onDestroy?: (name: string) => Promise<boolean>;
 }
 
 interface ActionOption {
@@ -78,7 +81,7 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
 
   options.push({
     label: "Open in editor",
-    description: "Create worktree if needed and open in your editor",
+    description: "Open worktree in your editor",
     action: "editor",
   });
 
@@ -86,8 +89,16 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
-      description: "Continue in an interactive terminal session",
+      description: "Resume interactive terminal",
       action: "open-session",
+    });
+  }
+
+  if (!isActive) {
+    options.push({
+      label: "Delete",
+      description: "Remove worktree and branch",
+      action: "destroy",
     });
   }
 
@@ -387,7 +398,7 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
         bold={mode === "logs"}
         backgroundColor={mode === "logs" ? theme.background : undefined}
       >
-        {" "}1 Logs{" "}
+        {" Logs "}
       </text>
       <text fg={theme.border}> | </text>
       <text
@@ -395,7 +406,7 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
         bold={mode === "diff"}
         backgroundColor={mode === "diff" ? theme.background : undefined}
       >
-        {" "}2 Diff{" "}
+        {" Diff "}
       </text>
       <box flexGrow={1} />
       <text fg={st.color}>{statusIcon}</text>
@@ -417,9 +428,14 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
   const hasResult = messages.some((m: DisplayMessage) => m.role === "result");
   const isRunning = status === "running" && !hasResult;
 
-  // Auto-follow when running
+  // Auto-follow: scroll to bottom when messages change.
+  // Use a short delay so the scrollbox layout has updated with the new content.
   React.useEffect(() => {
-    if (follow && scrollRef.current) scrollRef.current.scrollBy(100_000);
+    if (!follow) return;
+    const tick = () => scrollRef.current?.scrollBy(100_000);
+    tick();
+    const id = setTimeout(tick, 32);
+    return () => clearTimeout(id);
   }, [messages, follow]);
 
   return (
@@ -753,7 +769,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
       >
         <textarea
           key={inputKey}
-          placeholder={isRunning ? "Agent is working..." : "Message " + displayModel + "..."}
+          placeholder={isRunning ? "Agent is working..." : "Message claude..."}
           initialValue=""
           focused={focused}
           onInput={onInput}
@@ -765,7 +781,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
           }}
         />
 
-        {/* Bottom bar: model pill + actions */}
+        {/* Bottom bar: action hints only */}
         <box
           flexDirection="row"
           style={{
@@ -774,15 +790,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
             paddingRight: 1,
           }}
         >
-          {/* Model pill */}
-          <box flexDirection="row">
-            <text fg={theme.accent}>{"\u2726"} </text>
-            <text fg={theme.accent}>{displayModel}</text>
-          </box>
-
           <box flexGrow={1} />
-
-          {/* Action hints */}
           {isRunning ? (
             <box flexDirection="row" gap={1}>
               <text fg={theme.warning}>{"\u25CF"} running</text>
@@ -798,15 +806,21 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
           )}
         </box>
       </box>
+      {/* Model name below the input */}
+      <box flexDirection="row" paddingLeft={1}>
+        <text fg={theme.accent}>{"\u2726"} </text>
+        <text fg={theme.textMuted}>{displayModel}</text>
+      </box>
     </box>
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
+  initialValue?: string;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
@@ -814,7 +828,6 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput }: {
     <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
       {/* Welcome header */}
       <box flexDirection="column" alignItems="center" marginBottom={2}>
-        <text fg={theme.accent} bold>{"\u2726"} {displayModel}</text>
         <text fg={theme.text} bold>What should we work on?</text>
       </box>
 
@@ -830,13 +843,13 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput }: {
       >
         <textarea
           key={inputKey}
-          placeholder={"Message " + displayModel + "..."}
-          initialValue=""
+          placeholder={"Message claude..."}
+          initialValue={initialValue ?? ""}
           focused={focused}
           onInput={onInput}
           style={{
-            minHeight: 1,
-            maxHeight: 4,
+            minHeight: 2,
+            maxHeight: 8,
             paddingLeft: 1,
             paddingRight: 1,
           }}
@@ -851,16 +864,17 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput }: {
             paddingRight: 1,
           }}
         >
-          <box flexDirection="row">
-            <text fg={theme.accent}>{"\u2726"} </text>
-            <text fg={theme.accent}>{displayModel}</text>
-          </box>
           <box flexGrow={1} />
           <box flexDirection="row" gap={1}>
             <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
             <text fg={theme.textMuted}> send</text>
           </box>
         </box>
+      </box>
+      {/* Model name below */}
+      <box flexDirection="row" justifyContent="center" marginTop={1}>
+        <text fg={theme.accent}>{"\u2726"} </text>
+        <text fg={theme.textMuted}>{displayModel}</text>
       </box>
     </box>
   );
@@ -874,13 +888,15 @@ function ActionPicker({ entry, options, selected, width }: {
   selected: number;
   width: number;
 }) {
+  const rightPanelW = width - LEFT_PANEL_WIDTH;
+  const modalW = Math.min(50, rightPanelW - 4);
   return (
     <box
       style={{
         position: "absolute",
-        left: Math.floor((width - 50) / 2),
+        left: LEFT_PANEL_WIDTH + Math.floor((rightPanelW - modalW) / 2),
         top: 4,
-        width: 50,
+        width: modalW,
         backgroundColor: theme.backgroundPanel,
         borderStyle: "single",
         borderColor: theme.border,
@@ -889,7 +905,7 @@ function ActionPicker({ entry, options, selected, width }: {
         zIndex: 10,
       }}
     >
-      <text fg={theme.text} bold>{entry.name}</text>
+      <text fg={theme.text} bold>Actions</text>
       <box height={1} />
       {options.map((opt, i) => {
         const isSel = i === selected;
@@ -911,7 +927,7 @@ function ActionPicker({ entry, options, selected, width }: {
           </box>
         );
       })}
-      <box flexDirection="row" justifyContent="center">
+      <box flexDirection="row">
         <text fg={theme.text}>{"↑↓"}</text>
         <text fg={theme.textMuted}> select  </text>
         <text fg={theme.text}>enter</text>
@@ -925,20 +941,20 @@ function ActionPicker({ entry, options, selected, width }: {
 
 // ─── Add workstream modal ─────────────────────────────────────────────────────
 
-type AddWsField = "name" | "prompt";
-
-function AddWorkstreamModal({ activeField, onNameInput, onPromptInput }: {
-  activeField: AddWsField;
+function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
   onNameInput: (v: string) => void;
-  onPromptInput: (v: string) => void;
+  panelLeft: number;
+  panelWidth: number;
 }) {
+  const modalW = Math.floor(panelWidth * 0.6);
+  const modalLeft = panelLeft + Math.floor((panelWidth - modalW) / 2);
   return (
     <box
       style={{
         position: "absolute",
-        left: "20%",
+        left: modalLeft,
         top: 5,
-        width: "60%",
+        width: modalW,
         backgroundColor: theme.backgroundPanel,
         borderStyle: "single",
         borderColor: theme.accent,
@@ -952,54 +968,29 @@ function AddWorkstreamModal({ activeField, onNameInput, onPromptInput }: {
 
       {/* Name field */}
       <box flexDirection="row" gap={1}>
-        <text fg={activeField === "name" ? theme.accent : theme.textMuted}>{activeField === "name" ? "\u276F" : " "}</text>
-        <text fg={theme.text} bold>Name</text>
-        <text fg={theme.textMuted}>(required)</text>
+        <text fg={theme.accent}>{"\u276F"}</text>
+        <text fg={theme.textMuted}>Name</text>
       </box>
       <textarea
         placeholder="e.g. add-auth, fix-sidebar"
         initialValue=""
-        focused={activeField === "name"}
+        focused={true}
         onInput={onNameInput}
         style={{
           marginLeft: 2,
           minHeight: 1,
           maxHeight: 1,
-          backgroundColor: activeField === "name" ? theme.backgroundElement : theme.background,
+          backgroundColor: theme.backgroundElement,
           borderStyle: "single",
-          borderColor: activeField === "name" ? theme.accent : theme.border,
-          border: ["bottom"],
-        }}
-      />
-      <box height={1} />
-
-      {/* Prompt field */}
-      <box flexDirection="row" gap={1}>
-        <text fg={activeField === "prompt" ? theme.accent : theme.textMuted}>{activeField === "prompt" ? "\u276F" : " "}</text>
-        <text fg={theme.text} bold>Prompt</text>
-        <text fg={theme.textMuted}>(optional)</text>
-      </box>
-      <textarea
-        placeholder="What should the agent do?"
-        initialValue=""
-        focused={activeField === "prompt"}
-        onInput={onPromptInput}
-        style={{
-          marginLeft: 2,
-          minHeight: 3,
-          backgroundColor: activeField === "prompt" ? theme.backgroundElement : theme.background,
-          borderStyle: "single",
-          borderColor: activeField === "prompt" ? theme.accent : theme.border,
+          borderColor: theme.accent,
           border: ["bottom"],
         }}
       />
       <box height={1} />
 
       {/* Footer hints */}
-      <box flexDirection="row" justifyContent="center">
-        <text fg={theme.text}>Tab</text>
-        <text fg={theme.textMuted}> switch field  </text>
-        <text fg={theme.text}>ctrl+s</text>
+      <box flexDirection="row">
+        <text fg={theme.text}>{"\u21B5"}</text>
         <text fg={theme.textMuted}> create  </text>
         <text fg={theme.text}>esc</text>
         <text fg={theme.textMuted}> cancel</text>
@@ -1025,7 +1016,6 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
         flexShrink: 0,
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
         paddingLeft: 1,
         paddingRight: 1,
         backgroundColor: theme.backgroundPanel,
@@ -1039,8 +1029,6 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> navigate  </text>
           <text fg={theme.text}>Enter</text>
           <text fg={theme.textMuted}> actions  </text>
-          <text fg={theme.text}>a</text>
-          <text fg={theme.textMuted}> add  </text>
         </>
       ) : inChatInput ? (
         <>
@@ -1055,7 +1043,7 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
               <text fg={theme.textMuted}> send  </text>
             </>
           )}
-          <text fg={theme.text}>^D/^U</text>
+          <text fg={theme.text}>{"↑↓"}</text>
           <text fg={theme.textMuted}> scroll  </text>
         </>
       ) : rightMode === "diff" ? (
@@ -1072,9 +1060,9 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> {viewMode}  </text>
         </>
       ) : null}
-      <text fg={theme.text}>1</text>
+      <text fg={theme.text}>L</text>
       <text fg={theme.textMuted}> logs  </text>
-      <text fg={theme.text}>2</text>
+      <text fg={theme.text}>D</text>
       <text fg={theme.textMuted}> diff  </text>
       <text fg={theme.text}>q</text>
       <text fg={theme.textMuted}> quit</text>
@@ -1136,8 +1124,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [actionPickerSelected, setActionPickerSelected] = React.useState(0);
   const [showAddModal, setShowAddModal] = React.useState(false);
   const addModalNameRef = React.useRef("");
-  const addModalPromptRef = React.useRef("");
-  const [addModalField, setAddModalField] = React.useState<AddWsField>("name");
 
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
@@ -1250,31 +1236,29 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         lastSize = s.size;
         const content = await readFile(filePath, "utf-8");
         if (!cancelled) setMessages(parseSessionJsonlContent(content));
-      } catch {
-        if (!cancelled) setMessages([]);
-      }
+      } catch {}
     };
 
+    // Initial read + set up fs.watch (best-effort, unreliable on macOS)
     const go = async () => {
       try {
-        await stat(filePath);
         await refresh();
         watcher = watch(filePath, { persistent: false }, () => refresh());
-      } catch {
-        // File doesn't exist yet, poll
-        const p = setInterval(async () => {
-          if (cancelled) { clearInterval(p); return; }
-          try { await stat(filePath); clearInterval(p); go(); } catch {}
-        }, 1000);
-      }
+      } catch {}
     };
-
     go();
+
+    // Poll as the primary change-detection mechanism. fs.watch is
+    // unreliable on macOS for detecting appends. The stat-size guard
+    // in refresh() makes redundant polls cheap (no file read unless
+    // the size changed). Also handles the file-not-yet-created case.
+    const pollId = setInterval(() => refresh(), 1000);
     setFollow(isAgentActive);
 
     return () => {
       cancelled = true;
       if (watcher) watcher.close();
+      clearInterval(pollId);
     };
   }, [selectedName]);
 
@@ -1283,7 +1267,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     if (isAgentActive) setFollow(true);
   }, [isAgentActive]);
 
-  // ─── Reset diff state on workstream change ──────────────────
+  // ─── Reset state on workstream change ───────────────────────
   React.useEffect(() => {
     setDiffData(null);
     setDiffFileIndex(0);
@@ -1291,6 +1275,9 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setViewOverride(null);
     setCursorLine(0);
     setShowCommentForm(false);
+    // Pre-populate chat with the workstream's prompt (if any)
+    chatInputValueRef.current = selectedEntry?.prompt ?? "";
+    setChatInputKey(k => k + 1);
   }, [selectedName]);
 
   // ─── Reset cursor when diff file changes ───────────────────
@@ -1398,17 +1385,32 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     // ─── Add workstream modal mode ──────────────────────
     if (showAddModal) {
       if (n === "escape") { setShowAddModal(false); return; }
-      if (n === "tab") {
-        setAddModalField(f => f === "name" ? "prompt" : "name");
-        return;
-      }
-      if (key.ctrl && n === "s") {
+      if (n === "return") {
         const wsName = addModalNameRef.current.trim();
         if (!wsName) return;
         if (entries.some(e => e.name === wsName)) return;
-        const wsPrompt = addModalPromptRef.current.trim() || undefined;
         setShowAddModal(false);
-        onAction({ type: "create-workstream", name: wsName, prompt: wsPrompt });
+        if (options.onCreateWorkstream) {
+          options.onCreateWorkstream(wsName).then(async (created) => {
+            if (created) {
+              setFlashMessage(`\u2714 Created "${wsName}"`);
+              setTimeout(() => setFlashMessage(null), 2000);
+              // Refresh entries so the new workstream appears in the list
+              if (options.onRefresh) {
+                const updated = await options.onRefresh();
+                setEntries(updated);
+                // Select the new workstream
+                const newIdx = updated.findIndex(e => e.name === wsName);
+                if (newIdx >= 0) setSelectedIdx(newIdx);
+              }
+            } else {
+              setFlashMessage("Failed to create workstream");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
+          });
+        } else {
+          onAction({ type: "create-workstream", name: wsName });
+        }
         return;
       }
     }
@@ -1435,6 +1437,33 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         const opt = actionPickerOptions[actionPickerSelected];
         if (!opt || !selectedEntry) return;
         setShowActionPicker(false);
+        // Handle "editor" inline — keep dashboard open, show flash
+        if (opt.action === "editor" && options.onOpenEditor) {
+          options.onOpenEditor(selectedEntry.name).then((opened) => {
+            setFlashMessage(opened ? "\u2714 Editor opened" : "Could not open editor");
+            setTimeout(() => setFlashMessage(null), 2000);
+          });
+          return;
+        }
+        // Handle "destroy" inline
+        if (opt.action === "destroy" && options.onDestroy) {
+          const name = selectedEntry.name;
+          options.onDestroy(name).then(async (destroyed) => {
+            if (destroyed) {
+              setFlashMessage(`\u2714 Deleted "${name}"`);
+              setTimeout(() => setFlashMessage(null), 2000);
+              if (options.onRefresh) {
+                const updated = await options.onRefresh();
+                setEntries(updated);
+                setSelectedIdx(v => Math.min(v, updated.length - 1));
+              }
+            } else {
+              setFlashMessage("Failed to delete workstream");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
+          });
+          return;
+        }
         onAction({ type: opt.action, name: selectedEntry.name } as DashboardAction);
         return;
       }
@@ -1499,8 +1528,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     }
 
     // Mode switching (works from anywhere except chat input)
-    if (n === "1") { setRightMode("logs"); return; }
-    if (n === "2") { setRightMode("diff"); return; }
+    if (n === "1" || (key.shift && n === "l")) { setRightMode("logs"); return; }
+    if (n === "2" || (key.shift && n === "d")) { setRightMode("diff"); return; }
 
     // ─── Left panel (workstreams) ──────────────────────
     if (focusPanel === "workstreams") {
@@ -1534,8 +1563,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       if (n === "return") {
         if (isAddButtonSelected) {
           addModalNameRef.current = "";
-          addModalPromptRef.current = "";
-          setAddModalField("name");
           setShowAddModal(true);
           return;
         }
@@ -1550,12 +1577,10 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       // 'a' hotkey — open add modal from anywhere in the list
       if (n === "a") {
         addModalNameRef.current = "";
-        addModalPromptRef.current = "";
-        setAddModalField("name");
         setShowAddModal(true);
         return;
       }
-      if (n === "l" || n === "right") {
+      if (n === "right") {
         if (!isAddButtonSelected) setFocusPanel("right");
         return;
       }
@@ -1594,7 +1619,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           setDiffFileIndex((v: number) => Math.max(v - 1, 0));
           return;
         }
-        if (n === "l" || n === "return" || n === "right") {
+        if (n === "return" || n === "right") {
           setDiffSubFocus("diff");
           return;
         }
@@ -1687,6 +1712,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   focused={chatInputFocused}
                   inputKey={chatInputKey}
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
+                  initialValue={selectedEntry?.prompt}
                 />
               ) : (
                 <>
@@ -1698,7 +1724,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     scrollRef={logsScrollRef}
                   />
                   {rightMode === "logs" && flashMessage && (
-                    <box style={{ flexDirection: "row", justifyContent: "center", flexShrink: 0 }}>
+                    <box style={{ flexDirection: "row", flexShrink: 0, paddingLeft: 1 }}>
                       <text fg={theme.warning}>{flashMessage}</text>
                     </box>
                   )}
@@ -1727,7 +1753,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               bottomSlot={
                 <>
                   {flashMessage && (
-                    <box style={{ flexDirection: "row", justifyContent: "center", paddingBottom: 1, flexShrink: 0 }}>
+                    <box style={{ flexDirection: "row", paddingBottom: 1, paddingLeft: 1, flexShrink: 0 }}>
                       <text fg="#2d8a47">{flashMessage}</text>
                     </box>
                   )}
@@ -1761,9 +1787,9 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
       {showAddModal && (
         <AddWorkstreamModal
-          activeField={addModalField}
           onNameInput={(v: string) => { addModalNameRef.current = v; }}
-          onPromptInput={(v: string) => { addModalPromptRef.current = v; }}
+          panelLeft={LEFT_PANEL_WIDTH}
+          panelWidth={width - LEFT_PANEL_WIDTH}
         />
       )}
     </box>

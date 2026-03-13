@@ -142,12 +142,18 @@ export class Executor {
     await logLine(`Workstream "${name}" starting`);
 
     try {
-      // Serialize worktree creation to avoid git lock races
-      await logLine("Creating git worktree...");
-      await this.acquireWorktreeLock(async () => {
-        await this.wt.create(name, node.def.baseBranch);
-      });
-      await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
+      // Create worktree if it doesn't already exist (ws create may have made it)
+      const { stat } = await import("fs/promises");
+      const wtExists = await stat(ws.worktreePath).then(() => true).catch(() => false);
+      if (!wtExists) {
+        await logLine("Creating git worktree...");
+        await this.acquireWorktreeLock(async () => {
+          await this.wt.create(name, node.def.baseBranch);
+        });
+        await logLine(`Worktree created at ${ws.worktreePath} on branch ${ws.branch}`);
+      } else {
+        await logLine(`Using existing worktree at ${ws.worktreePath}`);
+      }
 
       await logLine("Launching agent...");
       const result = await this.agent.run({

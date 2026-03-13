@@ -32,18 +32,14 @@ async function detectInstalledEditors(): Promise<string[]> {
   return found;
 }
 
-function openEditor(dir: string, editor: string): void {
-  const isMac = process.platform === "darwin";
-  const known = EDITORS[editor];
-
+async function openEditor(dir: string, editor: string): Promise<void> {
+  // Use Node's child_process with a real system shell — Bun's built-in
+  // shell doesn't work correctly with editor CLI wrapper scripts.
+  const { execFileSync } = await import("child_process");
   try {
-    if (isMac && known) {
-      Bun.spawn(["open", "-a", known.mac, dir], { stdio: ["ignore", "ignore", "ignore"] });
-    } else {
-      Bun.spawn([editor, dir], { stdio: ["ignore", "ignore", "ignore"] });
-    }
-  } catch {
-    console.error(`Could not open editor "${editor}". Is it installed and in your PATH?`);
+    execFileSync(editor, [dir], { stdio: "inherit" });
+  } catch (e: any) {
+    console.error(`Could not open editor "${editor}": ${e.message}`);
   }
 }
 
@@ -153,7 +149,7 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
     if (!state.currentRun.workstreams[name]) {
       state.currentRun.workstreams[name] = {
         name,
-        status: "queued",
+        status: "ready",
         branch: `ws/${name}`,
         worktreePath,
         logFile: `.workstreams/logs/${name}.log`,
@@ -168,20 +164,24 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
 
 // ─── Action: Open in editor ──────────────────────────────────────────────────
 
-async function actionOpenEditor(name: string, state: any, config: any, editorOpt?: string) {
+async function actionOpenEditor(name: string, state: any, config: any, editorOpt?: string): Promise<boolean> {
   const absPath = await ensureWorktree(name, state, config);
-  console.log(`Switched to ws/${name} at ${absPath}`);
 
   const resolved = await resolveEditor(editorOpt, state.defaultEditor);
-  if (resolved) {
-    if (!editorOpt && !state.defaultEditor) {
-      state.defaultEditor = resolved;
-      await saveState(state);
-    }
-    const label = EDITORS[resolved]?.label ?? resolved;
-    console.log(`Opening in ${label}...`);
-    openEditor(absPath, resolved);
+  if (!resolved) {
+    console.log(`No editor found. Set $EDITOR or install one of: ${Object.keys(EDITORS).join(", ")}`);
+    console.log(`  Worktree path: ${absPath}`);
+    return false;
   }
+
+  if (!editorOpt && !state.defaultEditor) {
+    state.defaultEditor = resolved;
+    await saveState(state);
+  }
+  const label = EDITORS[resolved]?.label ?? resolved;
+  console.log(`Opening ${name} in ${label}...`);
+  await openEditor(absPath, resolved);
+  return true;
 }
 
 // ─── Action: Open Claude session (interactive) ───────────────────────────────
@@ -309,9 +309,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "quit":
       return false;
 
-    case "editor":
-      await actionOpenEditor(action.name, state, config);
-      return false;
+    case "editor": {
+      const opened = await actionOpenEditor(action.name, state, config);
+      return !opened; // stay in dashboard if editor failed to open
+    }
 
     case "diff":
       // Diff is now handled inline in the IDE dashboard, but keep fallback
@@ -418,7 +419,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             }
             const label = EDITORS[resolved]?.label ?? resolved;
             console.log(`Opening in ${label}...`);
-            openEditor(absPath, resolved);
+            await openEditor(absPath, resolved);
           }
         }
         return;
@@ -467,6 +468,64 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
               wt.diff(name).catch(() => ""),
             ]);
             return branchDiff + uncommittedDiff;
+          },
+          onOpenEditor: async (name: string): Promise<boolean> => {
+            const absPath = await ensureWorktree(name, freshState, freshConfig);
+            const resolved = await resolveEditor(undefined, freshState.defaultEditor);
+            if (!resolved) return false;
+            if (!freshState.defaultEditor) {
+              freshState.defaultEditor = resolved;
+              await saveState(freshState);
+            }
+            await openEditor(absPath, resolved);
+            return true;
+          },
+          onCreateWorkstream: async (name: string): Promise<boolean> => {
+            try {
+              await actionCreateWorkstream(name);
+              // Also create the worktree
+              await ensureWorktree(name, freshState, freshConfig);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          onDestroy: async (name: string): Promise<boolean> => {
+            try {
+              const { parse, stringify } = await import("yaml");
+              const { unlink } = await import("fs/promises");
+              const wtm = new WorktreeManager();
+
+              // Remove worktree and branch
+              await wtm.remove(name);
+
+              // Remove from workstream.yaml
+              const configFile = Bun.file("workstream.yaml");
+              if (await configFile.exists()) {
+                const raw = parse(await configFile.text());
+                if (raw.workstreams && raw.workstreams[name]) {
+                  delete raw.workstreams[name];
+                  await Bun.write("workstream.yaml", stringify(raw));
+                }
+              }
+
+              // Delete log and comment files
+              await unlink(`.workstreams/comments/${name}.json`).catch(() => {});
+              await unlink(`.workstreams/logs/${name}.log`).catch(() => {});
+
+              // Remove from state
+              const s = await loadState();
+              if (s?.currentRun?.workstreams?.[name]) {
+                delete s.currentRun.workstreams[name];
+                if (Object.keys(s.currentRun.workstreams).length === 0) {
+                  s.currentRun = undefined;
+                }
+                await saveState(s);
+              }
+              return true;
+            } catch {
+              return false;
+            }
           },
           onSendPrompt: async (name: string, prompt: string): Promise<boolean> => {
             // Load fresh state every time (dashboard stays open)
