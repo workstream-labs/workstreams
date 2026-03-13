@@ -272,10 +272,10 @@ function renderHeader(s: DashboardState): string {
     ? `${A.brightBlack}${total} workstream${total !== 1 ? "s" : ""}`
     : `${A.brightBlack}${count}/${total} workstreams`;
 
-  const title = `${A.bold}${A.brightWhite} ws switch${A.reset}  ${countStr}${A.reset}`;
+  const title = `${A.bold}${A.brightWhite} ws dashboard${A.reset}  ${countStr}${A.reset}`;
   const hints = `${A.brightBlack}/ search  ? help  q quit${A.reset}`;
 
-  const titleVis = ` ws switch  ` + (count === total ? `${total} workstream${total !== 1 ? "s" : ""}` : `${count}/${total} workstreams`);
+  const titleVis = ` ws dashboard  ` + (count === total ? `${total} workstream${total !== 1 ? "s" : ""}` : `${count}/${total} workstreams`);
   const hintsVis = "/ search  ? help  q quit";
   const gap = Math.max(1, s.termW - titleVis.length - hintsVis.length - 2);
 

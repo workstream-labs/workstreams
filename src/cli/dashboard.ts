@@ -12,7 +12,7 @@ import { openSessionViewer } from "../ui/session-viewer.js";
 import { openIdeDashboard, type IdeDashboardOptions } from "../ui/ide-dashboard.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
-const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
+export const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },
   cursor: { label: "Cursor", mac: "Cursor", linux: "cursor" },
   zed: { label: "Zed", mac: "Zed", linux: "zed" },
@@ -32,7 +32,7 @@ async function detectInstalledEditors(): Promise<string[]> {
   return found;
 }
 
-async function openEditor(dir: string, editor: string): Promise<void> {
+export async function openEditor(dir: string, editor: string): Promise<void> {
   // Use Node's child_process with a real system shell — Bun's built-in
   // shell doesn't work correctly with editor CLI wrapper scripts.
   const { execFileSync } = await import("child_process");
@@ -43,7 +43,7 @@ async function openEditor(dir: string, editor: string): Promise<void> {
   }
 }
 
-async function resolveEditor(explicit?: string, saved?: string): Promise<string | null> {
+export async function resolveEditor(explicit?: string, saved?: string): Promise<string | null> {
   if (explicit) return explicit;
   if (saved) return saved;
 
@@ -127,7 +127,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
 
 // ─── Ensure worktree exists ──────────────────────────────────────────────────
 
-async function ensureWorktree(name: string, state: any, config: any): Promise<string> {
+export async function ensureWorktree(name: string, state: any, config: any): Promise<string> {
   const worktreePath = `.workstreams/trees/${name}`;
   const absPath = resolve(worktreePath);
   const { stat } = await import("fs/promises");
@@ -385,26 +385,17 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
 // ─── Command ─────────────────────────────────────────────────────────────────
 
-export function switchCommand() {
-  return new Command("switch")
-    .description("Open the interactive TUI dashboard, or jump to a workstream in your editor")
-    .argument("[name]", "workstream name (opens editor directly; omit for dashboard)")
-    .option("-e, --editor <editor>", "open directly in a specific editor (e.g. code, cursor, zed)")
-    .option("--no-editor", "print the worktree path without opening an editor")
+export function dashboardCommand() {
+  return new Command("dashboard")
+    .description("Open the interactive TUI dashboard")
     .addHelpText("after", `
 Examples:
-  ws switch                  Open the interactive dashboard
-  ws switch auth-feature     Open "auth-feature" in your default editor
-  ws switch auth -e cursor   Open in Cursor specifically
-  ws switch auth --no-editor Just print the worktree path
+  ws dashboard   Open the interactive dashboard
 
 Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
   c=comments, /=search, ?=help, q=quit.
 `)
-    .action(async (name: string | undefined, opts: { editor?: string; editor_?: boolean }) => {
-      const noEditor = opts.editor_ === false;
-      const directEditor = !!opts.editor;
-
+    .action(async () => {
       const state = await loadState();
       if (!state) {
         console.error("Error: workstreams not initialized. Run `ws init` first.");
@@ -412,36 +403,6 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
       }
 
       const config = await loadConfig("workstream.yaml");
-
-      // If -e flag or --no-editor, go directly to editor flow
-      if (name && (directEditor || noEditor)) {
-        const absPath = await ensureWorktree(name, state, config);
-        console.log(`Switched to ws/${name} at ${absPath}`);
-        if (!noEditor) {
-          const resolved = await resolveEditor(opts.editor, state.defaultEditor);
-          if (resolved) {
-            if (!state.defaultEditor) {
-              state.defaultEditor = resolved;
-              await saveState(state);
-            }
-            const label = EDITORS[resolved]?.label ?? resolved;
-            console.log(`Opening in ${label}...`);
-            await openEditor(absPath, resolved);
-          }
-        }
-        return;
-      }
-
-      // If name provided, open editor directly (shortcut)
-      if (name) {
-        const def = config.workstreams.find((w: any) => w.name === name);
-        if (!def) {
-          console.error(`Error: workstream "${name}" not found in workstream.yaml`);
-          process.exit(1);
-        }
-        await actionOpenEditor(name, state, config);
-        return;
-      }
 
       // Dashboard loop: IDE dashboard handles logs/diff inline,
       // only exits for editor/run/session/prompt actions
