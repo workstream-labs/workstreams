@@ -44,6 +44,7 @@ import type { WorkstreamEntry, DashboardAction } from "./workstream-picker.js";
 import {
   loadComments,
   saveComments,
+  formatCommentsAsPrompt,
   type ReviewComment,
   type WorkstreamComments,
 } from "../core/comments";
@@ -71,7 +72,7 @@ export interface IdeDashboardOptions {
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"];
+  action: DashboardAction["type"] | "resume-with-comments";
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -86,6 +87,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   });
 
   const isActive = entry.status === "running" || entry.status === "queued";
+  if (entry.hasSession && !isActive && entry.commentCount > 0) {
+    options.push({
+      label: "Resume with comments",
+      description: `Send ${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""} to agent`,
+      action: "resume-with-comments",
+    });
+  }
+
   if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
@@ -741,18 +750,20 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
     <box
       flexShrink={0}
+      onMouseDown={onFocus}
       style={{
         flexDirection: "column",
         margin: 1,
@@ -815,17 +826,18 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   initialValue?: string;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
-    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column" onMouseDown={onFocus}>
       {/* Welcome header */}
       <box flexDirection="column" alignItems="center" marginBottom={2}>
         <text fg={theme.text} bold>What should we work on?</text>
@@ -1445,6 +1457,33 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           });
           return;
         }
+        // Handle "resume-with-comments" inline — format comments as prompt and send
+        if (opt.action === "resume-with-comments") {
+          const name = selectedEntry.name;
+          loadComments(name).then(async (data) => {
+            const prompt = formatCommentsAsPrompt(data);
+            if (!prompt) {
+              setFlashMessage("No comments to send");
+              setTimeout(() => setFlashMessage(null), 2000);
+              return;
+            }
+            const sent = await options.onSendPrompt(name, prompt);
+            if (sent) {
+              setRightMode("logs");
+              setFollow(true);
+              setFlashMessage(`\u2714 Resumed with ${data.comments.length} comment${data.comments.length !== 1 ? "s" : ""}`);
+              setTimeout(() => setFlashMessage(null), 2000);
+              if (options.onRefresh) {
+                const updated = await options.onRefresh();
+                setEntries(updated);
+              }
+            } else {
+              setFlashMessage("Agent is busy \u2014 try again in a moment");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
+          });
+          return;
+        }
         // Handle "destroy" inline
         if (opt.action === "destroy" && options.onDestroy) {
           const name = selectedEntry.name;
@@ -1713,6 +1752,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   inputKey={chatInputKey}
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
                   initialValue={selectedEntry?.prompt}
+                  onFocus={() => setFocusPanel("right")}
                 />
               ) : (
                 <>
@@ -1734,6 +1774,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     focused={chatInputFocused}
                     inputKey={chatInputKey}
                     onInput={(v: string) => { chatInputValueRef.current = v; }}
+                    onFocus={() => setFocusPanel("right")}
                   />
                 </>
               )}
