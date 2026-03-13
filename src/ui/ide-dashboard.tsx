@@ -741,18 +741,20 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
     <box
       flexShrink={0}
+      onMouseDown={onFocus}
       style={{
         flexDirection: "column",
         margin: 1,
@@ -815,17 +817,18 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   initialValue?: string;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
-    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column" onMouseDown={onFocus}>
       {/* Welcome header */}
       <box flexDirection="column" alignItems="center" marginBottom={2}>
         <text fg={theme.text} bold>What should we work on?</text>
@@ -1713,6 +1716,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   inputKey={chatInputKey}
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
                   initialValue={selectedEntry?.prompt}
+                  onFocus={() => setFocusPanel("right")}
                 />
               ) : (
                 <>
@@ -1734,6 +1738,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     focused={chatInputFocused}
                     inputKey={chatInputKey}
                     onInput={(v: string) => { chatInputValueRef.current = v; }}
+                    onFocus={() => setFocusPanel("right")}
                   />
                 </>
               )}
