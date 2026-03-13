@@ -61,6 +61,8 @@ export interface IdeDashboardOptions {
   getLogFile: (name: string) => string | null;
   getWorkstreamStatus: (name: string) => string;
   getDiff: (name: string) => Promise<string>;
+  onSendPrompt: (name: string, prompt: string) => Promise<void>;
+  onInterrupt: (name: string) => Promise<void>;
 }
 
 interface ActionOption {
@@ -716,6 +718,75 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
   );
 }
 
+// ─── Model name helpers ──────────────────────────────────────────────────────
+
+function extractModelName(messages: DisplayMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === "assistant" && msg.model) return msg.model;
+    if (msg.role === "result" && msg.model) return msg.model;
+  }
+  return undefined;
+}
+
+function formatModelName(model: string): string {
+  return model.replace(/-\d{8}$/, "");
+}
+
+// ─── Chat input ──────────────────────────────────────────────────────────────
+
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
+  modelName: string | undefined;
+  isRunning: boolean;
+  focused: boolean;
+  inputKey: number;
+  onInput: (v: string) => void;
+}) {
+  const displayModel = modelName ? formatModelName(modelName) : "claude";
+
+  return (
+    <box
+      flexShrink={0}
+      style={{
+        flexDirection: "column",
+        border: ["top"],
+        borderStyle: "single",
+        borderColor: focused ? theme.accent : theme.border,
+        marginBottom: 1,
+      }}
+    >
+      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
+        <text fg={theme.accent} bold>{displayModel}</text>
+        <box flexGrow={1} />
+        {isRunning ? (
+          <box flexDirection="row">
+            <text fg={theme.text} bold>^X</text>
+            <text fg={theme.textMuted}> interrupt</text>
+          </box>
+        ) : (
+          <box flexDirection="row">
+            <text fg={theme.text} bold>{"\u21B5"}</text>
+            <text fg={theme.textMuted}> send</text>
+          </box>
+        )}
+      </box>
+      <textarea
+        key={inputKey}
+        placeholder={isRunning ? "Agent is working... (^X to interrupt)" : "Send a message..."}
+        initialValue=""
+        focused={focused}
+        onInput={onInput}
+        style={{
+          minHeight: 1,
+          maxHeight: 3,
+          paddingLeft: 1,
+          backgroundColor: focused ? theme.backgroundElement : undefined,
+        }}
+      />
+    </box>
+  );
+}
+
 // ─── Action picker overlay ───────────────────────────────────────────────────
 
 function ActionPicker({ entry, options, selected, width }: {
@@ -815,12 +886,15 @@ function PromptInput({ title, initialValue, onSubmit, onCancel }: {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 
-function Footer({ focusPanel, rightMode, diffSubFocus, viewMode }: {
+function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }: {
   focusPanel: FocusPanel;
   rightMode: RightMode;
+  isAgentActive: boolean;
   diffSubFocus: "files" | "diff";
   viewMode: "unified" | "split";
 }) {
+  const inChatInput = focusPanel === "right" && rightMode === "logs";
+
   return (
     <box
       style={{
@@ -842,16 +916,23 @@ function Footer({ focusPanel, rightMode, diffSubFocus, viewMode }: {
           <text fg={theme.text}>Enter</text>
           <text fg={theme.textMuted}> actions  </text>
         </>
-      ) : rightMode === "logs" ? (
+      ) : inChatInput ? (
         <>
-          <text fg={theme.text}>{"↑↓"}</text>
+          {isAgentActive ? (
+            <>
+              <text fg={theme.text}>^X</text>
+              <text fg={theme.textMuted}> interrupt  </text>
+            </>
+          ) : (
+            <>
+              <text fg={theme.text}>{"\u21B5"}</text>
+              <text fg={theme.textMuted}> send  </text>
+            </>
+          )}
+          <text fg={theme.text}>^D/^U</text>
           <text fg={theme.textMuted}> scroll  </text>
-          <text fg={theme.text}>f</text>
-          <text fg={theme.textMuted}> follow  </text>
-          <text fg={theme.text}>t</text>
-          <text fg={theme.textMuted}> thinking  </text>
         </>
-      ) : (
+      ) : rightMode === "diff" ? (
         <>
           <text fg={theme.text}>{"↑↓"}</text>
           <text fg={theme.textMuted}> {diffSubFocus === "files" ? "navigate" : "cursor"}  </text>
@@ -864,7 +945,7 @@ function Footer({ focusPanel, rightMode, diffSubFocus, viewMode }: {
           <text fg={theme.text}>s</text>
           <text fg={theme.textMuted}> {viewMode}  </text>
         </>
-      )}
+      ) : null}
       <text fg={theme.text}>1</text>
       <text fg={theme.textMuted}> logs  </text>
       <text fg={theme.text}>2</text>
@@ -930,10 +1011,16 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [promptMode, setPromptMode] = React.useState<"set-prompt" | "pending-prompt" | null>(null);
   const promptValueRef = React.useRef("");
 
+  // ─── Chat input state ──────────────────────────────────────
+  const [chatInputKey, setChatInputKey] = React.useState(0);
+  const chatInputValueRef = React.useRef("");
+
   // ─── Derived ─────────────────────────────────────────────────
   const selectedEntry = entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
   const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
+  const chatInputFocused = focusPanel === "right" && rightMode === "logs" && !showActionPicker && !promptMode;
+  const isAgentActive = selectedEntry?.status === "running" || selectedEntry?.status === "queued";
 
   // ─── Diff derived state ─────────────────────────────────────
   const diffFiles = React.useMemo(() => {
@@ -1230,6 +1317,35 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       return;
     }
 
+    // ─── Chat input mode (right panel, logs) ────────────
+    // Must be before global keys so printable chars go to textarea
+    if (chatInputFocused) {
+      if (n === "return") {
+        const prompt = chatInputValueRef.current.trim();
+        if (prompt && selectedEntry && !isAgentActive) {
+          options.onSendPrompt(selectedEntry.name, prompt);
+          chatInputValueRef.current = "";
+          setChatInputKey(k => k + 1);
+          setFollow(true);
+        }
+        return;
+      }
+      if (key.ctrl && n === "x") {
+        if (selectedEntry && isAgentActive) {
+          options.onInterrupt(selectedEntry.name);
+        }
+        return;
+      }
+      if (n === "escape" || (n === "tab" && !key.shift)) {
+        setFocusPanel("workstreams");
+        return;
+      }
+      // Scroll logs while in chat input
+      if (key.ctrl && n === "d") { logsScrollRef.current?.scrollBy(0.5, "viewport"); return; }
+      if (key.ctrl && n === "u") { logsScrollRef.current?.scrollBy(-0.5, "viewport"); return; }
+      return; // let textarea handle all other keys
+    }
+
     // ─── Global keys ───────────────────────────────────
     if (n === "q" || (key.ctrl && n === "c")) {
       onAction({ type: "quit" });
@@ -1243,7 +1359,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       } else {
         // In diff mode with sub-focus on files, tab goes to diff
         // In diff mode with sub-focus on diff, tab goes to workstreams
-        // In logs mode, tab goes to workstreams
         if (rightMode === "diff" && diffSubFocus === "files") {
           setDiffSubFocus("diff");
         } else {
@@ -1254,7 +1369,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       return;
     }
 
-    // Mode switching (works from anywhere)
+    // Mode switching (works from anywhere except chat input)
     if (n === "1") { setRightMode("logs"); return; }
     if (n === "2") { setRightMode("diff"); return; }
 
@@ -1315,20 +1430,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       } else {
         setFocusPanel("workstreams");
       }
-      return;
-    }
-
-    // ─── Right panel: Logs mode ────────────────────────
-    if (rightMode === "logs") {
-      const sb = logsScrollRef.current;
-      if (n === "j" || n === "down") { sb?.scrollBy(1); return; }
-      if (n === "k" || n === "up") { sb?.scrollBy(-1); return; }
-      if (key.ctrl && n === "d") { sb?.scrollBy(0.5, "viewport"); return; }
-      if (key.ctrl && n === "u") { sb?.scrollBy(-0.5, "viewport"); return; }
-      if (key.shift && n === "g") { sb?.scrollBy(100_000); setFollow(false); return; }
-      if (n === "g" && !key.shift) { sb?.scrollTo(0); setFollow(false); return; }
-      if (n === "f") { setFollow(v => { if (!v && sb) sb.scrollBy(100_000); return !v; }); return; }
-      if (n === "t") { setShowThinking(v => !v); return; }
       return;
     }
 
@@ -1434,13 +1535,22 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           />
 
           {rightMode === "logs" ? (
-            <LogsPanel
-              messages={messages}
-              status={selectedStatus}
-              follow={follow}
-              showThinking={showThinking}
-              scrollRef={logsScrollRef}
-            />
+            <box flexDirection="column" flexGrow={1} flexShrink={1}>
+              <LogsPanel
+                messages={messages}
+                status={selectedStatus}
+                follow={follow}
+                showThinking={showThinking}
+                scrollRef={logsScrollRef}
+              />
+              <ChatInput
+                modelName={extractModelName(messages)}
+                isRunning={isAgentActive}
+                focused={chatInputFocused}
+                inputKey={chatInputKey}
+                onInput={(v: string) => { chatInputValueRef.current = v; }}
+              />
+            </box>
           ) : (
             <DiffPanel
               rawDiff={diffData}
@@ -1477,8 +1587,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       </box>
 
       {/* Footer */}
-      <Footer focusPanel={focusPanel} rightMode={rightMode} diffSubFocus={diffSubFocus} viewMode={viewMode} />
-
+      <Footer focusPanel={focusPanel} rightMode={rightMode} isAgentActive={isAgentActive} diffSubFocus={diffSubFocus} viewMode={viewMode}/>
       {/* Overlays */}
       {showActionPicker && selectedEntry && (
         <ActionPicker

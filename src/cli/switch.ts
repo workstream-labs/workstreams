@@ -443,6 +443,60 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             ]);
             return branchDiff + uncommittedDiff;
           },
+          onSendPrompt: async (name: string, prompt: string) => {
+            // Load fresh state every time (dashboard stays open)
+            const s = await loadState() ?? state;
+            const c = await loadConfig("workstream.yaml");
+            const ws = s.currentRun?.workstreams?.[name];
+            const hasSession = !!ws?.sessionId;
+
+            if (hasSession) {
+              // Resume: save as pending prompt
+              await savePendingPrompt(name, prompt);
+            } else {
+              // Fresh run: save prompt to workstream.yaml
+              await actionSetPrompt(name, prompt);
+            }
+
+            // Ensure run state exists
+            if (!s.currentRun) {
+              s.currentRun = {
+                runId: `run-${Date.now()}`,
+                startedAt: new Date().toISOString(),
+                workstreams: {},
+              };
+            }
+            if (!s.currentRun.workstreams[name]) {
+              s.currentRun.workstreams[name] = {
+                name,
+                status: "queued" as const,
+                branch: `ws/${name}`,
+                worktreePath: `.workstreams/trees/${name}`,
+                logFile: `.workstreams/logs/${name}.log`,
+              };
+            }
+            s.currentRun.finishedAt = undefined;
+            await appendWorkstreamStatus(s.currentRun.workstreams[name]);
+            await saveState(s);
+
+            // Spawn background run
+            const bgArgs = ["bun", Bun.main, "run", name];
+            const proc = Bun.spawn(bgArgs, {
+              cwd: process.cwd(),
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            });
+            proc.unref();
+          },
+          onInterrupt: async (name: string) => {
+            // Load fresh state to get current PID
+            const s = await loadState();
+            const ws = s?.currentRun?.workstreams?.[name];
+            if (ws?.pid) {
+              try { process.kill(ws.pid, "SIGINT"); } catch {}
+            }
+          },
         };
         const action = await openIdeDashboard(entries, dashboardOpts);
         loop = await dispatchAction(action, freshState, freshConfig);
