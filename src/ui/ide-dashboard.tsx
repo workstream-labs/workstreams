@@ -307,12 +307,13 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
 
 // ─── WorkstreamListPanel ─────────────────────────────────────────────────────
 
-function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scrollRef }: {
+function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scrollRef, scrollEnabled = true }: {
   entries: WorkstreamEntry[];
   selectedIdx: number;
   focused: boolean;
   spinnerFrame: number;
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
+  scrollEnabled?: boolean;
 }) {
   return (
     <box
@@ -331,7 +332,7 @@ function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scro
       </box>
       <scrollbox
         ref={scrollRef}
-        scrollY
+        scrollY={scrollEnabled}
         focused={false}
         style={{
           flexGrow: 1,
@@ -407,12 +408,13 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
 
 // ─── Logs panel (embeds SessionMessages) ─────────────────────────────────────
 
-function LogsPanel({ messages, status, follow, showThinking, scrollRef }: {
+function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true }: {
   messages: DisplayMessage[];
   status: string;
   follow: boolean;
   showThinking: boolean;
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
+  scrollEnabled?: boolean;
 }) {
   const hasResult = messages.some((m: DisplayMessage) => m.role === "result");
   const isRunning = status === "running" && !hasResult;
@@ -437,6 +439,7 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef }: {
     <scrollbox
       ref={scrollRef}
       flexGrow={1}
+      scrollY={scrollEnabled}
       paddingLeft={1}
       paddingRight={1}
       paddingBottom={2}
@@ -495,7 +498,7 @@ function DiffFileItem({ file, selected, focused, width }: {
 
 const DIFF_FILE_PANEL_W = 30;
 
-function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, commentedLineIndices, bottomSlot }: {
+function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, commentedLineIndices, bottomSlot, scrollEnabled = true }: {
   rawDiff: string | null;
   loading: boolean;
   focused: boolean;
@@ -596,7 +599,7 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
         >
           <scrollbox
             ref={fileScrollRef}
-            scrollY
+            scrollY={scrollEnabled}
             focused={false}
             style={{
               flexGrow: 1,
@@ -824,7 +827,10 @@ function ActionPicker({ entry, options, selected, width }: {
                 {opt.label}
               </text>
             </box>
-            <text fg={theme.textMuted} paddingLeft={3}>{opt.description}</text>
+            <box flexDirection="row">
+              <text fg={theme.textMuted}>{"  "}</text>
+              <text fg={theme.textMuted}>{opt.description}</text>
+            </box>
             <box height={1} />
           </box>
         );
@@ -1019,6 +1025,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const selectedEntry = entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
   const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
+  const hasOverlay = showActionPicker || promptMode !== null;
   const chatInputFocused = focusPanel === "right" && rightMode === "logs" && !showActionPicker && !promptMode;
   const isAgentActive = selectedEntry?.status === "running" || selectedEntry?.status === "queued";
 
@@ -1523,6 +1530,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           focused={focusPanel === "workstreams"}
           spinnerFrame={spinnerFrame}
           scrollRef={wsListScrollRef}
+          scrollEnabled={!hasOverlay}
         />
 
         {/* Right: Tabs + content */}
