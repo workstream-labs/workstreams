@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { resolve } from "path";
 import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
-import { loadConfig } from "../core/config";
+import { loadConfig, validateWorkstreamName } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments, formatCommentsAsPrompt } from "../core/comments";
 import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
@@ -284,6 +284,9 @@ async function actionSetPrompt(name: string, prompt: string) {
 // ─── Action: Create a new workstream in workstream.yaml ───────────────────────
 
 async function actionCreateWorkstream(name: string, prompt?: string) {
+  const nameError = validateWorkstreamName(name);
+  if (nameError) throw new Error(nameError);
+
   const { parse, stringify } = await import("yaml");
   const configFile = Bun.file("workstream.yaml");
   const raw = parse(await configFile.text()) as any;
@@ -370,8 +373,12 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
       return true; // loop back to dashboard
 
     case "create-workstream":
-      await actionCreateWorkstream(action.name, action.prompt);
-      return true; // loop back to dashboard so the new entry appears
+      try {
+        await actionCreateWorkstream(action.name, action.prompt);
+      } catch (e: any) {
+        console.error(`Error: ${e.message}`);
+      }
+      return true; // loop back to dashboard
 
   }
 }
