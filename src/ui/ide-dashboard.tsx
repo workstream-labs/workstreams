@@ -307,6 +307,28 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
 
 // ─── WorkstreamListPanel ─────────────────────────────────────────────────────
 
+function AddWorkstreamButton({ selected, focused, width }: {
+  selected: boolean;
+  focused: boolean;
+  width: number;
+}) {
+  const bg = selected
+    ? focused ? theme.accent + "33" : "#264F7822"
+    : undefined;
+
+  return (
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1 }} width={width}>
+      <box flexDirection="row" gap={1}>
+        <text fg={selected && focused ? theme.accent : theme.textMuted}>+</text>
+        <text fg={selected ? theme.text : theme.textMuted} bold={selected}>Add workstream</text>
+      </box>
+      <text fg={theme.textMuted} paddingLeft={3}>Create a new workstream node</text>
+    </box>
+  );
+}
+
+const ADD_BUTTON_INDEX = -1; // sentinel value
+
 function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scrollRef, scrollEnabled = true }: {
   entries: WorkstreamEntry[];
   selectedIdx: number;
@@ -315,6 +337,8 @@ function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scro
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   scrollEnabled?: boolean;
 }) {
+  const isAddSelected = selectedIdx === entries.length;
+
   return (
     <box
       width={LEFT_PANEL_WIDTH}
@@ -354,6 +378,12 @@ function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scro
             spinnerFrame={spinnerFrame}
           />
         ))}
+        <box style={{ borderStyle: "single", border: ["top"], borderColor: theme.border, marginTop: 0 }} width={LEFT_PANEL_WIDTH - 2} />
+        <AddWorkstreamButton
+          selected={isAddSelected}
+          focused={focused}
+          width={LEFT_PANEL_WIDTH - 2}
+        />
       </scrollbox>
     </box>
   );
@@ -890,6 +920,91 @@ function PromptInput({ title, initialValue, onSubmit, onCancel }: {
   );
 }
 
+// ─── Add workstream modal ─────────────────────────────────────────────────────
+
+type AddWsField = "name" | "prompt";
+
+function AddWorkstreamModal({ activeField, onNameInput, onPromptInput }: {
+  activeField: AddWsField;
+  onNameInput: (v: string) => void;
+  onPromptInput: (v: string) => void;
+}) {
+  return (
+    <box
+      style={{
+        position: "absolute",
+        left: "20%",
+        top: 5,
+        width: "60%",
+        backgroundColor: theme.backgroundPanel,
+        borderStyle: "single",
+        borderColor: theme.accent,
+        padding: 1,
+        flexDirection: "column",
+        zIndex: 10,
+      }}
+    >
+      <text fg={theme.text} bold>Add workstream</text>
+      <box height={1} />
+
+      {/* Name field */}
+      <box flexDirection="row" gap={1}>
+        <text fg={activeField === "name" ? theme.accent : theme.textMuted}>{activeField === "name" ? "\u276F" : " "}</text>
+        <text fg={theme.text} bold>Name</text>
+        <text fg={theme.textMuted}>(required)</text>
+      </box>
+      <textarea
+        placeholder="e.g. add-auth, fix-sidebar"
+        initialValue=""
+        focused={activeField === "name"}
+        onInput={onNameInput}
+        style={{
+          marginLeft: 2,
+          minHeight: 1,
+          maxHeight: 1,
+          backgroundColor: activeField === "name" ? theme.backgroundElement : theme.background,
+          borderStyle: "single",
+          borderColor: activeField === "name" ? theme.accent : theme.border,
+          border: ["bottom"],
+        }}
+      />
+      <box height={1} />
+
+      {/* Prompt field */}
+      <box flexDirection="row" gap={1}>
+        <text fg={activeField === "prompt" ? theme.accent : theme.textMuted}>{activeField === "prompt" ? "\u276F" : " "}</text>
+        <text fg={theme.text} bold>Prompt</text>
+        <text fg={theme.textMuted}>(optional)</text>
+      </box>
+      <textarea
+        placeholder="What should the agent do?"
+        initialValue=""
+        focused={activeField === "prompt"}
+        onInput={onPromptInput}
+        style={{
+          marginLeft: 2,
+          minHeight: 3,
+          backgroundColor: activeField === "prompt" ? theme.backgroundElement : theme.background,
+          borderStyle: "single",
+          borderColor: activeField === "prompt" ? theme.accent : theme.border,
+          border: ["bottom"],
+        }}
+      />
+      <box height={1} />
+
+      {/* Footer hints */}
+      <box flexDirection="row" justifyContent="center">
+        <text fg={theme.text}>Tab</text>
+        <text fg={theme.textMuted}> switch field  </text>
+        <text fg={theme.text}>ctrl+s</text>
+        <text fg={theme.textMuted}> create  </text>
+        <text fg={theme.text}>esc</text>
+        <text fg={theme.textMuted}> cancel</text>
+      </box>
+    </box>
+  );
+}
+
 // ─── Footer ──────────────────────────────────────────────────────────────────
 
 function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }: {
@@ -921,6 +1036,8 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> navigate  </text>
           <text fg={theme.text}>Enter</text>
           <text fg={theme.textMuted}> actions  </text>
+          <text fg={theme.text}>a</text>
+          <text fg={theme.textMuted}> add  </text>
         </>
       ) : inChatInput ? (
         <>
@@ -1016,13 +1133,18 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [actionPickerSelected, setActionPickerSelected] = React.useState(0);
   const [promptMode, setPromptMode] = React.useState<"set-prompt" | "pending-prompt" | null>(null);
   const promptValueRef = React.useRef("");
+  const [showAddModal, setShowAddModal] = React.useState(false);
+  const addModalNameRef = React.useRef("");
+  const addModalPromptRef = React.useRef("");
+  const [addModalField, setAddModalField] = React.useState<AddWsField>("name");
 
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
   const chatInputValueRef = React.useRef("");
 
   // ─── Derived ─────────────────────────────────────────────────
-  const selectedEntry = entries[selectedIdx];
+  const isAddButtonSelected = selectedIdx === entries.length;
+  const selectedEntry = isAddButtonSelected ? undefined : entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
   const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
   const hasOverlay = showActionPicker || promptMode !== null;
@@ -1266,6 +1388,23 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
 
+    // ─── Add workstream modal mode ──────────────────────
+    if (showAddModal) {
+      if (n === "escape") { setShowAddModal(false); return; }
+      if (n === "tab") {
+        setAddModalField(f => f === "name" ? "prompt" : "name");
+        return;
+      }
+      if (key.ctrl && n === "s") {
+        const wsName = addModalNameRef.current.trim();
+        if (!wsName) return;
+        if (entries.some(e => e.name === wsName)) return;
+        const wsPrompt = addModalPromptRef.current.trim() || undefined;
+        setShowAddModal(false);
+        onAction({ type: "create-workstream", name: wsName, prompt: wsPrompt });
+        return;
+      }
+    }
     // ─── Comment form mode ──────────────────────────────
     if (showCommentForm) {
       if (n === "escape") { setShowCommentForm(false); return; }
@@ -1384,7 +1523,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     if (focusPanel === "workstreams") {
       if (n === "j" || n === "down") {
         setSelectedIdx(v => {
-          const next = Math.min(v + 1, entries.length - 1);
+          const next = Math.min(v + 1, entries.length); // entries.length = add button
           scrollWsIntoView(next);
           return next;
         });
@@ -1399,7 +1538,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         return;
       }
       if (key.shift && n === "g") {
-        const last = entries.length - 1;
+        const last = entries.length; // include add button
         setSelectedIdx(last);
         scrollWsIntoView(last);
         return;
@@ -1410,6 +1549,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         return;
       }
       if (n === "return") {
+        if (isAddButtonSelected) {
+          addModalNameRef.current = "";
+          addModalPromptRef.current = "";
+          setAddModalField("name");
+          setShowAddModal(true);
+          return;
+        }
         if (selectedEntry) {
           const opts = buildActionOptions(selectedEntry);
           setActionPickerOptions(opts);
@@ -1418,8 +1564,16 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         }
         return;
       }
+      // 'a' hotkey — open add modal from anywhere in the list
+      if (n === "a") {
+        addModalNameRef.current = "";
+        addModalPromptRef.current = "";
+        setAddModalField("name");
+        setShowAddModal(true);
+        return;
+      }
       if (n === "l" || n === "right") {
-        setFocusPanel("right");
+        if (!isAddButtonSelected) setFocusPanel("right");
         return;
       }
       if (n === "escape") {
@@ -1619,6 +1773,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
             setPromptMode(null);
           }}
           onCancel={() => setPromptMode(null)}
+        />
+      )}
+
+      {showAddModal && (
+        <AddWorkstreamModal
+          activeField={addModalField}
+          onNameInput={(v: string) => { addModalNameRef.current = v; }}
+          onPromptInput={(v: string) => { addModalPromptRef.current = v; }}
         />
       )}
     </box>

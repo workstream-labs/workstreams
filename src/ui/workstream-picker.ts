@@ -38,6 +38,7 @@ export type DashboardAction =
   | { type: "run"; name: string }
   | { type: "set-prompt"; name: string; prompt: string }
   | { type: "save-pending-prompt"; name: string; prompt: string }
+  | { type: "create-workstream"; name: string; prompt?: string }
   | { type: "quit" };
 
 interface ActionOption {

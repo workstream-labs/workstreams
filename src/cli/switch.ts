@@ -281,6 +281,27 @@ async function actionSetPrompt(name: string, prompt: string) {
   await Bun.write("workstream.yaml", stringify(raw));
 }
 
+// ─── Action: Create a new workstream in workstream.yaml ───────────────────────
+
+async function actionCreateWorkstream(name: string, prompt?: string) {
+  const { parse, stringify } = await import("yaml");
+  const configFile = Bun.file("workstream.yaml");
+  const raw = parse(await configFile.text()) as any;
+
+  if (!raw.workstreams) raw.workstreams = {};
+
+  // Don't overwrite existing entries
+  if (Array.isArray(raw.workstreams)) {
+    if (raw.workstreams.some((w: any) => w.name === name)) return;
+    raw.workstreams.push({ name, ...(prompt ? { prompt } : {}) });
+  } else {
+    if (name in raw.workstreams) return;
+    raw.workstreams[name] = prompt ? { prompt } : {};
+  }
+
+  await Bun.write("workstream.yaml", stringify(raw));
+}
+
 // ─── Dispatch dashboard action ───────────────────────────────────────────────
 
 async function dispatchAction(action: DashboardAction, state: any, config: any): Promise<boolean> {
@@ -346,6 +367,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "save-pending-prompt":
       await savePendingPrompt(action.name, action.prompt);
       return true; // loop back to dashboard
+
+    case "create-workstream":
+      await actionCreateWorkstream(action.name, action.prompt);
+      return true; // loop back to dashboard so the new entry appears
 
   }
 }
