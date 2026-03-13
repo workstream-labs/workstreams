@@ -52,13 +52,7 @@ The dashboard lets you browse diffs, view logs, add review comments, and resume 
 
 ## 5. Merge
 
-When a workstream looks good, merge it into your branch:
-
-```bash
-ws merge add-tests
-```
-
-This squash-merges the changes and stages them for your review. Run `git diff --cached` to inspect, then commit.
+When a workstream looks good, merge it using standard git workflows — create a GitHub PR from the `ws/<name>` branch, or merge locally with `git merge`.
 
 ## What Just Happened?
 
@@ -66,7 +60,7 @@ In a few minutes, three AI agents worked on your codebase simultaneously:
 
 - Each ran in an **isolated git worktree** — no conflicts between agents
 - Each created its own **branch** (`ws/<name>`) — clean git history
-- Results are **squash-merged** — one clean commit per workstream
+- Results live on **branches** (`ws/<name>`) — merge via GitHub PR or git
 
 ## Next Steps
 

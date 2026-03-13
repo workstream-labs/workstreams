@@ -42,7 +42,6 @@ export default defineConfig({
           { text: "Dashboard", link: "/guide/dashboard" },
           { text: "Reviewing Changes", link: "/guide/reviewing" },
           { text: "Resuming Work", link: "/guide/resuming" },
-          { text: "Merging", link: "/guide/merging" },
           { text: "Agents", link: "/guide/agents" },
         ],
       },

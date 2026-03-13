@@ -57,6 +57,6 @@ The typical review loop:
 4. Run `ws resume auth --comments` to send comments to the agent
 5. The agent addresses your feedback
 6. Repeat until satisfied
-7. Run `ws merge auth` to merge the result
+7. Merge via GitHub PR or `git merge`
 
 You can also start the review from the dashboard — select a workstream, press `Enter`, and choose "View diff & review".

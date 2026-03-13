@@ -117,28 +117,6 @@ Opens the interactive diff viewer for a single workstream. Shows raw diffs for m
 
 ---
 
-## `ws merge [name]`
-
-Merge workstream changes into the current branch.
-
-```bash
-ws merge [name] [into] [options]
-```
-
-| Argument | Description |
-|---|---|
-| `name` | Workstream to merge |
-| `into` | Target branch (default: current branch) |
-
-| Option | Description |
-|---|---|
-| `--all` | Merge all successful workstreams |
-| `--no-cleanup` | Keep worktree and branch after merge |
-
-Performs squash merge. Single workstream: stages only. Batch (`--all`): auto-commits each.
-
----
-
 ## `ws resume <name>`
 
 Resume a workstream with new instructions.

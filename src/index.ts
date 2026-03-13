@@ -8,8 +8,6 @@ import { destroyCommand } from "./cli/destroy";
 import { createCommand } from "./cli/create";
 import { listCommand } from "./cli/list";
 import { diffCommand } from "./cli/diff";
-import { mergeCommand } from "./cli/merge";
-
 import { switchCommand } from "./cli/switch";
 import { promptCommand } from "./cli/prompt";
 import { logsCommand } from "./cli/logs";
@@ -31,7 +29,6 @@ Quick start:
   ws list                        Check status
   ws logs auth                   View agent logs for a workstream
   ws switch                      Open interactive dashboard
-  ws merge auth                  Merge completed work
   ws checkout auth               cd to a workstream worktree
   ws destroy --all               Tear everything down
 
@@ -41,8 +38,6 @@ Key options:
   run       -d, --dry-run          Preview which workstreams would run
             -p, --prompt <text>    Resume with new instructions
   diff      --raw                  Print raw diff instead of interactive viewer
-  merge     --all                  Merge all successful workstreams
-            --no-cleanup           Keep worktree and branch after merge
   destroy   --all                  Remove all worktrees, config, and state
             -y, --yes              Skip confirmation prompt
   prompt    -p, --prompt <text>    Set or update a workstream's prompt
@@ -59,7 +54,6 @@ program.addCommand(runCommand());
 program.addCommand(listCommand());
 program.addCommand(switchCommand());
 program.addCommand(diffCommand());
-program.addCommand(mergeCommand());
 program.addCommand(logsCommand());
 program.addCommand(destroyCommand());
 program.addCommand(promptCommand());
