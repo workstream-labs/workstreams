@@ -340,7 +340,6 @@ function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scro
     >
       <box style={{ paddingLeft: 1, flexShrink: 0, paddingBottom: 1 }}>
         <text fg={theme.text} bold>Workstreams</text>
-        <text fg={theme.textMuted}> ({entries.length})</text>
       </box>
       <scrollbox
         ref={scrollRef}
@@ -776,6 +775,8 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
           borderStyle: "rounded",
           borderColor: focused ? theme.accent : theme.border,
           backgroundColor: focused ? theme.backgroundElement : theme.background,
+          paddingLeft: 1,
+          paddingRight: 1,
         }}
       >
         <textarea
@@ -787,8 +788,6 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
           style={{
             minHeight: 1,
             maxHeight: 4,
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         />
 
@@ -797,8 +796,6 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
           flexDirection="row"
           style={{
             alignItems: "center",
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         >
           <box flexGrow={1} />
@@ -851,6 +848,8 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
           borderStyle: "rounded",
           borderColor: focused ? theme.accent : theme.border,
           backgroundColor: focused ? theme.backgroundElement : theme.background,
+          paddingLeft: 1,
+          paddingRight: 1,
         }}
       >
         <textarea
@@ -862,8 +861,6 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
           style={{
             minHeight: 2,
             maxHeight: 8,
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         />
 
@@ -872,8 +869,6 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
           flexDirection="row"
           style={{
             alignItems: "center",
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         >
           <box flexGrow={1} />
@@ -951,6 +946,27 @@ function ActionPicker({ entry, options, selected, width }: {
   );
 }
 
+// ─── Empty dashboard (no workstreams selected / no workstreams exist) ─────────
+
+function EmptyDashboard({ onAdd }: { onAdd: () => void }) {
+  return (
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+      <box flexDirection="column" alignItems="center" gap={1}>
+        <text fg={theme.accent} bold>{"\u2726"}</text>
+        <box height={1} />
+        <text fg={theme.text} bold>No workstreams yet</text>
+        <text fg={theme.textMuted}>Spin up parallel AI agents, each in their own worktree.</text>
+        <box height={1} />
+        <box flexDirection="row">
+          <text fg={theme.textMuted}>Press </text>
+          <text fg={theme.accent} bold>Enter</text>
+          <text fg={theme.textMuted}> to add your first workstream</text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
 // ─── Add workstream modal ─────────────────────────────────────────────────────
 
 function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
@@ -958,7 +974,7 @@ function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
   panelLeft: number;
   panelWidth: number;
 }) {
-  const modalW = Math.floor(panelWidth * 0.6);
+  const modalW = Math.min(50, Math.floor(panelWidth * 0.5));
   const modalLeft = panelLeft + Math.floor((panelWidth - modalW) / 2);
   return (
     <box
@@ -1494,7 +1510,15 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               if (options.onRefresh) {
                 const updated = await options.onRefresh();
                 setEntries(updated);
-                setSelectedIdx(v => Math.min(v, updated.length));
+                if (updated.length === 0) {
+                  // No workstreams remain — select add button, reset to empty state
+                  setSelectedIdx(0);
+                  setFocusPanel("workstreams");
+                  setRightMode("logs");
+                  setMessages([]);
+                } else {
+                  setSelectedIdx(v => Math.min(v, updated.length - 1));
+                }
               }
             } else {
               setFlashMessage("Failed to delete workstream");
@@ -1736,6 +1760,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
         {/* Right: Tabs + content */}
         <box flexDirection="column" flexGrow={1} flexShrink={1}>
+          {isAddButtonSelected ? (
+            <EmptyDashboard onAdd={() => {
+              addModalNameRef.current = "";
+              setShowAddModal(true);
+            }} />
+          ) : (
+          <>
           <RightPanelTabs
             mode={rightMode}
             onSwitch={setRightMode}
@@ -1810,6 +1841,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                 </>
               }
             />
+          )}
+          </>
           )}
         </box>
       </box>
