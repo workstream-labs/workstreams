@@ -159,26 +159,6 @@ Removes: worktree, branch, config entry, state, logs, and comments.
 
 ---
 
-## `ws logs [name]`
-
-View agent logs for a workstream.
-
-```bash
-ws logs [name] [options]
-```
-
-| Argument | Description |
-|---|---|
-| `name` | Workstream to view logs for (omit for interactive picker) |
-
-| Option | Description |
-|---|---|
-| `--raw` | Print raw log output |
-
-Opens an interactive log viewer with live tailing for running workstreams. Press `f` to toggle follow mode.
-
----
-
 ## `ws prompt <name>`
 
 Set or update the prompt for a workstream.
