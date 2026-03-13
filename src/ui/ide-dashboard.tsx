@@ -44,6 +44,7 @@ import type { WorkstreamEntry, DashboardAction } from "./workstream-picker.js";
 import {
   loadComments,
   saveComments,
+  formatCommentsAsPrompt,
   type ReviewComment,
   type WorkstreamComments,
 } from "../core/comments";
@@ -71,7 +72,7 @@ export interface IdeDashboardOptions {
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"];
+  action: DashboardAction["type"] | "resume-with-comments";
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -86,6 +87,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   });
 
   const isActive = entry.status === "running" || entry.status === "queued";
+  if (entry.hasSession && !isActive && entry.commentCount > 0) {
+    options.push({
+      label: "Resume with comments",
+      description: `Send ${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""} to agent`,
+      action: "resume-with-comments",
+    });
+  }
+
   if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
@@ -1445,6 +1454,33 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           options.onOpenEditor(selectedEntry.name).then((opened) => {
             setFlashMessage(opened ? "\u2714 Editor opened" : "Could not open editor");
             setTimeout(() => setFlashMessage(null), 2000);
+          });
+          return;
+        }
+        // Handle "resume-with-comments" inline — format comments as prompt and send
+        if (opt.action === "resume-with-comments") {
+          const name = selectedEntry.name;
+          loadComments(name).then(async (data) => {
+            const prompt = formatCommentsAsPrompt(data);
+            if (!prompt) {
+              setFlashMessage("No comments to send");
+              setTimeout(() => setFlashMessage(null), 2000);
+              return;
+            }
+            const sent = await options.onSendPrompt(name, prompt);
+            if (sent) {
+              setRightMode("logs");
+              setFollow(true);
+              setFlashMessage(`\u2714 Resumed with ${data.comments.length} comment${data.comments.length !== 1 ? "s" : ""}`);
+              setTimeout(() => setFlashMessage(null), 2000);
+              if (options.onRefresh) {
+                const updated = await options.onRefresh();
+                setEntries(updated);
+              }
+            } else {
+              setFlashMessage("Agent is busy \u2014 try again in a moment");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
           });
           return;
         }
