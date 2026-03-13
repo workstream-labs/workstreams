@@ -768,54 +768,110 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, attachments }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
+  attachments?: string[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
+  const hasAttachments = attachments && attachments.length > 0;
 
   return (
     <box
       flexShrink={0}
       style={{
         flexDirection: "column",
-        border: ["top"],
-        borderStyle: "single",
-        borderColor: focused ? theme.accent : theme.border,
-        marginBottom: 1,
+        margin: 1,
+        marginTop: 0,
       }}
     >
-      <box flexDirection="row" paddingLeft={1} paddingRight={1}>
-        <text fg={theme.accent} bold>{displayModel}</text>
-        <box flexGrow={1} />
-        {isRunning ? (
-          <box flexDirection="row">
-            <text fg={theme.text} bold>^X</text>
-            <text fg={theme.textMuted}> interrupt</text>
-          </box>
-        ) : (
-          <box flexDirection="row">
-            <text fg={theme.text} bold>{"\u21B5"}</text>
-            <text fg={theme.textMuted}> send</text>
-          </box>
-        )}
-      </box>
-      <textarea
-        key={inputKey}
-        placeholder={isRunning ? "Agent is working... (^X to interrupt)" : "Send a message..."}
-        initialValue=""
-        focused={focused}
-        onInput={onInput}
+      {/* Attachment pills */}
+      {hasAttachments && (
+        <box flexDirection="row" paddingLeft={2} paddingBottom={0} gap={1}>
+          {attachments.map((a, i) => {
+            const basename = a.split("/").pop() ?? a;
+            const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg|heic)$/i.test(basename);
+            return (
+              <box
+                key={i}
+                flexDirection="row"
+                style={{
+                  borderStyle: "rounded",
+                  borderColor: theme.border,
+                  paddingLeft: 1,
+                  paddingRight: 1,
+                }}
+              >
+                <text fg={theme.accent}>{isImage ? "\u25A3" : "\u25A1"} </text>
+                <text fg={theme.text}>{basename}</text>
+              </box>
+            );
+          })}
+        </box>
+      )}
+
+      {/* Main input container */}
+      <box
         style={{
-          minHeight: 1,
-          maxHeight: 3,
-          paddingLeft: 1,
-          backgroundColor: focused ? theme.backgroundElement : undefined,
+          flexDirection: "column",
+          borderStyle: "rounded",
+          borderColor: focused ? theme.accent : theme.border,
+          backgroundColor: focused ? theme.backgroundElement : theme.background,
         }}
-      />
+      >
+        <textarea
+          key={inputKey}
+          placeholder={isRunning ? "Agent is working..." : "Message " + displayModel + "..."}
+          initialValue=""
+          focused={focused}
+          onInput={onInput}
+          style={{
+            minHeight: 1,
+            maxHeight: 4,
+            paddingLeft: 1,
+            paddingRight: 1,
+          }}
+        />
+
+        {/* Bottom bar: model pill + actions */}
+        <box
+          flexDirection="row"
+          style={{
+            alignItems: "center",
+            paddingLeft: 1,
+            paddingRight: 1,
+          }}
+        >
+          {/* Model pill */}
+          <box flexDirection="row">
+            <text fg={theme.accent}>{"\u2726"} </text>
+            <text fg={theme.accent}>{displayModel}</text>
+          </box>
+
+          <box flexGrow={1} />
+
+          {/* Action hints */}
+          {isRunning ? (
+            <box flexDirection="row" gap={1}>
+              <text fg={theme.warning}>{"\u25CF"} running</text>
+              <text fg={theme.textMuted}> </text>
+              <text fg={theme.text} bold>^X</text>
+              <text fg={theme.textMuted}> stop</text>
+            </box>
+          ) : (
+            <box flexDirection="row" gap={1}>
+              <text fg={theme.textMuted}>^I</text>
+              <text fg={theme.textMuted}> attach</text>
+              <text fg={theme.textMuted}> </text>
+              <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
+              <text fg={theme.textMuted}> send</text>
+            </box>
+          )}
+        </box>
+      </box>
     </box>
   );
 }
@@ -879,11 +935,12 @@ function ActionPicker({ entry, options, selected, width }: {
 
 // ─── Prompt input overlay ────────────────────────────────────────────────────
 
-function PromptInput({ title, initialValue, onSubmit, onCancel }: {
+function PromptInput({ title, initialValue, onSubmit, onCancel, onInput }: {
   title: string;
   initialValue: string;
   onSubmit: (value: string) => void;
   onCancel: () => void;
+  onInput?: (value: string) => void;
 }) {
   const [value, setValue] = React.useState(initialValue);
 
@@ -907,7 +964,7 @@ function PromptInput({ title, initialValue, onSubmit, onCancel }: {
         placeholder="Enter prompt..."
         initialValue={initialValue}
         focused={true}
-        onInput={(v: string) => setValue(v)}
+        onInput={(v: string) => { setValue(v); onInput?.(v); }}
         style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
       />
       <box flexDirection="row" marginTop={1}>
@@ -1044,12 +1101,14 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           {isAgentActive ? (
             <>
               <text fg={theme.text}>^X</text>
-              <text fg={theme.textMuted}> interrupt  </text>
+              <text fg={theme.textMuted}> stop  </text>
             </>
           ) : (
             <>
               <text fg={theme.text}>{"\u21B5"}</text>
               <text fg={theme.textMuted}> send  </text>
+              <text fg={theme.text}>^I</text>
+              <text fg={theme.textMuted}> attach  </text>
             </>
           )}
           <text fg={theme.text}>^D/^U</text>
@@ -1077,6 +1136,23 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
       <text fg={theme.textMuted}> quit</text>
     </box>
   );
+}
+
+// ─── Image attachment picker ──────────────────────────────────────────────────
+
+async function pickImageAttachment(): Promise<string | null> {
+  // Use macOS native file picker via osascript
+  if (process.platform === "darwin") {
+    try {
+      const { execSync } = require("child_process");
+      const result = execSync(
+        `osascript -e 'set theFile to choose file with prompt "Select an image or screenshot" of type {"public.image", "public.png", "public.jpeg"} without multiple selections allowed' -e 'POSIX path of theFile'`,
+        { encoding: "utf-8", timeout: 30000 },
+      ).trim();
+      if (result) return result;
+    } catch { /* user cancelled or error */ }
+  }
+  return null;
 }
 
 // ─── Main IDE Dashboard ──────────────────────────────────────────────────────
@@ -1141,6 +1217,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
   const chatInputValueRef = React.useRef("");
+  const [chatAttachments, setChatAttachments] = React.useState<string[]>([]);
 
   // ─── Derived ─────────────────────────────────────────────────
   const isAddButtonSelected = selectedIdx === entries.length;
@@ -1472,6 +1549,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           options.onSendPrompt(selectedEntry.name, prompt);
           chatInputValueRef.current = "";
           setChatInputKey(k => k + 1);
+          setChatAttachments([]);
           setFollow(true);
         }
         return;
@@ -1480,6 +1558,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         if (selectedEntry && isAgentActive) {
           options.onInterrupt(selectedEntry.name);
         }
+        return;
+      }
+      // Attach image/screenshot
+      if (key.ctrl && n === "i") {
+        pickImageAttachment().then(filePath => {
+          if (filePath) setChatAttachments(prev => [...prev, filePath]);
+        });
         return;
       }
       if (n === "escape" || (n === "tab" && !key.shift)) {
@@ -1711,6 +1796,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                 focused={chatInputFocused}
                 inputKey={chatInputKey}
                 onInput={(v: string) => { chatInputValueRef.current = v; }}
+                attachments={chatAttachments}
               />
             </box>
           ) : (
@@ -1773,6 +1859,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
             setPromptMode(null);
           }}
           onCancel={() => setPromptMode(null)}
+          onInput={(v) => { promptValueRef.current = v; }}
         />
       )}
 
