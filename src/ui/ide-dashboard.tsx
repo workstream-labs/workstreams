@@ -1381,7 +1381,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
 
-<<<<<<< HEAD
     // ─── Add workstream modal mode ──────────────────────
     if (showAddModal) {
       if (n === "escape") { setShowAddModal(false); return; }
@@ -1398,13 +1397,12 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         onAction({ type: "create-workstream", name: wsName, prompt: wsPrompt });
         return;
       }
-=======
+    }
     // ─── Comment form mode ──────────────────────────────
     if (showCommentForm) {
       if (n === "escape") { setShowCommentForm(false); return; }
       if (key.ctrl && n === "s") { handleCommentSubmit(); return; }
       if (key.ctrl && n === "d" && editingCommentIndex !== null) { handleCommentDelete(); return; }
->>>>>>> feat-ide
       return; // let textarea handle other keys
     }
 
