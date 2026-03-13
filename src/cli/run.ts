@@ -24,7 +24,7 @@ Examples:
   ws run --dry-run      Preview which workstreams would run
 
 Pending review comments are automatically included when resuming.
-Agents are spawned in the background. Use "ws switch" to monitor progress.
+Agents are spawned in the background. Use "ws dashboard" to monitor progress.
 `)
     .action(async (name: string | undefined, opts: { config: string; dryRun?: boolean; prompt?: string }) => {
       // Background mode: actually run the executor or resume
@@ -77,7 +77,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
 
         // No session → fresh run
         if (!def.prompt) {
-          console.error(`Error: workstream "${name}" has no prompt. Use \`ws switch ${name}\` to work in it manually.`);
+          console.error(`Error: workstream "${name}" has no prompt. Use \`ws dashboard ${name}\` to work in it manually.`);
           process.exit(1);
         }
 
@@ -110,7 +110,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
         proc.unref();
 
         console.log(`Started "${name}" in the background.`);
-        console.log(`  Use \`ws switch\` to monitor progress.`);
+        console.log(`  Use \`ws dashboard\` to monitor progress.`);
         return;
       }
 
@@ -186,7 +186,7 @@ Agents are spawned in the background. Use "ws switch" to monitor progress.
 
       const names = runnableDefs.map((d) => d.name).join(", ");
       console.log(`Started ${runnableDefs.length} workstream(s) in the background: ${names}`);
-      console.log(`  Use \`ws switch\` to monitor progress.`);
+      console.log(`  Use \`ws dashboard\` to monitor progress.`);
     });
 }
 
@@ -201,7 +201,7 @@ async function handleResume(
 ) {
   // Check status
   if (ws.status === "running") {
-    console.error(`Error: "${name}" is currently running. Use \`ws switch\` to interrupt it.`);
+    console.error(`Error: "${name}" is currently running. Use \`ws dashboard\` to interrupt it.`);
     process.exit(1);
   }
 
@@ -226,7 +226,7 @@ async function handleResume(
   if (parts.length === 0) {
     console.error(`Error: "${name}" already ran. Provide new instructions to continue:`);
     console.error(`  ws run ${name} -p "your instructions here"`);
-    console.error(`  Or add review comments / a pending prompt via \`ws switch\`.`);
+    console.error(`  Or add review comments / a pending prompt via \`ws dashboard\`.`);
     process.exit(1);
   }
 
@@ -259,7 +259,7 @@ async function handleResume(
     ? ` (${commentsData.comments.length} comment${commentsData.comments.length !== 1 ? "s" : ""} included)`
     : "";
   console.log(`Resuming "${name}" in the background${commentInfo}.`);
-  console.log(`  Use \`ws switch\` to monitor progress.`);
+  console.log(`  Use \`ws dashboard\` to monitor progress.`);
 }
 
 // ─── Background: fresh run via executor ─────────────────────────────────────

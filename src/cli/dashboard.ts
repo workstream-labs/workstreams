@@ -385,18 +385,19 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
 
 // ─── Command ─────────────────────────────────────────────────────────────────
 
-export function switchCommand() {
-  return new Command("switch")
+export function dashboardCommand() {
+  return new Command("dashboard")
+    .alias("switch")
     .description("Open the interactive TUI dashboard, or jump to a workstream in your editor")
     .argument("[name]", "workstream name (opens editor directly; omit for dashboard)")
     .option("-e, --editor <editor>", "open directly in a specific editor (e.g. code, cursor, zed)")
     .option("--no-editor", "print the worktree path without opening an editor")
     .addHelpText("after", `
 Examples:
-  ws switch                  Open the interactive dashboard
-  ws switch auth-feature     Open "auth-feature" in your default editor
-  ws switch auth -e cursor   Open in Cursor specifically
-  ws switch auth --no-editor Just print the worktree path
+  ws dashboard                  Open the interactive dashboard
+  ws dashboard auth-feature     Open "auth-feature" in your default editor
+  ws dashboard auth -e cursor   Open in Cursor specifically
+  ws dashboard auth --no-editor Just print the worktree path
 
 Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
   c=comments, /=search, ?=help, q=quit.

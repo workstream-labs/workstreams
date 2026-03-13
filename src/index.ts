@@ -10,7 +10,7 @@ import { listCommand } from "./cli/list";
 import { diffCommand } from "./cli/diff";
 import { mergeCommand } from "./cli/merge";
 
-import { switchCommand } from "./cli/switch";
+import { dashboardCommand } from "./cli/dashboard";
 import { promptCommand } from "./cli/prompt";
 import { logsCommand } from "./cli/logs";
 import { checkoutCommand } from "./cli/checkout";
@@ -30,7 +30,7 @@ Quick start:
   ws run auth -p "fix tests"     Resume with new instructions
   ws list                        Check status
   ws logs auth                   View agent logs for a workstream
-  ws switch                      Open interactive dashboard
+  ws dashboard                    Open interactive dashboard
   ws merge auth                  Merge completed work
   ws checkout auth               cd to a workstream worktree
   ws destroy --all               Tear everything down
@@ -46,7 +46,7 @@ Key options:
   destroy   --all                  Remove all worktrees, config, and state
             -y, --yes              Skip confirmation prompt
   prompt    -p, --prompt <text>    Set or update a workstream's prompt
-  switch    -e, --editor <editor>  Open directly in a specific editor
+  dashboard -e, --editor <editor>  Open directly in a specific editor
             --no-editor            Print worktree path without opening editor
   logs      --raw                  Print raw log output instead of interactive viewer
 
@@ -57,7 +57,7 @@ program.addCommand(initCommand());
 program.addCommand(createCommand());
 program.addCommand(runCommand());
 program.addCommand(listCommand());
-program.addCommand(switchCommand());
+program.addCommand(dashboardCommand());
 program.addCommand(diffCommand());
 program.addCommand(mergeCommand());
 program.addCommand(logsCommand());

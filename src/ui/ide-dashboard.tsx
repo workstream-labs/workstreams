@@ -1,4 +1,4 @@
-// IDE-style dashboard for `ws switch`.
+// IDE-style dashboard for `ws dashboard`.
 // Left panel: workstream list. Right panel: logs (default) or diff viewer.
 // Built on the same @opentuah/core + critique stack as session-viewer and diff-viewer.
 
