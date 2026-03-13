@@ -42,10 +42,8 @@ Commands:
   list              Show workstream status
   switch [name]     Open interactive dashboard
   diff [name]       View workstream changes
-  merge [name]      Merge workstream into current branch
   resume <name>     Resume a workstream with new instructions
   destroy [name]    Remove a workstream
-  logs [name]       View agent logs
   prompt <name>     Set or update a workstream prompt
 ```
 

@@ -33,8 +33,6 @@ ws diff add-tests
 ws switch add-tests      # pick an action: editor, resume, diff, etc.
 ws resume add-tests --comments   # send comments back to the agent
 
-# 6. Merge when satisfied
-ws merge add-tests
 ```
 
 ## Configuration
@@ -139,10 +137,6 @@ ws resume add-tests                                    # interactive menu
 
 Comments are cleared automatically after a successful resume.
 
-### `ws merge [name]`
-
-Merge a workstream's branch back into the main branch. Without a name, merges all successful workstreams.
-
 ### `ws destroy [name]`
 
 Remove a workstream's worktree and branch.
@@ -156,7 +150,7 @@ ws destroy --all -y        # skip confirmation
 ## Workflow
 
 ```
-ws init → ws create → ws run → ws status/diff → ws switch → ws resume → ws merge
+ws init → ws create → ws run → ws status/diff → ws switch → ws resume
                                     ↑                              |
                                     └──────── iterate ─────────────┘
 ```
@@ -165,7 +159,7 @@ ws init → ws create → ws run → ws status/diff → ws switch → ws resume 
 2. **Run** them in parallel — each agent works in its own worktree
 3. **Review** the results with `ws diff` and `ws switch`
 4. **Iterate** using `ws switch` (editor, interactive session, review) or `ws resume` (send comments/new prompt hands-off)
-5. **Merge** when satisfied
+5. **Merge** when satisfied using standard git commands or GitHub PRs
 
 ## Project Structure
 

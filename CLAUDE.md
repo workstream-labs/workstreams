@@ -16,7 +16,7 @@ bun test tests/dag.test.ts  # run a single test file
 bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
-The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `diff`, `destroy`, `merge`, `resume`, `switch`.
+The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `diff`, `destroy`, `resume`, `switch`.
 
 ## workstream.yaml Config Format
 
@@ -59,7 +59,6 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`. Skips prompt-less workstreams.
 - `resume.ts` — `ws resume <name>`: non-interactive resume with a new prompt (`-p`) or stored review comments (`--comments`). Clears stored comments on success.
 - `switch.ts` — `ws switch [name]`: 2-screen flow: (1) `openDashboard` single-screen dashboard with 3-line workstream cards, inline hotkey actions (`Enter`=editor, `d`=diff, `r`=resume, `p`=prompt modal, `c`=comments), fuzzy search (`/`), help overlay (`?`), context-sensitive footer. Returns `DashboardAction`. (2) `openDiffViewer` for browsing changes (returns to dashboard on quit). Supports `-e` for direct editor open, auto-detects and persists the user's preferred editor in state.
-- `merge.ts` — `ws merge [name]`: merge into the current branch. Supports `--squash` and `--no-cleanup`.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
 - `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches.
 

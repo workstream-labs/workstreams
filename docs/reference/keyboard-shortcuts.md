@@ -65,25 +65,6 @@ All keyboard shortcuts for the TUI components.
 | `c` | Add inline comment on current line |
 | `q` | Quit viewer |
 
-## Log Viewer (`ws logs <name>`)
-
-### Scrolling
-
-| Key | Action |
-|---|---|
-| `j` / `↓` | Scroll down |
-| `k` / `↑` | Scroll up |
-| `d` | Scroll down half-page |
-| `u` | Scroll up half-page |
-| `g` | Jump to top |
-| `G` | Jump to bottom |
-
-### Modes
-
-| Key | Action |
-|---|---|
-| `f` | Toggle follow mode (auto-scroll to new output) |
-| `q` | Quit viewer |
 
 ## Choice Picker
 

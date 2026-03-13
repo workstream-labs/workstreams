@@ -117,28 +117,6 @@ Opens the interactive diff viewer for a single workstream. Shows raw diffs for m
 
 ---
 
-## `ws merge [name]`
-
-Merge workstream changes into the current branch.
-
-```bash
-ws merge [name] [into] [options]
-```
-
-| Argument | Description |
-|---|---|
-| `name` | Workstream to merge |
-| `into` | Target branch (default: current branch) |
-
-| Option | Description |
-|---|---|
-| `--all` | Merge all successful workstreams |
-| `--no-cleanup` | Keep worktree and branch after merge |
-
-Performs squash merge. Single workstream: stages only. Batch (`--all`): auto-commits each.
-
----
-
 ## `ws resume <name>`
 
 Resume a workstream with new instructions.
@@ -178,26 +156,6 @@ ws destroy [name] [options]
 | `-y, --yes` | Skip confirmation prompt |
 
 Removes: worktree, branch, config entry, state, logs, and comments.
-
----
-
-## `ws logs [name]`
-
-View agent logs for a workstream.
-
-```bash
-ws logs [name] [options]
-```
-
-| Argument | Description |
-|---|---|
-| `name` | Workstream to view logs for (omit for interactive picker) |
-
-| Option | Description |
-|---|---|
-| `--raw` | Print raw log output |
-
-Opens an interactive log viewer with live tailing for running workstreams. Press `f` to toggle follow mode.
 
 ---
 

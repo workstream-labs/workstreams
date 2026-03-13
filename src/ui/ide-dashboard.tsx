@@ -1,4 +1,4 @@
-// IDE-style dashboard for `ws switch`.
+// IDE-style dashboard for `ws dashboard`.
 // Left panel: workstream list. Right panel: logs (default) or diff viewer.
 // Built on the same @opentuah/core + critique stack as session-viewer and diff-viewer.
 
@@ -44,6 +44,7 @@ import type { WorkstreamEntry, DashboardAction } from "./workstream-picker.js";
 import {
   loadComments,
   saveComments,
+  formatCommentsAsPrompt,
   type ReviewComment,
   type WorkstreamComments,
 } from "../core/comments";
@@ -71,7 +72,7 @@ export interface IdeDashboardOptions {
 interface ActionOption {
   label: string;
   description: string;
-  action: DashboardAction["type"];
+  action: DashboardAction["type"] | "resume-with-comments";
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -86,6 +87,14 @@ function buildActionOptions(entry: WorkstreamEntry): ActionOption[] {
   });
 
   const isActive = entry.status === "running" || entry.status === "queued";
+  if (entry.hasSession && !isActive && entry.commentCount > 0) {
+    options.push({
+      label: "Resume with comments",
+      description: `Send ${entry.commentCount} comment${entry.commentCount !== 1 ? "s" : ""} to agent`,
+      action: "resume-with-comments",
+    });
+  }
+
   if (entry.hasSession && !isActive) {
     options.push({
       label: "Open session",
@@ -331,7 +340,6 @@ function WorkstreamListPanel({ entries, selectedIdx, focused, spinnerFrame, scro
     >
       <box style={{ paddingLeft: 1, flexShrink: 0, paddingBottom: 1 }}>
         <text fg={theme.text} bold>Workstreams</text>
-        <text fg={theme.textMuted}> ({entries.length})</text>
       </box>
       <scrollbox
         ref={scrollRef}
@@ -741,18 +749,20 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
     <box
       flexShrink={0}
+      onMouseDown={onFocus}
       style={{
         flexDirection: "column",
         margin: 1,
@@ -765,6 +775,8 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
           borderStyle: "rounded",
           borderColor: focused ? theme.accent : theme.border,
           backgroundColor: focused ? theme.backgroundElement : theme.background,
+          paddingLeft: 1,
+          paddingRight: 1,
         }}
       >
         <textarea
@@ -776,8 +788,6 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
           style={{
             minHeight: 1,
             maxHeight: 4,
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         />
 
@@ -786,8 +796,6 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
           flexDirection="row"
           style={{
             alignItems: "center",
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         >
           <box flexGrow={1} />
@@ -815,17 +823,18 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput }: {
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   initialValue?: string;
+  onFocus?: () => void;
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
 
   return (
-    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column" onMouseDown={onFocus}>
       {/* Welcome header */}
       <box flexDirection="column" alignItems="center" marginBottom={2}>
         <text fg={theme.text} bold>What should we work on?</text>
@@ -839,6 +848,8 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue 
           borderStyle: "rounded",
           borderColor: focused ? theme.accent : theme.border,
           backgroundColor: focused ? theme.backgroundElement : theme.background,
+          paddingLeft: 1,
+          paddingRight: 1,
         }}
       >
         <textarea
@@ -850,8 +861,6 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue 
           style={{
             minHeight: 2,
             maxHeight: 8,
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         />
 
@@ -860,8 +869,6 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue 
           flexDirection="row"
           style={{
             alignItems: "center",
-            paddingLeft: 1,
-            paddingRight: 1,
           }}
         >
           <box flexGrow={1} />
@@ -939,6 +946,27 @@ function ActionPicker({ entry, options, selected, width }: {
   );
 }
 
+// ─── Empty dashboard (no workstreams selected / no workstreams exist) ─────────
+
+function EmptyDashboard({ onAdd }: { onAdd: () => void }) {
+  return (
+    <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
+      <box flexDirection="column" alignItems="center" gap={1}>
+        <text fg={theme.accent} bold>{"\u2726"}</text>
+        <box height={1} />
+        <text fg={theme.text} bold>No workstreams yet</text>
+        <text fg={theme.textMuted}>Spin up parallel AI agents, each in their own worktree.</text>
+        <box height={1} />
+        <box flexDirection="row">
+          <text fg={theme.textMuted}>Press </text>
+          <text fg={theme.accent} bold>Enter</text>
+          <text fg={theme.textMuted}> to add your first workstream</text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
 // ─── Add workstream modal ─────────────────────────────────────────────────────
 
 function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
@@ -946,7 +974,7 @@ function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
   panelLeft: number;
   panelWidth: number;
 }) {
-  const modalW = Math.floor(panelWidth * 0.6);
+  const modalW = Math.min(50, Math.floor(panelWidth * 0.5));
   const modalLeft = panelLeft + Math.floor((panelWidth - modalW) / 2);
   return (
     <box
@@ -1445,6 +1473,33 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           });
           return;
         }
+        // Handle "resume-with-comments" inline — format comments as prompt and send
+        if (opt.action === "resume-with-comments") {
+          const name = selectedEntry.name;
+          loadComments(name).then(async (data) => {
+            const prompt = formatCommentsAsPrompt(data);
+            if (!prompt) {
+              setFlashMessage("No comments to send");
+              setTimeout(() => setFlashMessage(null), 2000);
+              return;
+            }
+            const sent = await options.onSendPrompt(name, prompt);
+            if (sent) {
+              setRightMode("logs");
+              setFollow(true);
+              setFlashMessage(`\u2714 Resumed with ${data.comments.length} comment${data.comments.length !== 1 ? "s" : ""}`);
+              setTimeout(() => setFlashMessage(null), 2000);
+              if (options.onRefresh) {
+                const updated = await options.onRefresh();
+                setEntries(updated);
+              }
+            } else {
+              setFlashMessage("Agent is busy \u2014 try again in a moment");
+              setTimeout(() => setFlashMessage(null), 2000);
+            }
+          });
+          return;
+        }
         // Handle "destroy" inline
         if (opt.action === "destroy" && options.onDestroy) {
           const name = selectedEntry.name;
@@ -1455,7 +1510,15 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               if (options.onRefresh) {
                 const updated = await options.onRefresh();
                 setEntries(updated);
-                setSelectedIdx(v => Math.min(v, updated.length));
+                if (updated.length === 0) {
+                  // No workstreams remain — select add button, reset to empty state
+                  setSelectedIdx(0);
+                  setFocusPanel("workstreams");
+                  setRightMode("logs");
+                  setMessages([]);
+                } else {
+                  setSelectedIdx(v => Math.min(v, updated.length - 1));
+                }
               }
             } else {
               setFlashMessage("Failed to delete workstream");
@@ -1697,6 +1760,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
         {/* Right: Tabs + content */}
         <box flexDirection="column" flexGrow={1} flexShrink={1}>
+          {isAddButtonSelected ? (
+            <EmptyDashboard onAdd={() => {
+              addModalNameRef.current = "";
+              setShowAddModal(true);
+            }} />
+          ) : (
+          <>
           <RightPanelTabs
             mode={rightMode}
             onSwitch={setRightMode}
@@ -1713,6 +1783,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   inputKey={chatInputKey}
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
                   initialValue={selectedEntry?.prompt}
+                  onFocus={() => setFocusPanel("right")}
                 />
               ) : (
                 <>
@@ -1734,6 +1805,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     focused={chatInputFocused}
                     inputKey={chatInputKey}
                     onInput={(v: string) => { chatInputValueRef.current = v; }}
+                    onFocus={() => setFocusPanel("right")}
                   />
                 </>
               )}
@@ -1769,6 +1841,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                 </>
               }
             />
+          )}
+          </>
           )}
         </box>
       </box>
