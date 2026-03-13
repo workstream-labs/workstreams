@@ -1499,8 +1499,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         return;
       }
       // Scroll logs while in chat input
-      if (key.ctrl && n === "d") { logsScrollRef.current?.scrollBy(0.5, "viewport"); return; }
-      if (key.ctrl && n === "u") { logsScrollRef.current?.scrollBy(-0.5, "viewport"); return; }
+      if (n === "up") { logsScrollRef.current?.scrollBy(-3); return; }
+      if (n === "down") { logsScrollRef.current?.scrollBy(3); return; }
       return; // let textarea handle all other keys
     }
 
