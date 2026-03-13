@@ -305,19 +305,33 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
     await appendFile(ws.logFile, `[${ts}] ${msg}\n`);
   };
 
+  // Guard: if sessionId is missing, we can't resume — fail early with a clear message
+  if (!ws.sessionId) {
+    ws.status = "failed";
+    ws.error = "No session ID available for resume";
+    ws.finishedAt = new Date().toISOString();
+    await logLine(`FAILED: ${ws.error}`);
+    await appendWorkstreamStatus(ws);
+    process.exit(1);
+  }
+
   // Build agent config with --resume flag
   // Insert --resume before -p to handle wrapper commands (e.g. aifx agent run claude --resume <id> ... -p)
   const baseArgs = config.agent.args ?? [];
   const pIndex = baseArgs.lastIndexOf("-p");
   const resumeArgs = pIndex >= 0
-    ? [...baseArgs.slice(0, pIndex), "--resume", ws.sessionId!, ...baseArgs.slice(pIndex)]
-    : [...baseArgs, "--resume", ws.sessionId!];
+    ? [...baseArgs.slice(0, pIndex), "--resume", ws.sessionId, ...baseArgs.slice(pIndex)]
+    : [...baseArgs, "--resume", ws.sessionId];
   const resumeAgentConfig: AgentConfig = {
     ...config.agent,
     args: resumeArgs,
   };
 
-  await logLine(`Resuming workstream "${name}"`);
+  // Preserve the original session ID — Claude's --resume creates a new
+  // session that is NOT itself resumable. We must always resume from the
+  // original session so subsequent prompts keep working.
+  const originalSessionId = ws.sessionId;
+  await logLine(`Resuming workstream "${name}" (session ${originalSessionId})`);
 
   try {
     const result = await agent.run({
@@ -326,7 +340,8 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
       logFile: ws.logFile,
       agentConfig: resumeAgentConfig,
       onSessionId: async (id) => {
-        ws.sessionId = id;
+        // Don't overwrite the original session ID — the new ID from a
+        // resumed session is not resumable by Claude's --resume flag.
         await appendWorkstreamStatus(ws);
         await logLine(`Session ID captured: ${id}`);
       },
@@ -339,7 +354,8 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
 
     ws.exitCode = result.exitCode;
     ws.status = result.exitCode === 0 ? "success" : "failed";
-    if (result.sessionId) ws.sessionId = result.sessionId;
+    // Keep original session ID for future resumes
+    ws.sessionId = originalSessionId;
     if (result.exitCode !== 0) {
       ws.error = `Agent exited with code ${result.exitCode}`;
       await logLine(`FAILED: ${ws.error}`);

@@ -28,10 +28,10 @@ let parsersRegistered = false;
 // ─── Theme from critique (OpenCode dark theme) ─────────────────────────────
 
 const resolved = getResolvedTheme("opencode");
-const syntaxTheme = SyntaxStyle.fromStyles(getSyntaxTheme("opencode"));
+export const syntaxTheme = SyntaxStyle.fromStyles(getSyntaxTheme("opencode"));
 
-const r = resolved as any;
-const theme = {
+export const r = resolved as any;
+export const theme = {
   background: rgbaToHex(r.background),
   backgroundPanel: rgbaToHex(r.backgroundPanel),
   backgroundElement: "#1e1e1e",
@@ -49,17 +49,17 @@ const theme = {
 
 // ─── SplitBorder (OpenCode style: heavy vertical bar) ───────────────────────
 
-const EmptyBorder = {
+export const EmptyBorder = {
   topLeft: "", bottomLeft: "", vertical: "", topRight: "", bottomRight: "",
   horizontal: " ", bottomT: "", topT: "", cross: "", leftT: "", rightT: "",
 };
-const SplitBorderChars = { ...EmptyBorder, vertical: "\u2503" };
+export const SplitBorderChars = { ...EmptyBorder, vertical: "\u2503" };
 
 // ─── Spinner (braille dots, 80ms) ───────────────────────────────────────────
 
 const SPIN = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 
-function Spinner({ color, children }: { color?: string; children?: React.ReactNode }) {
+export function Spinner({ color, children }: { color?: string; children?: React.ReactNode }) {
   const [f, setF] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setF((v: number) => (v + 1) % SPIN.length), 80);
@@ -192,7 +192,7 @@ function TextPartView({ part }: { part: Extract<AssistantPart, { type: "text" }>
   if (!txt) return null;
   return (
     <box paddingLeft={3} marginTop={1} flexShrink={0}>
-      <code filetype="markdown" drawUnstyledText={false} streaming={true}
+      <markdown streaming={true}
         syntaxStyle={syntaxTheme} content={txt} conceal={true} fg={theme.text} />
     </box>
   );
@@ -200,8 +200,11 @@ function TextPartView({ part }: { part: Extract<AssistantPart, { type: "text" }>
 
 // Diff block for Edit tool — auto-switches split/unified based on width
 function EditDiff({ fp, ft, diffStr }: { fp: string; ft: string; diffStr: string }) {
-  const { width } = useTerminalDimensions();
-  const view = width > 120 ? "split" : "unified";
+  const { width: termWidth } = useTerminalDimensions();
+  // When embedded in the IDE dashboard, the available width is narrower
+  // than the terminal (left panel takes ~32 cols). Use a higher threshold
+  // so split mode only activates when there's enough room.
+  const view = termWidth > 180 ? "split" : "unified";
   return (
     <BlockTool title={`\u2190 Edit ${fp}`}>
       <box paddingLeft={1}>
@@ -394,6 +397,27 @@ function ResultMsg({ msg }: { msg: Extract<DisplayMessage, { role: "result" }> }
   );
 }
 
+// ─── Reusable SessionMessages (embeddable, no header/footer/keyboard) ────────
+
+export function SessionMessages({ messages, showThinking, isRunning }: {
+  messages: DisplayMessage[];
+  showThinking: boolean;
+  isRunning: boolean;
+}) {
+  const lastAst = messages.reduce((a: number, m: DisplayMessage, i: number) => m.role === "assistant" ? i : a, -1);
+  return (
+    <box flexShrink={0} gap={0} paddingBottom={1}>
+      {messages.map((msg: DisplayMessage, i: number) => {
+        if (msg.role === "user") return <UserMsg msg={msg} isFirst={i === 0} />;
+        if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} />;
+        if (msg.role === "result") return <ResultMsg msg={msg} />;
+        return null;
+      })}
+      {isRunning && <box paddingLeft={3} marginTop={1}><Spinner color={theme.accent}>Working...</Spinner></box>}
+    </box>
+  );
+}
+
 // ─── Main SessionApp ────────────────────────────────────────────────────────
 
 function SessionApp({ name, status, messages: init, logFile }: {
@@ -476,7 +500,7 @@ function SessionApp({ name, status, messages: init, logFile }: {
         <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={1}
           border={["left"]} customBorderChars={SplitBorderChars} borderColor={theme.border}
           backgroundColor={theme.backgroundPanel} flexDirection="row" justifyContent="space-between">
-          <text fg={theme.text}><b># {name}</b></text>
+          <text fg={theme.text}><b>{name}</b></text>
           <box flexDirection="row" gap={2} flexShrink={0}>
             <text fg={sColor}>{sIcon} {liveStatus}</text>
             {follow && <text fg={theme.success}>{"\u25CF"} FOLLOW</text>}
@@ -548,7 +572,7 @@ function FallbackApp({ name, status, logFile }: { name: string; status: string; 
   return (
     <box width="100%" height="100%" backgroundColor={theme.background} flexDirection="column">
       <box flexShrink={0} paddingLeft={2} paddingTop={1} paddingBottom={1} backgroundColor={theme.backgroundPanel}>
-        <text fg={theme.text}><b># {name}</b> <span style={{ fg: theme.textMuted }}>({status})</span></text>
+        <text fg={theme.text}><b>{name}</b> <span style={{ fg: theme.textMuted }}>({status})</span></text>
       </box>
       <scrollbox ref={scrollRef} flexGrow={1} paddingLeft={2} paddingRight={1}
         verticalScrollbarOptions={{ trackOptions: { backgroundColor: theme.background, foregroundColor: theme.borderActive } }}>

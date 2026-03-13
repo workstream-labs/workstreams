@@ -3,12 +3,13 @@ import { resolve } from "path";
 import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
 import { loadConfig } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
-import { loadComments } from "../core/comments";
+import { loadComments, formatCommentsAsPrompt } from "../core/comments";
 import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
-import { openDashboard, getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction, type DashboardOptions } from "../ui/workstream-picker.js";
+import { getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
+import { openIdeDashboard, type IdeDashboardOptions } from "../ui/ide-dashboard.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
 
 const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
@@ -31,18 +32,14 @@ async function detectInstalledEditors(): Promise<string[]> {
   return found;
 }
 
-function openEditor(dir: string, editor: string): void {
-  const isMac = process.platform === "darwin";
-  const known = EDITORS[editor];
-
+async function openEditor(dir: string, editor: string): Promise<void> {
+  // Use Node's child_process with a real system shell — Bun's built-in
+  // shell doesn't work correctly with editor CLI wrapper scripts.
+  const { execFileSync } = await import("child_process");
   try {
-    if (isMac && known) {
-      Bun.spawn(["open", "-a", known.mac, dir], { stdio: ["ignore", "ignore", "ignore"] });
-    } else {
-      Bun.spawn([editor, dir], { stdio: ["ignore", "ignore", "ignore"] });
-    }
-  } catch {
-    console.error(`Could not open editor "${editor}". Is it installed and in your PATH?`);
+    execFileSync(editor, [dir], { stdio: "inherit" });
+  } catch (e: any) {
+    console.error(`Could not open editor "${editor}": ${e.message}`);
   }
 }
 
@@ -152,7 +149,7 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
     if (!state.currentRun.workstreams[name]) {
       state.currentRun.workstreams[name] = {
         name,
-        status: "queued",
+        status: "ready",
         branch: `ws/${name}`,
         worktreePath,
         logFile: `.workstreams/logs/${name}.log`,
@@ -167,20 +164,24 @@ async function ensureWorktree(name: string, state: any, config: any): Promise<st
 
 // ─── Action: Open in editor ──────────────────────────────────────────────────
 
-async function actionOpenEditor(name: string, state: any, config: any, editorOpt?: string) {
+async function actionOpenEditor(name: string, state: any, config: any, editorOpt?: string): Promise<boolean> {
   const absPath = await ensureWorktree(name, state, config);
-  console.log(`Switched to ws/${name} at ${absPath}`);
 
   const resolved = await resolveEditor(editorOpt, state.defaultEditor);
-  if (resolved) {
-    if (!editorOpt && !state.defaultEditor) {
-      state.defaultEditor = resolved;
-      await saveState(state);
-    }
-    const label = EDITORS[resolved]?.label ?? resolved;
-    console.log(`Opening in ${label}...`);
-    openEditor(absPath, resolved);
+  if (!resolved) {
+    console.log(`No editor found. Set $EDITOR or install one of: ${Object.keys(EDITORS).join(", ")}`);
+    console.log(`  Worktree path: ${absPath}`);
+    return false;
   }
+
+  if (!editorOpt && !state.defaultEditor) {
+    state.defaultEditor = resolved;
+    await saveState(state);
+  }
+  const label = EDITORS[resolved]?.label ?? resolved;
+  console.log(`Opening ${name} in ${label}...`);
+  await openEditor(absPath, resolved);
+  return true;
 }
 
 // ─── Action: Open Claude session (interactive) ───────────────────────────────
@@ -280,6 +281,27 @@ async function actionSetPrompt(name: string, prompt: string) {
   await Bun.write("workstream.yaml", stringify(raw));
 }
 
+// ─── Action: Create a new workstream in workstream.yaml ───────────────────────
+
+async function actionCreateWorkstream(name: string, prompt?: string) {
+  const { parse, stringify } = await import("yaml");
+  const configFile = Bun.file("workstream.yaml");
+  const raw = parse(await configFile.text()) as any;
+
+  if (!raw.workstreams) raw.workstreams = {};
+
+  // Don't overwrite existing entries
+  if (Array.isArray(raw.workstreams)) {
+    if (raw.workstreams.some((w: any) => w.name === name)) return;
+    raw.workstreams.push({ name, ...(prompt ? { prompt } : {}) });
+  } else {
+    if (name in raw.workstreams) return;
+    raw.workstreams[name] = prompt ? { prompt } : {};
+  }
+
+  await Bun.write("workstream.yaml", stringify(raw));
+}
+
 // ─── Dispatch dashboard action ───────────────────────────────────────────────
 
 async function dispatchAction(action: DashboardAction, state: any, config: any): Promise<boolean> {
@@ -287,17 +309,20 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "quit":
       return false;
 
-    case "editor":
-      await actionOpenEditor(action.name, state, config);
-      return false;
+    case "editor": {
+      const opened = await actionOpenEditor(action.name, state, config);
+      return !opened; // stay in dashboard if editor failed to open
+    }
 
     case "diff":
+      // Diff is now handled inline in the IDE dashboard, but keep fallback
       await actionDiffReview(action.name, state);
-      return true; // loop back to dashboard
+      return true;
 
     case "log":
+      // Logs are now handled inline in the IDE dashboard, but keep fallback
       await actionViewLogs(action.name, state);
-      return true; // loop back to dashboard
+      return true;
 
     case "open-session": {
       const ws = state.currentRun?.workstreams?.[action.name];
@@ -343,6 +368,10 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "save-pending-prompt":
       await savePendingPrompt(action.name, action.prompt);
       return true; // loop back to dashboard
+
+    case "create-workstream":
+      await actionCreateWorkstream(action.name, action.prompt);
+      return true; // loop back to dashboard so the new entry appears
 
   }
 }
@@ -390,7 +419,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             }
             const label = EDITORS[resolved]?.label ?? resolved;
             console.log(`Opening in ${label}...`);
-            openEditor(absPath, resolved);
+            await openEditor(absPath, resolved);
           }
         }
         return;
@@ -413,20 +442,192 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
         return;
       }
 
-      // Dashboard loop: after diff viewer or set-prompt, return to dashboard
+      // Dashboard loop: IDE dashboard handles logs/diff inline,
+      // only exits for editor/run/session/prompt actions
       let loop = true;
       while (loop) {
         const freshState = await loadState() ?? state;
         const freshConfig = await loadConfig("workstream.yaml");
         const entries = await buildEntries(freshConfig, freshState);
-        const dashboardOpts: DashboardOptions = {
+        const wt = new WorktreeManager();
+        const dashboardOpts: IdeDashboardOptions = {
           onRefresh: async () => {
             const s = await loadState() ?? state;
             const c = await loadConfig("workstream.yaml");
             return buildEntries(c, s);
           },
+          getLogFile: (name: string) => {
+            return freshState.currentRun?.workstreams?.[name]?.logFile ?? `.workstreams/logs/${name}.log`;
+          },
+          getWorkstreamStatus: (name: string) => {
+            return freshState.currentRun?.workstreams?.[name]?.status ?? "ready";
+          },
+          getDiff: async (name: string) => {
+            const [branchDiff, uncommittedDiff] = await Promise.all([
+              wt.diffBranch(`ws/${name}`).catch(() => ""),
+              wt.diff(name).catch(() => ""),
+            ]);
+            return branchDiff + uncommittedDiff;
+          },
+          onOpenEditor: async (name: string): Promise<boolean> => {
+            const absPath = await ensureWorktree(name, freshState, freshConfig);
+            const resolved = await resolveEditor(undefined, freshState.defaultEditor);
+            if (!resolved) return false;
+            if (!freshState.defaultEditor) {
+              freshState.defaultEditor = resolved;
+              await saveState(freshState);
+            }
+            await openEditor(absPath, resolved);
+            return true;
+          },
+          onCreateWorkstream: async (name: string): Promise<boolean> => {
+            try {
+              await actionCreateWorkstream(name);
+              // Also create the worktree
+              await ensureWorktree(name, freshState, freshConfig);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          onDestroy: async (name: string): Promise<boolean> => {
+            try {
+              const { parse, stringify } = await import("yaml");
+              const { unlink } = await import("fs/promises");
+              const wtm = new WorktreeManager();
+
+              // Remove worktree and branch
+              await wtm.remove(name);
+
+              // Remove from workstream.yaml
+              const configFile = Bun.file("workstream.yaml");
+              if (await configFile.exists()) {
+                const raw = parse(await configFile.text());
+                if (raw.workstreams && raw.workstreams[name]) {
+                  delete raw.workstreams[name];
+                  await Bun.write("workstream.yaml", stringify(raw));
+                }
+              }
+
+              // Delete log and comment files
+              await unlink(`.workstreams/comments/${name}.json`).catch(() => {});
+              await unlink(`.workstreams/logs/${name}.log`).catch(() => {});
+
+              // Remove from state
+              const s = await loadState();
+              if (s?.currentRun?.workstreams?.[name]) {
+                delete s.currentRun.workstreams[name];
+                if (Object.keys(s.currentRun.workstreams).length === 0) {
+                  s.currentRun = undefined;
+                }
+                await saveState(s);
+              }
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          onSendPrompt: async (name: string, prompt: string): Promise<boolean> => {
+            // Load fresh state every time (dashboard stays open)
+            const s = await loadState() ?? state;
+            const ws = s.currentRun?.workstreams?.[name];
+
+            // Don't send if agent is already active
+            if (ws?.status === "running" || ws?.status === "queued") return false;
+
+            const hasSession = !!ws?.sessionId;
+
+            // Ensure run state exists
+            if (!s.currentRun) {
+              s.currentRun = {
+                runId: `run-${Date.now()}`,
+                startedAt: new Date().toISOString(),
+                workstreams: {},
+              };
+            }
+            if (!s.currentRun.workstreams[name]) {
+              s.currentRun.workstreams[name] = {
+                name,
+                status: "queued" as const,
+                branch: `ws/${name}`,
+                worktreePath: `.workstreams/trees/${name}`,
+                logFile: `.workstreams/logs/${name}.log`,
+              };
+            }
+
+            s.currentRun.finishedAt = undefined;
+
+            if (hasSession) {
+              // Resume: combine prompt with any pending comments, spawn background directly.
+              // This avoids the middleman process whose status checks can race with
+              // the previous run's cleanup (clearPendingPrompt).
+              const commentsData = await loadComments(name);
+              const commentsPrompt = formatCommentsAsPrompt(commentsData);
+              const parts: string[] = [];
+              if (commentsPrompt) parts.push(commentsPrompt);
+              parts.push(prompt);
+              const combinedPrompt = parts.join("\n\n---\n\n");
+
+              const wsState = s.currentRun.workstreams[name];
+              wsState.status = "running";
+              wsState.startedAt = new Date().toISOString();
+              wsState.finishedAt = undefined;
+              wsState.exitCode = undefined;
+              wsState.error = undefined;
+              await appendWorkstreamStatus(wsState);
+              await saveState(s);
+
+              // Spawn background resume worker directly
+              const bgArgs = ["bun", Bun.main, "run", name, "-c", "workstream.yaml", "-p", combinedPrompt];
+              const proc = Bun.spawn(bgArgs, {
+                cwd: process.cwd(),
+                env: { ...process.env, WS_BACKGROUND: "1", WS_RESUME_MODE: "1" },
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+              });
+              proc.unref();
+            } else {
+              // Fresh run: save prompt to workstream.yaml, spawn executor directly
+              await actionSetPrompt(name, prompt);
+
+              const wsState = s.currentRun.workstreams[name];
+              wsState.status = "queued";
+              await appendWorkstreamStatus(wsState);
+              await saveState(s);
+
+              // Spawn background executor directly
+              const bgArgs = ["bun", Bun.main, "run", "-c", "workstream.yaml", name];
+              const proc = Bun.spawn(bgArgs, {
+                cwd: process.cwd(),
+                env: { ...process.env, WS_BACKGROUND: "1" },
+                stdin: "ignore",
+                stdout: "ignore",
+                stderr: "ignore",
+              });
+              proc.unref();
+            }
+            return true;
+          },
+          onInterrupt: async (name: string) => {
+            // Load fresh state to get current PID
+            const s = await loadState();
+            const ws = s?.currentRun?.workstreams?.[name];
+            if (ws?.pid) {
+              try { process.kill(ws.pid, "SIGINT"); } catch {}
+              // Immediately mark as failed so the next prompt isn't blocked
+              // by the race between interrupt and background process cleanup.
+              // The background process will also write a "failed" marker when
+              // it detects the exit, but this ensures the state is updated
+              // before the user can send another prompt.
+              ws.status = "failed";
+              ws.finishedAt = new Date().toISOString();
+              ws.pid = undefined;
+              await appendWorkstreamStatus(ws);
+            }
+          },
         };
-        const action = await openDashboard(entries, dashboardOpts);
+        const action = await openIdeDashboard(entries, dashboardOpts);
         loop = await dispatchAction(action, freshState, freshConfig);
       }
     });
