@@ -134,6 +134,7 @@ const SPIN = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u282
 const STATUS_CONFIG: Record<string, { icon: string; color: string }> = {
   success: { icon: "\u2713", color: theme.success },
   failed: { icon: "\u2717", color: theme.error },
+  interrupted: { icon: "\u25A0", color: theme.warning },
   running: { icon: "\u25CF", color: theme.warning },
   queued: { icon: "\u25C9", color: theme.info },
   ready: { icon: "\u25CB", color: theme.textMuted },
@@ -433,8 +434,11 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   scrollEnabled?: boolean;
 }) {
-  const hasResult = messages.some((m: DisplayMessage) => m.role === "result");
-  const isRunning = status === "running" && !hasResult;
+  // Check if the conversation has completed: the last message is a result
+  // (not just any result — previous turns have results too)
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const isConversationDone = lastMsg?.role === "result";
+  const isRunning = status === "running" && !isConversationDone;
 
   // Auto-follow: scroll to bottom when messages change.
   // Use a short delay so the scrollbox layout has updated with the new content.
@@ -491,13 +495,22 @@ function DiffFileItem({ file, selected, focused, width }: {
   const cursorColor = selected && focused ? theme.accent : theme.textMuted;
   const bg = selected ? (focused ? theme.accent + "22" : "#264F7822") : undefined;
 
+  // Fixed prefix: "▶ R " = 4 chars + paddingLeft 1 = 5, stats: "+NNN-NNN " ≈ 10 max
+  const statsStr = `+${additions}-${deletions}`;
+  const prefixLen = 5; // "▶ R " + paddingLeft
+  const statsLen = statsStr.length + 1; // +1 for trailing space
+  const nameMax = Math.max(4, width - prefixLen - statsLen);
+  const fullName = dir + basename;
+  const truncName = fullName.length > nameMax
+    ? fullName.slice(0, nameMax - 1) + "\u2026"
+    : fullName;
+
   return (
     <box height={1} style={{ flexDirection: "row", backgroundColor: bg, paddingLeft: 1 }} width={width}>
       <text fg={cursorColor}>{cursor} </text>
       <text fg={letterColor}>{letter} </text>
-      <box style={{ flexGrow: 1, flexDirection: "row", overflow: "hidden" }}>
-        <text fg={theme.textMuted}>{dir}</text>
-        <text fg={theme.text} bold={selected}>{basename}</text>
+      <box style={{ flexGrow: 1, overflow: "hidden" }}>
+        <text fg={theme.text} bold={selected}>{truncName}</text>
       </box>
       <text fg="#2d8a47">+{additions}</text>
       <text fg="#c53b53">-{deletions} </text>
@@ -519,7 +532,7 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   diffRef: React.RefObject<DiffRenderable | null>;
   viewMode: "unified" | "split";
   cursorLine: number;
-  commentedLineIndices: Set<number>;
+  commentedLineIndices: Map<number, "old" | "new" | "both">;
   bottomSlot?: React.ReactNode;
 }) {
   const fileScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
@@ -535,19 +548,50 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   // Clamp file index
   const clampedIdx = Math.min(fileIndex, Math.max(0, files.length - 1));
 
-  // Cursor and comment marker highlighting
+  // Track which rows we've manually colored so we only clear those
+  // (clearAllLineColors wipes the diff's own add/remove background colors)
+  const manualLinesRef = React.useRef<Set<number>>(new Set());
+
   React.useEffect(() => {
-    const dr = diffRef.current;
+    const dr = diffRef.current as any;
     if (!dr) return;
-    dr.clearAllLineColors();
+    const left = dr.leftSide;
+    const right = dr.rightSide;
+
+    // Clear previous manual colors from all targets
+    for (const idx of manualLinesRef.current) {
+      dr.clearLineColor(idx);
+      left?.clearLineColor(idx);
+      right?.clearLineColor(idx);
+    }
+
+    const touched = new Set<number>();
     const commentColor = "#e5c07b";
-    for (const idx of commentedLineIndices) {
-      dr.setLineColor(idx, { gutter: commentColor, content: commentColor + "22" });
+    const colorCfg = { gutter: commentColor, content: commentColor + "22" };
+
+    for (const [idx, side] of commentedLineIndices) {
+      touched.add(idx);
+      if (viewMode === "split" && left && right) {
+        if (side === "old" || side === "both") left.setLineColor(idx, colorCfg);
+        if (side === "new" || side === "both") right.setLineColor(idx, colorCfg);
+      } else {
+        dr.setLineColor(idx, colorCfg);
+      }
     }
+
     if (cursorLine >= 0 && focused && subFocus === "diff") {
-      dr.setLineColor(cursorLine, { gutter: theme.accent, content: theme.accent + "33" });
+      touched.add(cursorLine);
+      const cursorCfg = { gutter: theme.accent, content: theme.accent + "33" };
+      if (viewMode === "split" && left && right) {
+        left.setLineColor(cursorLine, cursorCfg);
+        right.setLineColor(cursorLine, cursorCfg);
+      } else {
+        dr.setLineColor(cursorLine, cursorCfg);
+      }
     }
-  }, [cursorLine, commentedLineIndices, focused, subFocus]);
+
+    manualLinesRef.current = touched;
+  }, [cursorLine, commentedLineIndices, focused, subFocus, viewMode]);
 
   if (loading) {
     return (
@@ -684,29 +728,37 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
 
 // ─── Inline comment form ─────────────────────────────────────────────────────
 
-function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isEditing }: {
+function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isEditing, side, viewMode, canToggle }: {
   fileName: string;
   fileLine?: number;
   onTextChange: (v: string) => void;
   initialValue?: string;
   isEditing?: boolean;
+  side?: "old" | "new";
+  viewMode?: "unified" | "split";
+  canToggle?: boolean;
 }) {
   const loc = fileLine !== undefined ? `${fileName}:${fileLine}` : fileName;
-  return (
+  const isSplit = viewMode === "split";
+  const commentBox = (
     <box
       style={{
         flexShrink: 0,
         minHeight: 8,
         borderStyle: "single",
         borderColor: theme.border,
-        margin: 1,
+        ...(isSplit ? { margin: 0, marginTop: 1, marginBottom: 1 } : { margin: 1 }),
         padding: 1,
         flexDirection: "column",
+        flexGrow: 1,
       }}
     >
       <box flexDirection="row">
         <text fg={theme.textMuted}>{isEditing ? "editing " : "comment on "}</text>
         <text fg={theme.text}>{loc}</text>
+        {canToggle && (
+          <text fg={theme.textMuted}> ({side === "old" ? "old" : "new"})</text>
+        )}
       </box>
       <textarea
         placeholder="Write a comment..."
@@ -716,7 +768,7 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
         style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
       />
       <box flexDirection="row" marginTop={1}>
-        <text fg={theme.text}>ctrl+s</text>
+        <text fg={theme.accent} bold>{"\u21B5"}</text>
         <text fg={theme.textMuted}> {isEditing ? "update" : "submit"}  </text>
         <text fg={theme.text}>esc</text>
         <text fg={theme.textMuted}> cancel</text>
@@ -727,7 +779,25 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
             <text fg={theme.textMuted}> delete</text>
           </>
         )}
+        {canToggle && (
+          <>
+            <text fg={theme.textMuted}>  </text>
+            <text fg={theme.accent}>{"\u2190\u2192"}</text>
+            <text fg={theme.textMuted}> switch side</text>
+          </>
+        )}
       </box>
+    </box>
+  );
+
+  if (!isSplit) return commentBox;
+
+  // In split view, wrap in a row with a spacer so it takes exactly half the width
+  return (
+    <box style={{ flexDirection: "row", flexShrink: 0 }}>
+      {side === "new" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
+      <box style={{ flexGrow: 1, flexBasis: 0 }}>{commentBox}</box>
+      {side === "old" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
     </box>
   );
 }
@@ -803,7 +873,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
             <box flexDirection="row" gap={1}>
               <text fg={theme.warning}>{"\u25CF"} running</text>
               <text fg={theme.textMuted}> </text>
-              <text fg={theme.text} bold>^X</text>
+              <text fg={theme.error} bold>ctrl+x</text>
               <text fg={theme.textMuted}> stop</text>
             </box>
           ) : (
@@ -948,19 +1018,25 @@ function ActionPicker({ entry, options, selected, width }: {
 
 // ─── Empty dashboard (no workstreams selected / no workstreams exist) ─────────
 
-function EmptyDashboard({ onAdd }: { onAdd: () => void }) {
+function EmptyDashboard({ hasWorkstreams }: { hasWorkstreams: boolean }) {
+  const title = hasWorkstreams ? "Add another workstream" : "No workstreams yet";
+  const subtitle = hasWorkstreams
+    ? "Select a workstream on the left, or add a new one."
+    : "Spin up parallel AI agents, each in their own worktree.";
+  const hint = hasWorkstreams ? "to add a new workstream" : "to add your first workstream";
+
   return (
     <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column">
       <box flexDirection="column" alignItems="center" gap={1}>
         <text fg={theme.accent} bold>{"\u2726"}</text>
         <box height={1} />
-        <text fg={theme.text} bold>No workstreams yet</text>
-        <text fg={theme.textMuted}>Spin up parallel AI agents, each in their own worktree.</text>
+        <text fg={theme.text} bold>{title}</text>
+        <text fg={theme.textMuted}>{subtitle}</text>
         <box height={1} />
         <box flexDirection="row">
           <text fg={theme.textMuted}>Press </text>
           <text fg={theme.accent} bold>Enter</text>
-          <text fg={theme.textMuted}> to add your first workstream</text>
+          <text fg={theme.textMuted}> {hint}</text>
         </box>
       </box>
     </box>
@@ -1062,7 +1138,7 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
         <>
           {isAgentActive ? (
             <>
-              <text fg={theme.text}>^X</text>
+              <text fg={theme.error} bold>ctrl+x</text>
               <text fg={theme.textMuted}> stop  </text>
             </>
           ) : (
@@ -1088,9 +1164,9 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> {viewMode}  </text>
         </>
       ) : null}
-      <text fg={theme.text}>{"\u2318"}1</text>
+      <text fg={theme.text}>{"\u2318"} 1</text>
       <text fg={theme.textMuted}> logs  </text>
-      <text fg={theme.text}>{"\u2318"}2</text>
+      <text fg={theme.text}>{"\u2318"} 2</text>
       <text fg={theme.textMuted}> diff  </text>
       <text fg={theme.text}>q</text>
       <text fg={theme.textMuted}> quit</text>
@@ -1141,6 +1217,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [commentFileLine, setCommentFileLine] = React.useState<number | undefined>();
   const [commentLineContent, setCommentLineContent] = React.useState<string | undefined>();
   const commentLineTypeRef = React.useRef<"add" | "remove" | "context" | undefined>();
+  const [commentCanToggle, setCommentCanToggle] = React.useState(false);
   const commentDiffContextRef = React.useRef<string | undefined>();
   const [comments, setComments] = React.useState<WorkstreamComments | null>(null);
   const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
@@ -1161,7 +1238,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const isAddButtonSelected = selectedIdx === entries.length;
   const selectedEntry = isAddButtonSelected ? undefined : entries[selectedIdx];
   const selectedName = selectedEntry?.name ?? "";
-  const selectedStatus = selectedEntry ? options.getWorkstreamStatus(selectedEntry.name) : "ready";
+  const selectedStatus = selectedEntry?.status ?? "ready";
   const hasOverlay = showActionPicker;
   const chatInputFocused = focusPanel === "right" && rightMode === "logs" && !showActionPicker;
   const isAgentActive = selectedEntry?.status === "running" || selectedEntry?.status === "queued";
@@ -1198,21 +1275,61 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   );
 
   const commentedLineIndices = React.useMemo(() => {
-    const result = new Set<number>();
+    const result = new Map<number, "old" | "new" | "both">();
     const annotated = fileComments.filter((c: ReviewComment) => c.line !== undefined);
     if (annotated.length === 0) return result;
-    lineMap.forEach((info: LineInfo, idx: number) => {
-      for (const c of annotated) {
-        if (info.type === "add" && info.newLine === c.line && c.side !== "old") result.add(idx);
-        else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") result.add(idx);
-        else if (info.type === "context") {
-          if (info.newLine === c.line && c.side === "new") result.add(idx);
-          else if (info.oldLine === c.line && c.side === "old") result.add(idx);
+
+    const addSide = (row: number, side: "old" | "new") => {
+      const existing = result.get(row);
+      if (!existing) result.set(row, side);
+      else if (existing !== side) result.set(row, "both");
+    };
+
+    if (viewMode === "split") {
+      // In split view, query the renderable directly for row→lineNumber mappings
+      const dr = diffElementRef.current as any;
+      if (dr) {
+        const leftNums: Map<number, number> | undefined = dr.leftSide?.getLineNumbers();
+        const rightNums: Map<number, number> | undefined = dr.rightSide?.getLineNumbers();
+        const leftSigns: Map<number, any> | undefined = dr.leftSide?.getLineSigns();
+        const rightSigns: Map<number, any> | undefined = dr.rightSide?.getLineSigns();
+        const rowCount = Math.max(leftNums?.size ?? 0, rightNums?.size ?? 0);
+        for (let row = 0; row < rowCount; row++) {
+          for (const c of annotated) {
+            if (c.side === "old" || c.side === undefined) {
+              const num = leftNums?.get(row);
+              if (num === c.line) {
+                const sign = leftSigns?.get(row)?.after?.trim();
+                if (sign === "-" && (c.lineType === "remove" || !c.lineType)) addSide(row, "old");
+                else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "old");
+              }
+            }
+            if (c.side === "new" || c.side === undefined) {
+              const num = rightNums?.get(row);
+              if (num === c.line) {
+                const sign = rightSigns?.get(row)?.after?.trim();
+                if (sign === "+" && (c.lineType === "add" || !c.lineType)) addSide(row, "new");
+                else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "new");
+              }
+            }
+          }
         }
       }
-    });
+    } else {
+      // Unified view: each line maps to its stored side
+      lineMap.forEach((info: LineInfo, idx: number) => {
+        for (const c of annotated) {
+          if (info.type === "add" && info.newLine === c.line && c.side !== "old") addSide(idx, c.side ?? "new");
+          else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") addSide(idx, c.side ?? "old");
+          else if (info.type === "context") {
+            if (info.newLine === c.line && c.side === "new") addSide(idx, "new");
+            else if (info.oldLine === c.line && c.side === "old") addSide(idx, "old");
+          }
+        }
+      });
+    }
     return result;
-  }, [fileComments, lineMap]);
+  }, [fileComments, lineMap, viewMode]);
 
   // ─── Spinner animation ─────────────────────────────────────
   React.useEffect(() => {
@@ -1311,7 +1428,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   // ─── Reset cursor when diff file changes ───────────────────
   React.useEffect(() => {
     setCursorLine(0);
-    diffElementRef.current?.clearAllLineColors();
     setEditingCommentIndex(null);
   }, [diffFileIndex]);
 
@@ -1445,8 +1561,35 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     // ─── Comment form mode ──────────────────────────────
     if (showCommentForm) {
       if (n === "escape") { setShowCommentForm(false); return; }
-      if (key.ctrl && n === "s") { handleCommentSubmit(); return; }
+      if (n === "return" && !key.shift) { handleCommentSubmit(); return; }
       if (key.ctrl && n === "d" && editingCommentIndex !== null) { handleCommentDelete(); return; }
+      // Toggle comment side with arrow keys in split view
+      if (viewMode === "split" && (n === "left" || n === "right")) {
+        const newSide = n === "left" ? "old" : "new";
+        if (newSide !== commentSide) {
+          // Re-query the other side's line info
+          const dr = diffElementRef.current as any;
+          if (dr) {
+            const panel = newSide === "old" ? dr.leftSide : dr.rightSide;
+            if (panel) {
+              const num = panel.getLineNumbers()?.get(cursorLine);
+              if (num !== undefined) {
+                const getContent = (side: any, idx: number): string | undefined => {
+                  const content: string | undefined = side?.target?.content;
+                  if (!content) return undefined;
+                  return content.split("\n")[idx];
+                };
+                const sign = panel.getLineSigns()?.get(cursorLine)?.after?.trim();
+                setCommentSide(newSide);
+                setCommentFileLine(num);
+                setCommentLineContent(getContent(panel, cursorLine));
+                commentLineTypeRef.current = sign === "-" ? "remove" : sign === "+" ? "add" : "context";
+              }
+            }
+          }
+        }
+        return;
+      }
       return; // let textarea handle other keys
     }
 
@@ -1485,6 +1628,9 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
             }
             const sent = await options.onSendPrompt(name, prompt);
             if (sent) {
+              await saveComments({ workstream: name, comments: [], updatedAt: new Date().toISOString() });
+              setComments({ workstream: name, comments: [], updatedAt: new Date().toISOString() });
+              setEntries(prev => prev.map(e => e.name === name ? { ...e, status: "running" } : e));
               setRightMode("logs");
               setFollow(true);
               setFlashMessage(`\u2714 Resumed with ${data.comments.length} comment${data.comments.length !== 1 ? "s" : ""}`);
@@ -1539,12 +1685,17 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       if (n === "return") {
         const prompt = chatInputValueRef.current.trim();
         if (prompt && selectedEntry && !isAgentActive) {
-          options.onSendPrompt(selectedEntry.name, prompt).then((sent) => {
+          const entryName = selectedEntry.name;
+          options.onSendPrompt(entryName, prompt).then((sent) => {
             if (!sent) {
+              // Revert optimistic status
+              setEntries(prev => prev.map(e => e.name === entryName ? { ...e, status: e.status } : e));
               setFlashMessage("Agent is busy — try again in a moment");
               setTimeout(() => setFlashMessage(null), 2000);
             }
           });
+          // Optimistically mark as running so spinner appears immediately
+          setEntries(prev => prev.map(e => e.name === entryName ? { ...e, status: "running" } : e));
           chatInputValueRef.current = "";
           setChatInputKey(k => k + 1);
           setFollow(true);
@@ -1553,7 +1704,11 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       }
       if (key.ctrl && n === "x") {
         if (selectedEntry && isAgentActive) {
-          options.onInterrupt(selectedEntry.name);
+          const entryName = selectedEntry.name;
+          options.onInterrupt(entryName);
+          setEntries(prev => prev.map(e => e.name === entryName ? { ...e, status: "interrupted" } : e));
+          setFlashMessage("Interrupted \u00b7 What should we do instead?");
+          setTimeout(() => setFlashMessage(null), 3000);
         }
         return;
       }
@@ -1707,9 +1862,36 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       if (n === "c") {
         const info = queryRendererLine(diffElementRef, cursorLine, viewMode);
         if (!info) return;
-        const existingIdx = comments?.comments.findIndex(
-          c => c.filePath === currentFileName && c.line === info.line && c.side === info.side
-        ) ?? -1;
+
+        // Find existing comment — in split view, also check the other side
+        // since the highlight may be on a row where queryRendererLine picks one side
+        // but the comment was stored on the other
+        let existingIdx = -1;
+        if (comments?.comments) {
+          const fileComms = comments.comments;
+          // First try exact match
+          existingIdx = fileComms.findIndex(
+            c => c.filePath === currentFileName && c.line === info.line && c.side === info.side
+          );
+          // In split view, also try the other side's line number at this row
+          if (existingIdx < 0 && viewMode === "split") {
+            const dr = diffElementRef.current as any;
+            const otherPanel = info.side === "old" ? dr?.rightSide : dr?.leftSide;
+            const otherSide = info.side === "old" ? "new" : "old";
+            const otherNum = otherPanel?.getLineNumbers()?.get(cursorLine);
+            if (otherNum !== undefined) {
+              existingIdx = fileComms.findIndex(
+                c => c.filePath === currentFileName && c.line === otherNum && c.side === otherSide
+              );
+              if (existingIdx >= 0) {
+                // Switch info to match the found comment's side
+                info.side = otherSide as "old" | "new";
+                info.line = otherNum;
+              }
+            }
+          }
+        }
+
         if (existingIdx >= 0) {
           commentTextRef.current = comments!.comments[existingIdx].text;
           setEditingCommentIndex(existingIdx);
@@ -1722,6 +1904,15 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         setCommentSide(info.side);
         setCommentFileLine(info.line);
         setCommentLineContent(info.lineContent);
+        // Check if both sides have content at this row (toggleable in split view)
+        if (viewMode === "split") {
+          const dr = diffElementRef.current as any;
+          const hasLeft = dr?.leftSide?.getLineNumbers()?.get(cursorLine) !== undefined;
+          const hasRight = dr?.rightSide?.getLineNumbers()?.get(cursorLine) !== undefined;
+          setCommentCanToggle(hasLeft && hasRight);
+        } else {
+          setCommentCanToggle(false);
+        }
         setShowCommentForm(true);
         return;
       }
@@ -1761,10 +1952,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         {/* Right: Tabs + content */}
         <box flexDirection="column" flexGrow={1} flexShrink={1}>
           {isAddButtonSelected ? (
-            <EmptyDashboard onAdd={() => {
-              addModalNameRef.current = "";
-              setShowAddModal(true);
-            }} />
+            <EmptyDashboard hasWorkstreams={entries.length > 0} />
           ) : (
           <>
           <RightPanelTabs
@@ -1836,6 +2024,9 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                       onTextChange={(v) => { commentTextRef.current = v; }}
                       initialValue={editingCommentIndex !== null ? comments?.comments[editingCommentIndex]?.text : undefined}
                       isEditing={editingCommentIndex !== null}
+                      side={commentSide}
+                      viewMode={viewMode}
+                      canToggle={commentCanToggle}
                     />
                   )}
                 </>
