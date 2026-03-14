@@ -1951,12 +1951,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         }
         return;
       }
-      // 'a' hotkey — open add modal from anywhere in the list
-      if (n === "a") {
-        addModalNameRef.current = "";
-        setShowAddModal(true);
-        return;
-      }
       if (n === "right") {
         if (!isAddButtonSelected) setFocusPanel("right");
         return;
