@@ -10,7 +10,10 @@ import {
   addDefaultParsers,
   type ScrollBoxRenderable,
   type DiffRenderable,
+  type PasteEvent,
 } from "@opentuah/core";
+import { existsSync, statSync } from "fs";
+import { basename, resolve as resolvePath } from "path";
 import {
   createRoot,
   useKeyboard,
@@ -73,6 +76,91 @@ interface ActionOption {
   label: string;
   description: string;
   action: DashboardAction["type"] | "resume-with-comments";
+}
+
+// ─── File attachments ─────────────────────────────────────────────────────────
+
+interface Attachment {
+  path: string;
+  name: string;
+  type: "image" | "file";
+}
+
+const IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff", ".tif",
+]);
+
+function getFileExtension(filePath: string): string {
+  const dot = filePath.lastIndexOf(".");
+  return dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
+}
+
+function isImageFile(filePath: string): boolean {
+  return IMAGE_EXTENSIONS.has(getFileExtension(filePath));
+}
+
+/** Try to resolve a pasted string as one or more file paths. */
+function parseFilePathsFromPaste(text: string): Attachment[] {
+  const attachments: Attachment[] = [];
+  // Handle multiple paths separated by newlines or spaces (macOS Finder drops multiple paths)
+  const candidates = text.split(/[\n\r]+/).flatMap(line => {
+    // If the line itself looks like a single path, use it directly
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+    // macOS Finder escapes spaces with backslash; unescape
+    const unescaped = trimmed.replace(/\\ /g, " ");
+    if (unescaped.startsWith("/") || unescaped.startsWith("~")) return [unescaped];
+    // Relative path starting with ./
+    if (unescaped.startsWith("./") || unescaped.startsWith("../")) return [unescaped];
+    return [];
+  });
+
+  for (const raw of candidates) {
+    const resolved = raw.startsWith("~")
+      ? raw.replace(/^~/, process.env.HOME ?? "")
+      : resolvePath(raw);
+    try {
+      const stat = statSync(resolved);
+      if (stat.isFile()) {
+        attachments.push({
+          path: resolved,
+          name: basename(resolved),
+          type: isImageFile(resolved) ? "image" : "file",
+        });
+      }
+    } catch {
+      // Not a valid file path — ignore
+    }
+  }
+  return attachments;
+}
+
+function formatPromptWithAttachments(prompt: string, attachments: Attachment[]): string {
+  if (attachments.length === 0) return prompt;
+  const refs = attachments.map(a =>
+    a.type === "image"
+      ? `[Image: ${a.path}]`
+      : `[File: ${a.path}]`
+  );
+  return refs.join("\n") + "\n\n" + prompt;
+}
+
+// ─── Attachment pills component ──────────────────────────────────────────────
+
+function AttachmentPills({ attachments }: { attachments: Attachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <box flexDirection="row" flexWrap="wrap" gap={1} style={{ marginTop: 0 }}>
+      {attachments.map((a, i) => (
+        <box key={i} flexDirection="row">
+          <text fg={a.type === "image" ? theme.accent : theme.textMuted}>
+            {a.type === "image" ? "\u25A3 " : "\u25A1 "}
+          </text>
+          <text fg={theme.text}>{a.name}</text>
+        </box>
+      ))}
+    </box>
+  );
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -749,15 +837,17 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus, attachments }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   onFocus?: () => void;
+  attachments?: Attachment[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
+  const hasAttachments = (attachments?.length ?? 0) > 0;
 
   return (
     <box
@@ -779,6 +869,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
           paddingRight: 1,
         }}
       >
+        {hasAttachments && <AttachmentPills attachments={attachments!} />}
         <textarea
           key={inputKey}
           placeholder={isRunning ? "Agent is working..." : "Message claude..."}
@@ -808,6 +899,12 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
             </box>
           ) : (
             <box flexDirection="row" gap={1}>
+              {hasAttachments && (
+                <>
+                  <text fg={theme.textMuted}>bksp</text>
+                  <text fg={theme.textMuted}> remove  </text>
+                </>
+              )}
               <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
               <text fg={theme.textMuted}> send</text>
             </box>
@@ -823,15 +920,17 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus, attachments }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   initialValue?: string;
   onFocus?: () => void;
+  attachments?: Attachment[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
+  const hasAttachments = (attachments?.length ?? 0) > 0;
 
   return (
     <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column" onMouseDown={onFocus}>
@@ -852,6 +951,7 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
           paddingRight: 1,
         }}
       >
+        {hasAttachments && <AttachmentPills attachments={attachments!} />}
         <textarea
           key={inputKey}
           placeholder={"Message claude..."}
@@ -873,15 +973,22 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
         >
           <box flexGrow={1} />
           <box flexDirection="row" gap={1}>
+            {hasAttachments && (
+              <>
+                <text fg={theme.textMuted}>bksp</text>
+                <text fg={theme.textMuted}> remove  </text>
+              </>
+            )}
             <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
             <text fg={theme.textMuted}> send</text>
           </box>
         </box>
       </box>
-      {/* Model name below */}
-      <box flexDirection="row" justifyContent="center" marginTop={1}>
+      {/* Model name + drop hint below */}
+      <box flexDirection="row" justifyContent="center" marginTop={1} gap={2}>
         <text fg={theme.accent}>{"\u2726"} </text>
         <text fg={theme.textMuted}>{displayModel}</text>
+        <text fg={theme.textMuted}>  drop files to attach</text>
       </box>
     </box>
   );
@@ -1029,12 +1136,13 @@ function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 
-function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }: {
+function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode, hasAttachments }: {
   focusPanel: FocusPanel;
   rightMode: RightMode;
   isAgentActive: boolean;
   diffSubFocus: "files" | "diff";
   viewMode: "unified" | "split";
+  hasAttachments?: boolean;
 }) {
   const inChatInput = focusPanel === "right" && rightMode === "logs";
 
@@ -1073,6 +1181,18 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           )}
           <text fg={theme.text}>{"↑↓"}</text>
           <text fg={theme.textMuted}> scroll  </text>
+          {!isAgentActive && (
+            <>
+              <text fg={theme.textMuted}>{"\u2502"} drop files to attach</text>
+              {hasAttachments && (
+                <>
+                  <text fg={theme.textMuted}>  </text>
+                  <text fg={theme.text}>bksp</text>
+                  <text fg={theme.textMuted}> remove</text>
+                </>
+              )}
+            </>
+          )}
         </>
       ) : rightMode === "diff" ? (
         <>
@@ -1156,6 +1276,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
   const chatInputValueRef = React.useRef("");
+  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
 
   // ─── Derived ─────────────────────────────────────────────────
   const isAddButtonSelected = selectedIdx === entries.length;
@@ -1406,6 +1527,28 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setTimeout(() => setFlashMessage(null), 1500);
   };
 
+  // ─── Paste listener for file drag-and-drop ──────────────────
+  React.useEffect(() => {
+    const handler = (event: PasteEvent) => {
+      // Only intercept paste when chat input is focused
+      if (focusPanel !== "right" || rightMode !== "logs" || showActionPicker) return;
+
+      const parsed = parseFilePathsFromPaste(event.text);
+      if (parsed.length === 0) return;
+
+      // Prevent the textarea from inserting the file path as text
+      event.preventDefault();
+      setAttachments(prev => [...prev, ...parsed]);
+    };
+    renderer.keyInput.on("paste", handler);
+    return () => { renderer.keyInput.off("paste", handler); };
+  }, [focusPanel, rightMode, showActionPicker, renderer]);
+
+  // Clear attachments when switching workstreams
+  React.useEffect(() => {
+    setAttachments([]);
+  }, [selectedIdx]);
+
   // ─── Keyboard handler ──────────────────────────────────────
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
@@ -1537,18 +1680,27 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     // Must be before global keys so printable chars go to textarea
     if (chatInputFocused) {
       if (n === "return") {
-        const prompt = chatInputValueRef.current.trim();
-        if (prompt && selectedEntry && !isAgentActive) {
+        const rawPrompt = chatInputValueRef.current.trim();
+        const hasContent = rawPrompt || attachments.length > 0;
+        if (hasContent && selectedEntry && !isAgentActive) {
+          const prompt = formatPromptWithAttachments(rawPrompt, attachments);
           options.onSendPrompt(selectedEntry.name, prompt).then((sent) => {
             if (!sent) {
-              setFlashMessage("Agent is busy — try again in a moment");
+              setFlashMessage("Agent is busy \u2014 try again in a moment");
               setTimeout(() => setFlashMessage(null), 2000);
             }
           });
           chatInputValueRef.current = "";
+          setAttachments([]);
           setChatInputKey(k => k + 1);
           setFollow(true);
         }
+        return;
+      }
+      // Remove last attachment with backspace when input is empty
+      if (n === "backspace" && chatInputValueRef.current === "" && attachments.length > 0) {
+        key.preventDefault();
+        setAttachments(prev => prev.slice(0, -1));
         return;
       }
       if (key.ctrl && n === "x") {
@@ -1784,6 +1936,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
                   initialValue={selectedEntry?.prompt}
                   onFocus={() => setFocusPanel("right")}
+                  attachments={attachments}
                 />
               ) : (
                 <>
@@ -1806,6 +1959,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     inputKey={chatInputKey}
                     onInput={(v: string) => { chatInputValueRef.current = v; }}
                     onFocus={() => setFocusPanel("right")}
+                    attachments={attachments}
                   />
                 </>
               )}
@@ -1848,7 +2002,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       </box>
 
       {/* Footer */}
-      <Footer focusPanel={focusPanel} rightMode={rightMode} isAgentActive={isAgentActive} diffSubFocus={diffSubFocus} viewMode={viewMode}/>
+      <Footer focusPanel={focusPanel} rightMode={rightMode} isAgentActive={isAgentActive} diffSubFocus={diffSubFocus} viewMode={viewMode} hasAttachments={attachments.length > 0}/>
       {/* Overlays */}
       {showActionPicker && selectedEntry && (
         <ActionPicker
