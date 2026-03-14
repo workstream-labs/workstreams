@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exit on error (-e), undefined variable (-u), or pipe failure (-o pipefail)
 set -euo pipefail
 
 REPO="workstream-labs/workstreams"
