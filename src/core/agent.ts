@@ -1,3 +1,4 @@
+import { resolve } from "path";
 import type { AgentConfig } from "./types";
 import { AgentError } from "./errors";
 
@@ -35,6 +36,7 @@ export interface AgentResult {
 export class AgentAdapter {
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const { workDir, prompt, logFile, agentConfig } = options;
+    const absWorkDir = resolve(workDir);
 
     const autoAcceptFlags = getAutoAcceptFlags(agentConfig);
     const args = [...autoAcceptFlags, ...(agentConfig.args ?? []), prompt];
@@ -60,7 +62,7 @@ export class AgentAdapter {
 
     try {
       const proc = Bun.spawn([agentConfig.command, ...args], {
-        cwd: workDir,
+        cwd: absWorkDir,
         env,
         stdout: "pipe",
         stderr: "pipe",
@@ -132,7 +134,7 @@ export class AgentAdapter {
 
       // Auto-commit any changes the agent made
       if (exitCode === 0) {
-        await this.autoCommit(workDir, appendLog);
+        await this.autoCommit(absWorkDir, appendLog);
       }
 
       return { exitCode, sessionId };

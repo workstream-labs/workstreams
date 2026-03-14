@@ -11,7 +11,6 @@ import { diffCommand } from "./cli/diff";
 
 import { dashboardCommand } from "./cli/dashboard";
 import { viewCommand } from "./cli/view";
-import { promptCommand } from "./cli/prompt";
 import { checkoutCommand } from "./cli/checkout";
 
 
@@ -42,7 +41,6 @@ Key options:
   diff      --raw                  Print raw diff instead of interactive viewer
   destroy   --all                  Remove all worktrees, config, and state
             -y, --yes              Skip confirmation prompt
-  prompt    -p, --prompt <text>    Set or update a workstream's prompt
   view      -e, --editor <editor>  Open in a specific editor
             --no-editor            Print worktree path without opening editor
 Run "ws <command> --help" for detailed usage and examples.
@@ -56,7 +54,6 @@ program.addCommand(dashboardCommand());
 program.addCommand(viewCommand());
 program.addCommand(diffCommand());
 program.addCommand(destroyCommand());
-program.addCommand(promptCommand());
 program.addCommand(checkoutCommand());
 
 program.parse();

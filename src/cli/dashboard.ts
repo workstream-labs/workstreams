@@ -193,8 +193,9 @@ async function actionOpenSession(name: string, ws: WorkstreamState, state: Proje
     return;
   }
 
+  const absWorktreePath = resolve(ws.worktreePath);
   const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
-    cwd: ws.worktreePath,
+    cwd: absWorktreePath,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -204,11 +205,11 @@ async function actionOpenSession(name: string, ws: WorkstreamState, state: Proje
   console.log(`\nReturned from Claude session for "${name}".`);
 
   const { $ } = await import("bun");
-  const gitStatus = await $`git -C ${ws.worktreePath} status --porcelain`.quiet().catch(() => null);
+  const gitStatus = await $`git -C ${absWorktreePath} status --porcelain`.quiet().catch(() => null);
   const changes = gitStatus?.stdout.toString().trim();
   if (changes) {
-    await $`git -C ${ws.worktreePath} add -A`.quiet().catch(() => {});
-    await $`git -C ${ws.worktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
+    await $`git -C ${absWorktreePath} add -A`.quiet().catch(() => {});
+    await $`git -C ${absWorktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
   }
 
   ws.status = exitCode === 0 ? "success" : "failed";

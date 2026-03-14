@@ -136,15 +136,6 @@ ws view add-tests --no-editor  # print the worktree path
 
 Supported editors: VS Code (`code`), Cursor, Zed, Windsurf, WebStorm. Your choice is remembered for future sessions.
 
-### `ws prompt <name>`
-
-Set or update the prompt for a workstream.
-
-```bash
-ws prompt add-tests -p "Add unit tests for all API routes"
-ws prompt add-tests                # interactive prompt input
-```
-
 ### `ws checkout <name>`
 
 Print the worktree path for a workstream. Useful for navigating to worktrees in your shell.
@@ -197,7 +188,6 @@ src/
     dashboard.ts      # ws dashboard (interactive TUI)
     view.ts           # ws view (open in editor)
     diff.ts           # ws diff
-    prompt.ts         # ws prompt
     checkout.ts       # ws checkout
     destroy.ts        # ws destroy
   core/
