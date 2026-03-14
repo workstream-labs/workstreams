@@ -76,24 +76,38 @@ Displays: status icon, name, sync status (ahead/behind), diff stats, duration, c
 
 ---
 
-## `ws switch [name]`
+## `ws dashboard`
 
-Open interactive dashboard or jump to a workstream in your editor.
+Open the interactive TUI dashboard.
 
 ```bash
-ws switch [name] [options]
+ws dashboard
+```
+
+Displays all workstreams as cards with status, diff stats, and commit info. Select a workstream and choose an action: open in editor, view diff, resume, set prompt, and more.
+
+See [Dashboard](/guide/dashboard) for keyboard shortcuts.
+
+---
+
+## `ws view <name>`
+
+Open a workstream in your editor or print its worktree path.
+
+```bash
+ws view <name> [options]
 ```
 
 | Argument | Description |
 |---|---|
-| `name` | Open this workstream directly (skip dashboard) |
+| `name` | Workstream to open |
 
 | Option | Description |
 |---|---|
 | `-e, --editor <editor>` | Editor to use (`code`, `cursor`, `zed`, `windsurf`, `webstorm`) |
 | `--no-editor` | Print worktree path instead of opening editor |
 
-Without a name, opens the interactive dashboard. See [Dashboard](/guide/dashboard) for keyboard shortcuts.
+Creates the worktree if it doesn't exist yet. Your editor choice is remembered for future sessions.
 
 ---
 
@@ -117,24 +131,22 @@ Opens the interactive diff viewer for a single workstream. Shows raw diffs for m
 
 ---
 
-## `ws resume <name>`
+## `ws checkout <name>`
 
-Resume a workstream with new instructions.
+Print the worktree path for a workstream. Useful for shell navigation.
 
 ```bash
-ws resume <name> [options]
+ws checkout <name>
 ```
 
 | Argument | Description |
 |---|---|
-| `name` | Workstream to resume |
+| `name` | Workstream name |
 
-| Option | Description |
-|---|---|
-| `-p, --prompt <text>` | New instructions for the agent |
-| `--comments` | Include stored review comments |
-
-Combines comments + pending prompt + `-p` text. Clears comments and pending prompts on success.
+```bash
+cd $(ws checkout auth)     # navigate to the worktree
+ws checkout auth           # print the absolute path
+```
 
 ---
 
