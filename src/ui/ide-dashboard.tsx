@@ -10,7 +10,10 @@ import {
   addDefaultParsers,
   type ScrollBoxRenderable,
   type DiffRenderable,
+  type PasteEvent,
 } from "@opentuah/core";
+import { existsSync, statSync } from "fs";
+import { basename, resolve as resolvePath } from "path";
 import {
   createRoot,
   useKeyboard,
@@ -73,6 +76,91 @@ interface ActionOption {
   label: string;
   description: string;
   action: DashboardAction["type"] | "resume-with-comments";
+}
+
+// ─── File attachments ─────────────────────────────────────────────────────────
+
+interface Attachment {
+  path: string;
+  name: string;
+  type: "image" | "file";
+}
+
+const IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff", ".tif",
+]);
+
+function getFileExtension(filePath: string): string {
+  const dot = filePath.lastIndexOf(".");
+  return dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
+}
+
+function isImageFile(filePath: string): boolean {
+  return IMAGE_EXTENSIONS.has(getFileExtension(filePath));
+}
+
+/** Try to resolve a pasted string as one or more file paths. */
+function parseFilePathsFromPaste(text: string): Attachment[] {
+  const attachments: Attachment[] = [];
+  // Handle multiple paths separated by newlines or spaces (macOS Finder drops multiple paths)
+  const candidates = text.split(/[\n\r]+/).flatMap(line => {
+    // If the line itself looks like a single path, use it directly
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+    // macOS Finder escapes spaces with backslash; unescape
+    const unescaped = trimmed.replace(/\\ /g, " ");
+    if (unescaped.startsWith("/") || unescaped.startsWith("~")) return [unescaped];
+    // Relative path starting with ./
+    if (unescaped.startsWith("./") || unescaped.startsWith("../")) return [unescaped];
+    return [];
+  });
+
+  for (const raw of candidates) {
+    const resolved = raw.startsWith("~")
+      ? raw.replace(/^~/, process.env.HOME ?? "")
+      : resolvePath(raw);
+    try {
+      const stat = statSync(resolved);
+      if (stat.isFile()) {
+        attachments.push({
+          path: resolved,
+          name: basename(resolved),
+          type: isImageFile(resolved) ? "image" : "file",
+        });
+      }
+    } catch {
+      // Not a valid file path — ignore
+    }
+  }
+  return attachments;
+}
+
+function formatPromptWithAttachments(prompt: string, attachments: Attachment[]): string {
+  if (attachments.length === 0) return prompt;
+  const refs = attachments.map(a =>
+    a.type === "image"
+      ? `[Image: ${a.path}]`
+      : `[File: ${a.path}]`
+  );
+  return refs.join("\n") + "\n\n" + prompt;
+}
+
+// ─── Attachment pills component ──────────────────────────────────────────────
+
+function AttachmentPills({ attachments }: { attachments: Attachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <box flexDirection="row" flexWrap="wrap" gap={1} style={{ marginTop: 0 }}>
+      {attachments.map((a, i) => (
+        <box key={i} flexDirection="row">
+          <text fg={a.type === "image" ? theme.accent : theme.textMuted}>
+            {a.type === "image" ? "\u25A3 " : "\u25A1 "}
+          </text>
+          <text fg={theme.text}>{a.name}</text>
+        </box>
+      ))}
+    </box>
+  );
 }
 
 // ─── Action picker options (reused from workstream-picker logic) ─────────────
@@ -265,31 +353,36 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
     ? focused ? theme.accent + "33" : "#264F7822"
     : undefined;
 
-  const nameMaxW = width - 6;
-  const displayName = entry.name.length > nameMaxW
-    ? entry.name.slice(0, nameMaxW - 1) + "\u2026"
-    : entry.name;
-
-  // Brief metadata
+  // Brief metadata — compute first so we can subtract its width from the name budget
   let meta = "";
   if (entry.status === "running") meta = "running";
   else if (entry.filesChanged > 0) meta = `+${entry.additions} -${entry.deletions}`;
   else if (!entry.hasWorktree) meta = "no tree";
 
-  const promptMaxW = width - 5;
+  // Content width = width - paddingLeft(2)
+  // Row 1: "icon name" with optional right-aligned meta
+  // "▶ " = 2 chars for icon+space, then name, then " meta " on the right
+  const contentW = width - 2; // paddingLeft
+  const metaLen = meta ? meta.length + 1 : 0; // +1 for trailing space
+  const nameMaxW = Math.max(4, contentW - 2 - metaLen); // 2 = icon + space
+  const displayName = entry.name.length > nameMaxW
+    ? entry.name.slice(0, nameMaxW - 1) + "\u2026"
+    : entry.name;
+
+  const promptMaxW = contentW - 2; // indented under name
   const promptDisplay = entry.prompt
     ? (entry.prompt.length > promptMaxW ? entry.prompt.slice(0, promptMaxW - 1) + "\u2026" : entry.prompt)
     : "(no prompt)";
 
   return (
-    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1 }} width={width}>
-      <box flexDirection="row" gap={1}>
-        <text fg={st.color}>{icon}</text>
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 2, overflow: "hidden" }} width={width}>
+      <box flexDirection="row" style={{ overflow: "hidden" }}>
+        <text fg={st.color}>{icon} </text>
         <text fg={selected ? theme.text : theme.textMuted} bold={selected}>{displayName}</text>
         <box flexGrow={1} />
         {meta && <text fg={theme.textMuted}>{meta} </text>}
       </box>
-      <text fg={theme.textMuted} paddingLeft={3}>{promptDisplay}</text>
+      <text fg={theme.textMuted} paddingLeft={2}>{promptDisplay}</text>
     </box>
   );
 }
@@ -306,12 +399,12 @@ function AddWorkstreamButton({ selected, focused, width }: {
     : undefined;
 
   return (
-    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1 }} width={width}>
-      <box flexDirection="row" gap={1}>
-        <text fg={selected && focused ? theme.accent : theme.textMuted}>+</text>
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 2 }} width={width}>
+      <box flexDirection="row">
+        <text fg={selected && focused ? theme.accent : theme.textMuted}>+ </text>
         <text fg={selected ? theme.text : theme.textMuted} bold={selected}>Add workstream</text>
       </box>
-      <text fg={theme.textMuted} paddingLeft={3}>Create a new workstream node</text>
+      <text fg={theme.textMuted} paddingLeft={2}>Create a new workstream node</text>
     </box>
   );
 }
@@ -819,15 +912,17 @@ function formatModelName(model: string): string {
 
 // ─── Chat input ──────────────────────────────────────────────────────────────
 
-function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }: {
+function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus, attachments }: {
   modelName: string | undefined;
   isRunning: boolean;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   onFocus?: () => void;
+  attachments?: Attachment[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
+  const hasAttachments = (attachments?.length ?? 0) > 0;
 
   return (
     <box
@@ -849,6 +944,7 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
           paddingRight: 1,
         }}
       >
+        {hasAttachments && <AttachmentPills attachments={attachments!} />}
         <textarea
           key={inputKey}
           placeholder={isRunning ? "Agent is working..." : "Message claude..."}
@@ -878,6 +974,12 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
             </box>
           ) : (
             <box flexDirection="row" gap={1}>
+              {hasAttachments && (
+                <>
+                  <text fg={theme.textMuted}>bksp</text>
+                  <text fg={theme.textMuted}> remove  </text>
+                </>
+              )}
               <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
               <text fg={theme.textMuted}> send</text>
             </box>
@@ -893,15 +995,17 @@ function ChatInput({ modelName, isRunning, focused, inputKey, onInput, onFocus }
   );
 }
 
-function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus }: {
+function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue, onFocus, attachments }: {
   modelName: string | undefined;
   focused: boolean;
   inputKey: number;
   onInput: (v: string) => void;
   initialValue?: string;
   onFocus?: () => void;
+  attachments?: Attachment[];
 }) {
   const displayModel = modelName ? formatModelName(modelName) : "claude";
+  const hasAttachments = (attachments?.length ?? 0) > 0;
 
   return (
     <box flexGrow={1} justifyContent="center" alignItems="center" flexDirection="column" onMouseDown={onFocus}>
@@ -922,6 +1026,7 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
           paddingRight: 1,
         }}
       >
+        {hasAttachments && <AttachmentPills attachments={attachments!} />}
         <textarea
           key={inputKey}
           placeholder={"Message claude..."}
@@ -943,15 +1048,22 @@ function WelcomeChatInput({ modelName, focused, inputKey, onInput, initialValue,
         >
           <box flexGrow={1} />
           <box flexDirection="row" gap={1}>
+            {hasAttachments && (
+              <>
+                <text fg={theme.textMuted}>bksp</text>
+                <text fg={theme.textMuted}> remove  </text>
+              </>
+            )}
             <text fg={focused ? theme.accent : theme.textMuted} bold>{"\u21B5"}</text>
             <text fg={theme.textMuted}> send</text>
           </box>
         </box>
       </box>
-      {/* Model name below */}
-      <box flexDirection="row" justifyContent="center" marginTop={1}>
+      {/* Model name + drop hint below */}
+      <box flexDirection="row" justifyContent="center" marginTop={1} gap={2}>
         <text fg={theme.accent}>{"\u2726"} </text>
         <text fg={theme.textMuted}>{displayModel}</text>
+        <text fg={theme.textMuted}>  drop files to attach</text>
       </box>
     </box>
   );
@@ -1105,12 +1217,13 @@ function AddWorkstreamModal({ onNameInput, panelLeft, panelWidth }: {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 
-function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }: {
+function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode, hasAttachments }: {
   focusPanel: FocusPanel;
   rightMode: RightMode;
   isAgentActive: boolean;
   diffSubFocus: "files" | "diff";
   viewMode: "unified" | "split";
+  hasAttachments?: boolean;
 }) {
   const inChatInput = focusPanel === "right" && rightMode === "logs";
 
@@ -1149,6 +1262,18 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           )}
           <text fg={theme.text}>{"↑↓"}</text>
           <text fg={theme.textMuted}> scroll  </text>
+          {!isAgentActive && (
+            <>
+              <text fg={theme.textMuted}>{"\u2502"} drop files to attach</text>
+              {hasAttachments && (
+                <>
+                  <text fg={theme.textMuted}>  </text>
+                  <text fg={theme.text}>bksp</text>
+                  <text fg={theme.textMuted}> remove</text>
+                </>
+              )}
+            </>
+          )}
         </>
       ) : rightMode === "diff" ? (
         <>
@@ -1164,12 +1289,16 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> {viewMode}  </text>
         </>
       ) : null}
-      <text fg={theme.text}>L</text>
-      <text fg={theme.textMuted}> logs  </text>
-      <text fg={theme.text}>D</text>
-      <text fg={theme.textMuted}> diff  </text>
-      <text fg={theme.text}>q</text>
-      <text fg={theme.textMuted}> quit</text>
+      {!inChatInput && (
+        <>
+          <text fg={theme.text}>L</text>
+          <text fg={theme.textMuted}> logs  </text>
+          <text fg={theme.text}>D</text>
+          <text fg={theme.textMuted}> diff  </text>
+          <text fg={theme.text}>q</text>
+          <text fg={theme.textMuted}> quit</text>
+        </>
+      )}
     </box>
   );
 }
@@ -1233,6 +1362,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   // ─── Chat input state ──────────────────────────────────────
   const [chatInputKey, setChatInputKey] = React.useState(0);
   const chatInputValueRef = React.useRef("");
+  const [attachments, setAttachments] = React.useState<Attachment[]>([]);
 
   // ─── Derived ─────────────────────────────────────────────────
   const isAddButtonSelected = selectedIdx === entries.length;
@@ -1522,6 +1652,28 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setTimeout(() => setFlashMessage(null), 1500);
   };
 
+  // ─── Paste listener for file drag-and-drop ──────────────────
+  React.useEffect(() => {
+    const handler = (event: PasteEvent) => {
+      // Only intercept paste when chat input is focused
+      if (focusPanel !== "right" || rightMode !== "logs" || showActionPicker) return;
+
+      const parsed = parseFilePathsFromPaste(event.text);
+      if (parsed.length === 0) return;
+
+      // Prevent the textarea from inserting the file path as text
+      event.preventDefault();
+      setAttachments(prev => [...prev, ...parsed]);
+    };
+    renderer.keyInput.on("paste", handler);
+    return () => { renderer.keyInput.off("paste", handler); };
+  }, [focusPanel, rightMode, showActionPicker, renderer]);
+
+  // Clear attachments when switching workstreams
+  React.useEffect(() => {
+    setAttachments([]);
+  }, [selectedIdx]);
+
   // ─── Keyboard handler ──────────────────────────────────────
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
@@ -1697,9 +1849,16 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           // Optimistically mark as running so spinner appears immediately
           setEntries(prev => prev.map(e => e.name === entryName ? { ...e, status: "running" } : e));
           chatInputValueRef.current = "";
+          setAttachments([]);
           setChatInputKey(k => k + 1);
           setFollow(true);
         }
+        return;
+      }
+      // Remove last attachment with backspace when input is empty
+      if (n === "backspace" && chatInputValueRef.current === "" && attachments.length > 0) {
+        key.preventDefault();
+        setAttachments(prev => prev.slice(0, -1));
         return;
       }
       if (key.ctrl && n === "x") {
@@ -1790,12 +1949,6 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           setActionPickerSelected(0);
           setShowActionPicker(true);
         }
-        return;
-      }
-      // 'a' hotkey — open add modal from anywhere in the list
-      if (n === "a") {
-        addModalNameRef.current = "";
-        setShowAddModal(true);
         return;
       }
       if (n === "right") {
@@ -1972,6 +2125,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                   onInput={(v: string) => { chatInputValueRef.current = v; }}
                   initialValue={selectedEntry?.prompt}
                   onFocus={() => setFocusPanel("right")}
+                  attachments={attachments}
                 />
               ) : (
                 <>
@@ -1994,6 +2148,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     inputKey={chatInputKey}
                     onInput={(v: string) => { chatInputValueRef.current = v; }}
                     onFocus={() => setFocusPanel("right")}
+                    attachments={attachments}
                   />
                 </>
               )}
@@ -2039,7 +2194,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       </box>
 
       {/* Footer */}
-      <Footer focusPanel={focusPanel} rightMode={rightMode} isAgentActive={isAgentActive} diffSubFocus={diffSubFocus} viewMode={viewMode}/>
+      <Footer focusPanel={focusPanel} rightMode={rightMode} isAgentActive={isAgentActive} diffSubFocus={diffSubFocus} viewMode={viewMode} hasAttachments={attachments.length > 0}/>
       {/* Overlays */}
       {showActionPicker && selectedEntry && (
         <ActionPicker
