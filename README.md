@@ -17,6 +17,20 @@ Experience true parallelism — stop engineering solo and start managing a team 
 
 ---
 
+### Table of Contents
+
+- [Why ws?](#why-ws)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Commands](#commands)
+- [Workflow](#workflow)
+- [Uninstall](#uninstall)
+- [Development](#development)
+- [Project Structure](#project-structure)
+
+---
+
 ## Why ws?
 
 You have a list of tasks — tests to write, types to fix, docs to add. Instead of running one agent at a time, `ws` spawns them all in parallel, each in its own git worktree and branch. No conflicts between agents. No waiting.
@@ -29,16 +43,13 @@ Works with **Claude**, **Codex**, and **Aider** out of the box — or bring your
 curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
 ```
 
-<details>
-<summary>Custom install directory</summary>
+To install to a custom directory:
 
 ```bash
 WS_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
 ```
-</details>
 
-<details>
-<summary>Install from source</summary>
+### From source
 
 Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)).
 
@@ -48,7 +59,6 @@ cd workstreams
 bun install
 bun link
 ```
-</details>
 
 ## Quick Start
 
@@ -68,8 +78,9 @@ ws list                                    # status overview
 ws diff add-tests                          # interactive diff viewer
 ws dashboard                               # full TUI dashboard
 
-# Iterate
+# Iterate — resume via CLI or the interactive dashboard
 ws run add-tests -p "Also add integration tests"
+ws dashboard                               # browse diffs, add comments, resume — all from the TUI
 
 # Navigate into a workstream
 cd $(ws checkout add-tests)                # enter the worktree
@@ -99,8 +110,7 @@ workstreams:
     base_branch: develop    # optional: base on a different branch
 ```
 
-<details>
-<summary>Agent config reference</summary>
+### Agent config reference
 
 | Field | Description | Default |
 |---|---|---|
@@ -117,8 +127,6 @@ When `acceptAll` is enabled, `ws` injects flags automatically:
 | claude | `--dangerously-skip-permissions --output-format stream-json --verbose` |
 | codex | `--full-auto` |
 | aider | `--yes` |
-
-</details>
 
 ## Commands
 
@@ -156,28 +164,26 @@ graph LR
 
 ## Uninstall
 
-<details>
-<summary>Remove ws</summary>
-
 **Binary install:**
+
 ```bash
 sudo rm /usr/local/bin/ws          # default location
 rm "$WS_INSTALL_DIR/ws"            # custom location
 ```
 
 **Source install:**
+
 ```bash
 cd workstreams && bun unlink
 ```
 
 **Clean up a project:**
+
 ```bash
 ws destroy --all -y                # remove all worktrees and branches
 rm -rf .workstreams                # remove state directory
 rm workstream.yaml                 # remove config
 ```
-
-</details>
 
 ## Development
 
@@ -187,8 +193,7 @@ bun test tests/dag.test.ts         # run a single test
 bun run src/index.ts -- --help     # run CLI directly
 ```
 
-<details>
-<summary>Project structure</summary>
+## Project Structure
 
 ```
 src/
@@ -200,6 +205,7 @@ tests/                  bun:test test files
 ```
 
 **State directory** — `.workstreams/` (gitignored):
+
 ```
 .workstreams/
   state.json            Run state (status, session IDs, exit codes)
@@ -208,8 +214,6 @@ tests/                  bun:test test files
   comments/             Review comments (JSON per workstream)
   pending-prompts/      Continuation prompts
 ```
-
-</details>
 
 ---
 
