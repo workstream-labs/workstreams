@@ -353,7 +353,14 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
     });
 
     ws.exitCode = result.exitCode;
-    ws.status = result.exitCode === 0 ? "success" : "failed";
+    // Check if the workstream was interrupted by the dashboard before overwriting status
+    const freshState = await loadState();
+    const freshWs = freshState?.currentRun?.workstreams?.[name];
+    if (freshWs?.status === "interrupted") {
+      ws.status = "interrupted";
+    } else {
+      ws.status = result.exitCode === 0 ? "success" : "failed";
+    }
     // Keep original session ID for future resumes
     ws.sessionId = originalSessionId;
     if (result.exitCode !== 0) {
