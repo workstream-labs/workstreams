@@ -425,6 +425,7 @@ function CommentForm({
       style={{
         flexShrink: 0,
         minHeight: 10,
+        maxHeight: 12,
         borderStyle: "single",
         borderColor: mutedColor,
         marginLeft: 1,
@@ -546,6 +547,13 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
   const diffRef = React.useRef<DiffRenderable | null>(null);
   // True while a keyboard/programmatic scroll is in flight — suppresses scroll→cursor sync
   const keyboardScrollRef = React.useRef(false);
+  // Track which rows we've manually colored and their saved native colors.
+  // The diff renderer stores native add/remove/context backgrounds in the same
+  // internal maps (_lineColorsGutter, _lineColorsContent) that setLineColor and
+  // clearLineColor operate on. clearLineColor deletes the native colors, so
+  // instead we save the native value before overlaying and restore it afterward.
+  const manualLinesRef = React.useRef<Set<number>>(new Set());
+  const savedNativeRef = React.useRef<Map<number, { left?: { g: any; c: any }; right?: { g: any; c: any } }>>(new Map());
 
   // Comment state
   const [showCommentForm, setShowCommentForm] = React.useState(false);
@@ -604,7 +612,8 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
   // Reset cursor and edit state when navigating to a different file
   React.useEffect(() => {
     setCursorLine(0);
-    diffRef.current?.clearAllLineColors();
+    manualLinesRef.current = new Set();
+    savedNativeRef.current = new Map();
     setEditingCommentIndex(null);
   }, [fileIndex]);
 
@@ -648,38 +657,97 @@ function DiffApp({ name, files, currentWorkstream, workstreams, returnLabel }: D
     return result;
   }, [fileComments, lineMap]);
 
-  // Apply cursor highlight and comment markers whenever relevant state changes
+  // Apply cursor highlight and comment markers whenever relevant state changes.
+  // Native diff colors (added/removed/context backgrounds) share the same internal
+  // maps as manual overlay colors — clearLineColor destroys them. Instead we save
+  // native values before overlaying and restore them when moving on.
+  const prevViewModeRef = React.useRef(viewMode);
+
   React.useEffect(() => {
     const dr = diffRef.current;
     if (!dr) return;
-    dr.clearAllLineColors();
     const drAny = dr as any;
+    const left = drAny.leftSide;
+    const right = drAny.rightSide;
+
+    const viewModeChanged = prevViewModeRef.current !== viewMode;
+    prevViewModeRef.current = viewMode;
+
+    // When view mode switches, the renderer rebuilds its internal color maps
+    // from scratch. Skip restoring stale saved colors from the other layout.
+    if (!viewModeChanged) {
+      // Restore previously overlaid lines to their saved native colors
+      for (const idx of manualLinesRef.current) {
+        const saved = savedNativeRef.current.get(idx);
+        if (left) {
+          const s = saved?.left;
+          if (s?.g !== undefined) left._lineColorsGutter.set(idx, s.g); else left._lineColorsGutter.delete(idx);
+          if (s?.c !== undefined) left._lineColorsContent.set(idx, s.c); else left._lineColorsContent.delete(idx);
+        }
+        if (right) {
+          const s = saved?.right;
+          if (s?.g !== undefined) right._lineColorsGutter.set(idx, s.g); else right._lineColorsGutter.delete(idx);
+          if (s?.c !== undefined) right._lineColorsContent.set(idx, s.c); else right._lineColorsContent.delete(idx);
+        }
+      }
+      // Flush the gutter once after all restores
+      if (left?.gutter) left.gutter.setLineColors(left._lineColorsGutter, left._lineColorsContent);
+      if (right?.gutter) right.gutter.setLineColors(right._lineColorsGutter, right._lineColorsContent);
+    }
+
+    const touched = new Set<number>();
+    const newSaved = new Map<number, { left?: { g: any; c: any }; right?: { g: any; c: any } }>();
+
+    // Helper: snapshot native color for a line before we overwrite it
+    const saveNative = (idx: number) => {
+      if (newSaved.has(idx)) return;
+      newSaved.set(idx, {
+        left: left ? { g: left._lineColorsGutter.get(idx), c: left._lineColorsContent.get(idx) } : undefined,
+        right: right ? { g: right._lineColorsGutter.get(idx), c: right._lineColorsContent.get(idx) } : undefined,
+      });
+    };
+
     const annotated = fileComments.filter(c => c.line !== undefined);
+    const commentCfg = { gutter: commentMarkerColor, content: commentMarkerColor + "22" };
 
     if (viewMode === "split") {
-      // In split view, query the renderer's actual line numbers for correct indices
-      const leftNums: Map<number, number> | undefined = drAny.leftSide?.getLineNumbers();
-      const rightNums: Map<number, number> | undefined = drAny.rightSide?.getLineNumbers();
+      const leftNums: Map<number, number> | undefined = left?.getLineNumbers();
+      const rightNums: Map<number, number> | undefined = right?.getLineNumbers();
       for (const c of annotated) {
         const nums = c.side === "old" ? leftNums : rightNums;
-        const panel = c.side === "old" ? drAny.leftSide : drAny.rightSide;
+        const panel = c.side === "old" ? left : right;
         if (!nums || !panel) continue;
         for (const [idx, num] of nums) {
           if (num === c.line) {
-            panel.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
+            saveNative(idx);
+            panel.setLineColor(idx, commentCfg);
+            touched.add(idx);
             break;
           }
         }
       }
     } else {
       for (const [idx, side] of commentedLineMap) {
-        dr.setLineColor(idx, { gutter: commentMarkerColor, content: commentMarkerColor + "22" });
+        saveNative(idx);
+        dr.setLineColor(idx, commentCfg);
+        touched.add(idx);
       }
     }
 
     if (cursorLine >= 0 && cursorLine < lineMap.length) {
-      dr.setLineColor(cursorLine, { gutter: accentColor, content: accentColor + "33" });
+      saveNative(cursorLine);
+      touched.add(cursorLine);
+      const cursorCfg = { gutter: accentColor, content: accentColor + "33" };
+      if (viewMode === "split" && left && right) {
+        left.setLineColor(cursorLine, cursorCfg);
+        right.setLineColor(cursorLine, cursorCfg);
+      } else {
+        dr.setLineColor(cursorLine, cursorCfg);
+      }
     }
+
+    manualLinesRef.current = touched;
+    savedNativeRef.current = newSaved;
   }, [cursorLine, lineMap, accentColor, commentedLineMap, fileComments, commentMarkerColor, viewMode]);
 
   const handleCommentSubmit = async (text: string) => {

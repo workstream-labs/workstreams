@@ -615,7 +615,7 @@ function DiffFileItem({ file, selected, focused, width }: {
 
 const DIFF_FILE_PANEL_W = 30;
 
-function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, commentedLineIndices, bottomSlot, scrollEnabled = true }: {
+function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, unifiedCommentIndices, fileComments, bottomSlot, scrollEnabled = true }: {
   rawDiff: string | null;
   loading: boolean;
   focused: boolean;
@@ -625,7 +625,8 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   diffRef: React.RefObject<DiffRenderable | null>;
   viewMode: "unified" | "split";
   cursorLine: number;
-  commentedLineIndices: Map<number, "old" | "new" | "both">;
+  unifiedCommentIndices: Map<number, "old" | "new" | "both">;
+  fileComments: ReviewComment[];
   bottomSlot?: React.ReactNode;
 }) {
   const fileScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
@@ -641,9 +642,14 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   // Clamp file index
   const clampedIdx = Math.min(fileIndex, Math.max(0, files.length - 1));
 
-  // Track which rows we've manually colored so we only clear those
-  // (clearAllLineColors wipes the diff's own add/remove background colors)
+  // Track which rows we've manually colored and their saved native colors.
+  // The diff renderer stores native add/remove/context backgrounds in the same
+  // internal maps (_lineColorsGutter, _lineColorsContent) that setLineColor and
+  // clearLineColor operate on. clearLineColor deletes the native colors, so
+  // instead we save the native value before overlaying and restore it afterward.
   const manualLinesRef = React.useRef<Set<number>>(new Set());
+  const savedNativeRef = React.useRef<Map<number, { left?: { g: any; c: any }; right?: { g: any; c: any } }>>(new Map());
+  const prevViewModeRef = React.useRef(viewMode);
 
   React.useEffect(() => {
     const dr = diffRef.current as any;
@@ -651,18 +657,90 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
     const left = dr.leftSide;
     const right = dr.rightSide;
 
-    // Clear previous manual colors from all targets
-    for (const idx of manualLinesRef.current) {
-      dr.clearLineColor(idx);
-      left?.clearLineColor(idx);
-      right?.clearLineColor(idx);
+    const viewModeChanged = prevViewModeRef.current !== viewMode;
+    prevViewModeRef.current = viewMode;
+
+    // When view mode switches, the renderer rebuilds its internal color maps
+    // from scratch. Skip restoring stale saved colors from the other layout.
+    if (!viewModeChanged) {
+      // Restore previously overlaid lines to their saved native colors
+      for (const idx of manualLinesRef.current) {
+        const saved = savedNativeRef.current.get(idx);
+        if (left) {
+          const s = saved?.left;
+          if (s?.g !== undefined) left._lineColorsGutter.set(idx, s.g); else left._lineColorsGutter.delete(idx);
+          if (s?.c !== undefined) left._lineColorsContent.set(idx, s.c); else left._lineColorsContent.delete(idx);
+        }
+        if (right) {
+          const s = saved?.right;
+          if (s?.g !== undefined) right._lineColorsGutter.set(idx, s.g); else right._lineColorsGutter.delete(idx);
+          if (s?.c !== undefined) right._lineColorsContent.set(idx, s.c); else right._lineColorsContent.delete(idx);
+        }
+      }
+      // Flush the gutter once after all restores
+      if (left?.gutter) left.gutter.setLineColors(left._lineColorsGutter, left._lineColorsContent);
+      if (right?.gutter) right.gutter.setLineColors(right._lineColorsGutter, right._lineColorsContent);
     }
 
     const touched = new Set<number>();
+    const newSaved = new Map<number, { left?: { g: any; c: any }; right?: { g: any; c: any } }>();
+
+    // Helper: snapshot native color for a line before we overwrite it
+    const saveNative = (idx: number) => {
+      if (newSaved.has(idx)) return;
+      newSaved.set(idx, {
+        left: left ? { g: left._lineColorsGutter.get(idx), c: left._lineColorsContent.get(idx) } : undefined,
+        right: right ? { g: right._lineColorsGutter.get(idx), c: right._lineColorsContent.get(idx) } : undefined,
+      });
+    };
+
     const commentColor = "#e5c07b";
     const colorCfg = { gutter: commentColor, content: commentColor + "22" };
 
-    for (const [idx, side] of commentedLineIndices) {
+    // Compute comment indices: for split view, query the (now-fresh) renderer;
+    // for unified, use the pre-computed indices from lineMap.
+    const commentIndices = new Map<number, "old" | "new" | "both">();
+    const annotated = fileComments.filter((c: ReviewComment) => c.line !== undefined);
+
+    if (viewMode === "split" && left && right) {
+      const addSide = (row: number, side: "old" | "new") => {
+        const existing = commentIndices.get(row);
+        if (!existing) commentIndices.set(row, side);
+        else if (existing !== side) commentIndices.set(row, "both");
+      };
+      const leftNums: Map<number, number> | undefined = left?.getLineNumbers();
+      const rightNums: Map<number, number> | undefined = right?.getLineNumbers();
+      const leftSigns: Map<number, any> | undefined = left?.getLineSigns();
+      const rightSigns: Map<number, any> | undefined = right?.getLineSigns();
+      const rowCount = Math.max(leftNums?.size ?? 0, rightNums?.size ?? 0);
+      for (let row = 0; row < rowCount; row++) {
+        for (const c of annotated) {
+          if (c.side === "old" || c.side === undefined) {
+            const num = leftNums?.get(row);
+            if (num === c.line) {
+              const sign = leftSigns?.get(row)?.after?.trim();
+              if (sign === "-" && (c.lineType === "remove" || !c.lineType)) addSide(row, "old");
+              else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "old");
+            }
+          }
+          if (c.side === "new" || c.side === undefined) {
+            const num = rightNums?.get(row);
+            if (num === c.line) {
+              const sign = rightSigns?.get(row)?.after?.trim();
+              if (sign === "+" && (c.lineType === "add" || !c.lineType)) addSide(row, "new");
+              else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "new");
+            }
+          }
+        }
+      }
+    } else {
+      for (const [idx, side] of unifiedCommentIndices) {
+        commentIndices.set(idx, side);
+      }
+    }
+
+    for (const [idx, side] of commentIndices) {
+      saveNative(idx);
       touched.add(idx);
       if (viewMode === "split" && left && right) {
         if (side === "old" || side === "both") left.setLineColor(idx, colorCfg);
@@ -673,6 +751,7 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
     }
 
     if (cursorLine >= 0 && focused && subFocus === "diff") {
+      saveNative(cursorLine);
       touched.add(cursorLine);
       const cursorCfg = { gutter: theme.accent, content: theme.accent + "33" };
       if (viewMode === "split" && left && right) {
@@ -684,7 +763,8 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
     }
 
     manualLinesRef.current = touched;
-  }, [cursorLine, commentedLineIndices, focused, subFocus, viewMode]);
+    savedNativeRef.current = newSaved;
+  }, [cursorLine, unifiedCommentIndices, fileComments, focused, subFocus, viewMode]);
 
   if (loading) {
     return (
@@ -838,12 +918,12 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
       style={{
         flexShrink: 0,
         minHeight: 8,
+        maxHeight: 12,
         borderStyle: "single",
         borderColor: theme.border,
         ...(isSplit ? { margin: 0, marginTop: 1, marginBottom: 1 } : { margin: 1 }),
         padding: 1,
         flexDirection: "column",
-        flexGrow: 1,
       }}
     >
       <box flexDirection="row">
@@ -1404,62 +1484,28 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     [comments, currentFileName],
   );
 
-  const commentedLineIndices = React.useMemo(() => {
+  // Unified-view comment indices — computed purely from parsed diff data (no ref needed)
+  const unifiedCommentIndices = React.useMemo(() => {
     const result = new Map<number, "old" | "new" | "both">();
     const annotated = fileComments.filter((c: ReviewComment) => c.line !== undefined);
     if (annotated.length === 0) return result;
-
     const addSide = (row: number, side: "old" | "new") => {
       const existing = result.get(row);
       if (!existing) result.set(row, side);
       else if (existing !== side) result.set(row, "both");
     };
-
-    if (viewMode === "split") {
-      // In split view, query the renderable directly for row→lineNumber mappings
-      const dr = diffElementRef.current as any;
-      if (dr) {
-        const leftNums: Map<number, number> | undefined = dr.leftSide?.getLineNumbers();
-        const rightNums: Map<number, number> | undefined = dr.rightSide?.getLineNumbers();
-        const leftSigns: Map<number, any> | undefined = dr.leftSide?.getLineSigns();
-        const rightSigns: Map<number, any> | undefined = dr.rightSide?.getLineSigns();
-        const rowCount = Math.max(leftNums?.size ?? 0, rightNums?.size ?? 0);
-        for (let row = 0; row < rowCount; row++) {
-          for (const c of annotated) {
-            if (c.side === "old" || c.side === undefined) {
-              const num = leftNums?.get(row);
-              if (num === c.line) {
-                const sign = leftSigns?.get(row)?.after?.trim();
-                if (sign === "-" && (c.lineType === "remove" || !c.lineType)) addSide(row, "old");
-                else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "old");
-              }
-            }
-            if (c.side === "new" || c.side === undefined) {
-              const num = rightNums?.get(row);
-              if (num === c.line) {
-                const sign = rightSigns?.get(row)?.after?.trim();
-                if (sign === "+" && (c.lineType === "add" || !c.lineType)) addSide(row, "new");
-                else if (sign !== "-" && sign !== "+" && c.lineType === "context") addSide(row, "new");
-              }
-            }
-          }
+    lineMap.forEach((info: LineInfo, idx: number) => {
+      for (const c of annotated) {
+        if (info.type === "add" && info.newLine === c.line && c.side !== "old") addSide(idx, c.side ?? "new");
+        else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") addSide(idx, c.side ?? "old");
+        else if (info.type === "context") {
+          if (info.newLine === c.line && c.side === "new") addSide(idx, "new");
+          else if (info.oldLine === c.line && c.side === "old") addSide(idx, "old");
         }
       }
-    } else {
-      // Unified view: each line maps to its stored side
-      lineMap.forEach((info: LineInfo, idx: number) => {
-        for (const c of annotated) {
-          if (info.type === "add" && info.newLine === c.line && c.side !== "old") addSide(idx, c.side ?? "new");
-          else if (info.type === "remove" && info.oldLine === c.line && c.side !== "new") addSide(idx, c.side ?? "old");
-          else if (info.type === "context") {
-            if (info.newLine === c.line && c.side === "new") addSide(idx, "new");
-            else if (info.oldLine === c.line && c.side === "old") addSide(idx, "old");
-          }
-        }
-      });
-    }
+    });
     return result;
-  }, [fileComments, lineMap, viewMode]);
+  }, [fileComments, lineMap]);
 
   // ─── Spinner animation ─────────────────────────────────────
   React.useEffect(() => {
@@ -2164,7 +2210,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               diffRef={diffElementRef}
               viewMode={viewMode}
               cursorLine={cursorLine}
-              commentedLineIndices={commentedLineIndices}
+              unifiedCommentIndices={unifiedCommentIndices}
+              fileComments={fileComments}
               bottomSlot={
                 <>
                   {flashMessage && (
