@@ -35,7 +35,7 @@ Experience true parallelism — stop engineering solo and start managing a team 
 
 You have a list of tasks — tests to write, types to fix, docs to add. Instead of running one agent at a time, `ws` spawns them all in parallel, each in its own git worktree and branch. No conflicts between agents. No waiting.
 
-Works with **Claude**, **Codex**, and **Aider** out of the box — or bring your own agent.
+Works with **Claude Code** out of the box. **Codex**, **Aider**, and custom agents — coming soon.
 
 ## Install
 
@@ -48,14 +48,9 @@ To install to a custom directory:
 ```bash
 WS_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
 ```
-</details>
+From source code:
 
-<details>
-<summary>Install from source</summary>
-
-Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)).
-
-Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)).
+Requires [Bun](https://bun.sh) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview).
 
 ```bash
 git clone https://github.com/workstream-labs/workstreams.git
@@ -102,7 +97,7 @@ All config lives in `workstream.yaml`:
 
 ```yaml
 agent:
-  command: claude           # claude | codex | aider | /path/to/custom
+  command: claude           # claude (codex, aider — coming soon)
   timeout: 600              # optional: kill after N seconds
   acceptAll: true           # auto-inject accept flags per agent
 
@@ -126,11 +121,11 @@ workstreams:
 
 When `acceptAll` is enabled, `ws` injects flags automatically:
 
-| Agent | Flags |
-|---|---|
-| claude | `--dangerously-skip-permissions --output-format stream-json --verbose` |
-| codex | `--full-auto` |
-| aider | `--yes` |
+| Agent | Flags | Status |
+|---|---|---|
+| claude | `--dangerously-skip-permissions --output-format stream-json --verbose` | supported |
+| codex | `--full-auto` | upcoming |
+| aider | `--yes` | upcoming |
 
 ## Commands
 
