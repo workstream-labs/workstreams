@@ -1088,9 +1088,9 @@ function Footer({ focusPanel, rightMode, isAgentActive, diffSubFocus, viewMode }
           <text fg={theme.textMuted}> {viewMode}  </text>
         </>
       ) : null}
-      <text fg={theme.text}>L</text>
+      <text fg={theme.text}>{"\u2318"}1</text>
       <text fg={theme.textMuted}> logs  </text>
-      <text fg={theme.text}>D</text>
+      <text fg={theme.text}>{"\u2318"}2</text>
       <text fg={theme.textMuted}> diff  </text>
       <text fg={theme.text}>q</text>
       <text fg={theme.textMuted}> quit</text>
@@ -1591,8 +1591,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     }
 
     // Mode switching (works from anywhere except chat input)
-    if (n === "1" || (key.shift && n === "l")) { setRightMode("logs"); return; }
-    if (n === "2" || (key.shift && n === "d")) { setRightMode("diff"); return; }
+    if ((key.meta && n === "1") || n === "1") { setRightMode("logs"); return; }
+    if ((key.meta && n === "2") || n === "2") { setRightMode("diff"); return; }
 
     // ─── Left panel (workstreams) ──────────────────────
     if (focusPanel === "workstreams") {
