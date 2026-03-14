@@ -3,6 +3,7 @@ import type { WorkstreamStatus } from "./types";
 const STATUS_ICONS: Record<string, string> = {
   success: "✓",
   failed: "✗",
+  interrupted: "■",
   running: "▶",
 };
 
@@ -23,7 +24,9 @@ export function notifyStatus(name: string, status: WorkstreamStatus): void {
     ? `${icon} ${name} completed successfully`
     : status === "failed"
       ? `${icon} ${name} failed`
-      : `${icon} ${name} is ${status}`;
+      : status === "interrupted"
+        ? `${icon} ${name} was interrupted`
+        : `${icon} ${name} is ${status}`;
   notify("ws", message);
 }
 

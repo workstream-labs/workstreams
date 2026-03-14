@@ -179,6 +179,8 @@ export function parseSessionJsonlContent(raw: string): DisplayMessage[] {
       case "system": {
         if (entry.subtype === "turn_duration" && (entry.durationMs || entry.duration_ms)) {
           pendingDurationMs = entry.durationMs ?? entry.duration_ms;
+        } else if (entry.text) {
+          messages.push({ role: "system", text: entry.text });
         }
         break;
       }

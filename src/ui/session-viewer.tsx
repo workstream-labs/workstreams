@@ -74,6 +74,18 @@ export function Spinner({ color, children }: { color?: string; children?: React.
   );
 }
 
+function ElapsedTime() {
+  const [elapsed, setElapsed] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setElapsed((v: number) => v + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  const label = m > 0 ? `(${m}m ${s.toString().padStart(2, "0")}s)` : `(${s}s)`;
+  return <text fg={theme.textMuted}>{label}</text>;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function normPath(p: string): string {
@@ -357,10 +369,10 @@ function UserMsg({ msg, isFirst }: {
   );
 }
 
-function AssistantMsg({ msg, showThinking, isLast }: {
-  msg: Extract<DisplayMessage, { role: "assistant" }>; showThinking: boolean; isLast: boolean;
+function AssistantMsg({ msg, showThinking, isLast, isRunning }: {
+  msg: Extract<DisplayMessage, { role: "assistant" }>; showThinking: boolean; isLast: boolean; isRunning?: boolean;
 }) {
-  const running = isLast && !msg.durationMs;
+  const running = isLast && !msg.durationMs && (isRunning !== false);
   return (
     <>
       {msg.parts.map((part: AssistantPart, i: number) => {
@@ -409,11 +421,21 @@ export function SessionMessages({ messages, showThinking, isRunning }: {
     <box flexShrink={0} gap={0} paddingBottom={1}>
       {messages.map((msg: DisplayMessage, i: number) => {
         if (msg.role === "user") return <UserMsg msg={msg} isFirst={i === 0} />;
-        if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} />;
+        if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} isRunning={isRunning} />;
         if (msg.role === "result") return <ResultMsg msg={msg} />;
+        if (msg.role === "system") return (
+          <box paddingLeft={3} marginTop={1}>
+            <text fg={theme.warning}>{"\u25A0"} {msg.text}</text>
+          </box>
+        );
         return null;
       })}
-      {isRunning && <box paddingLeft={3} marginTop={1}><Spinner color={theme.accent}>Working...</Spinner></box>}
+      {isRunning && (
+        <box paddingLeft={3} marginTop={1} flexDirection="row" gap={1}>
+          <Spinner color={theme.accent}>Working...</Spinner>
+          <ElapsedTime />
+        </box>
+      )}
     </box>
   );
 }
@@ -487,8 +509,8 @@ function SessionApp({ name, status, messages: init, logFile }: {
 
   let totalCost = 0;
   for (const m of messages) if (m.role === "result" && m.cost) totalCost += m.cost;
-  const hasResult = messages.some((m: DisplayMessage) => m.role === "result");
-  const isRunning = liveStatus === "running" && !hasResult;
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const isRunning = liveStatus === "running" && lastMsg?.role !== "result";
   const lastAst = messages.reduce((a: number, m: DisplayMessage, i: number) => m.role === "assistant" ? i : a, -1);
   const sIcon = isRunning ? "\u25CF" : liveStatus === "success" ? "\u2713" : liveStatus === "failed" ? "\u2717" : "\u25CB";
   const sColor = isRunning ? theme.warning : liveStatus === "success" ? theme.success : liveStatus === "failed" ? theme.error : theme.textMuted;
@@ -515,11 +537,16 @@ function SessionApp({ name, status, messages: init, logFile }: {
         <box flexShrink={0} gap={0} paddingBottom={1}>
           {messages.map((msg: DisplayMessage, i: number) => {
             if (msg.role === "user") return <UserMsg msg={msg} isFirst={i === 0} />;
-            if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} />;
+            if (msg.role === "assistant") return <AssistantMsg msg={msg} showThinking={showThinking} isLast={i === lastAst} isRunning={isRunning} />;
             if (msg.role === "result") return <ResultMsg msg={msg} />;
             return null;
           })}
-          {isRunning && <box paddingLeft={3} marginTop={1}><Spinner color={theme.accent}>Working...</Spinner></box>}
+          {isRunning && (
+            <box paddingLeft={3} marginTop={1} flexDirection="row" gap={1}>
+              <Spinner color={theme.accent}>Working...</Spinner>
+              <ElapsedTime />
+            </box>
+          )}
         </box>
       </scrollbox>
 

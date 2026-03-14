@@ -5,6 +5,7 @@ import { loadConfig, validateWorkstreamName } from "../core/config";
 import { WorktreeManager } from "../core/worktree";
 import { loadComments, formatCommentsAsPrompt } from "../core/comments";
 import { loadPendingPrompt, savePendingPrompt } from "../core/pending-prompt";
+import { notifyStatus } from "../core/notify";
 import { getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
@@ -520,16 +521,8 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             s.currentRun.finishedAt = undefined;
 
             if (hasSession) {
-              // Resume: combine prompt with any pending comments, spawn background directly.
-              // This avoids the middleman process whose status checks can race with
-              // the previous run's cleanup (clearPendingPrompt).
-              const commentsData = await loadComments(name);
-              const commentsPrompt = formatCommentsAsPrompt(commentsData);
-              const parts: string[] = [];
-              if (commentsPrompt) parts.push(commentsPrompt);
-              parts.push(prompt);
-              const combinedPrompt = parts.join("\n\n---\n\n");
-
+              // Resume: send only the user's prompt (comments are sent
+              // separately via the explicit "resume with comments" action)
               const wsState = s.currentRun.workstreams[name];
               wsState.status = "running";
               wsState.startedAt = new Date().toISOString();
@@ -540,7 +533,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
               await saveState(s);
 
               // Spawn background resume worker directly
-              const bgArgs = ["bun", Bun.main, "run", name, "-c", "workstream.yaml", "-p", combinedPrompt];
+              const bgArgs = ["bun", Bun.main, "run", name, "-c", "workstream.yaml", "-p", prompt];
               const proc = Bun.spawn(bgArgs, {
                 cwd: process.cwd(),
                 env: { ...process.env, WS_BACKGROUND: "1", WS_RESUME_MODE: "1" },
@@ -577,15 +570,17 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             const ws = s?.currentRun?.workstreams?.[name];
             if (ws?.pid) {
               try { process.kill(ws.pid, "SIGINT"); } catch {}
-              // Immediately mark as failed so the next prompt isn't blocked
-              // by the race between interrupt and background process cleanup.
-              // The background process will also write a "failed" marker when
-              // it detects the exit, but this ensures the state is updated
-              // before the user can send another prompt.
-              ws.status = "failed";
+              ws.status = "interrupted";
               ws.finishedAt = new Date().toISOString();
               ws.pid = undefined;
               await appendWorkstreamStatus(ws);
+              await saveState(s!);
+              // Append interrupted marker to log file so it shows in the log viewer
+              const { appendFile, mkdir } = await import("fs/promises");
+              const logFile = ws.logFile ?? `.workstreams/logs/${name}.log`;
+              await mkdir(".workstreams/logs", { recursive: true }).catch(() => {});
+              await appendFile(logFile, JSON.stringify({ type: "system", text: "Interrupted" }) + "\n").catch(() => {});
+              notifyStatus(name, "interrupted");
             }
           },
         };
