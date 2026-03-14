@@ -170,21 +170,3 @@ ws destroy [name] [options]
 Removes: worktree, branch, config entry, state, logs, and comments.
 
 ---
-
-## `ws prompt <name>`
-
-Set or update the prompt for a workstream.
-
-```bash
-ws prompt <name> [options]
-```
-
-| Argument | Description |
-|---|---|
-| `name` | Workstream to update |
-
-| Option | Description |
-|---|---|
-| `-p, --prompt <text>` | Prompt text (omit for interactive input) |
-
-Updates the prompt in `workstream.yaml`.
