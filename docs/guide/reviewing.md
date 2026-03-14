@@ -54,7 +54,7 @@ The typical review loop:
 1. Run `ws diff auth` to browse changes
 2. Press `c` to comment on lines that need work
 3. Press `q` to exit the diff viewer
-4. Run `ws resume auth --comments` to send comments to the agent
+4. Run `ws run auth -p "Address review comments"` to resume — pending comments are automatically included
 5. The agent addresses your feedback
 6. Repeat until satisfied
 7. Merge via GitHub PR or `git merge`

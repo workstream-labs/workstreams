@@ -2,7 +2,7 @@
 
 All keyboard shortcuts for the TUI components.
 
-## Dashboard (`ws switch`)
+## Dashboard (`ws dashboard`)
 
 ### Navigation
 

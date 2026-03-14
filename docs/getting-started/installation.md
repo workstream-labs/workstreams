@@ -33,18 +33,19 @@ You should see the list of available commands:
 ```
 Usage: ws [options] [command]
 
-Orchestrate parallel AI coding agents
+Orchestrate parallel AI coding agents in isolated git worktrees
 
 Commands:
   init              Initialize workstreams in this repo
   create <name>     Add a new workstream
   run [name]        Run workstreams
   list              Show workstream status
-  switch [name]     Open interactive dashboard
+  dashboard         Open interactive dashboard
+  view <name>       Open a workstream in your editor
   diff [name]       View workstream changes
-  resume <name>     Resume a workstream with new instructions
   destroy [name]    Remove a workstream
   prompt <name>     Set or update a workstream prompt
+  checkout <name>   Print the worktree path for a workstream
 ```
 
 ## Next Steps

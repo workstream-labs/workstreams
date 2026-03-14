@@ -3,7 +3,7 @@
 The interactive dashboard is the central hub for managing workstreams.
 
 ```bash
-ws switch
+ws dashboard
 ```
 
 ## Layout
@@ -81,14 +81,14 @@ Press `/` to enter search mode. Type to filter workstreams — matching uses mul
 
 Press `Enter` to confirm the filter, `Esc` to clear.
 
-## Direct Editor Access
+## Opening in Your Editor
 
-Skip the dashboard and jump straight to a workstream in your editor:
+Use `ws view` to open a workstream directly in your editor:
 
 ```bash
-ws switch auth-feature              # Open in default editor
-ws switch auth -e cursor            # Open in Cursor
-ws switch auth --no-editor          # Just print the worktree path
+ws view auth-feature              # Open in default editor
+ws view auth -e cursor            # Open in Cursor
+ws view auth --no-editor          # Just print the worktree path
 ```
 
 Supported editors: VS Code (`code`), Cursor, Zed, Windsurf, WebStorm. Your choice is remembered for future sessions.

@@ -26,13 +26,12 @@ ws create dark-mode -p "Implement dark mode toggle in the React frontend"
 ws run
 
 # 4. Check results
-ws status
+ws list
 ws diff add-tests
 
 # 5. Review and iterate
-ws switch add-tests      # pick an action: editor, resume, diff, etc.
-ws resume add-tests --comments   # send comments back to the agent
-
+ws dashboard               # interactive dashboard — browse diffs, resume, review
+ws run add-tests -p "Also add integration tests"   # resume with new instructions
 ```
 
 ## Configuration
@@ -95,47 +94,65 @@ Add a new workstream to `workstream.yaml`.
 
 Run all workstreams in parallel (or a single one by name). Each workstream gets its own git worktree and branch (`ws/<name>`). The configured agent is spawned in each worktree with the workstream's prompt.
 
+If a workstream already has a session, pass `-p` to resume it with new instructions. Pending review comments are automatically included.
+
 ```bash
-ws run              # run all
-ws run add-tests    # run just one
-ws run --dry-run    # show what would run
+ws run                              # run all
+ws run add-tests                    # run just one
+ws run --dry-run                    # show what would run
+ws run add-tests -p "Fix the tests" # resume with new instructions
 ```
 
 ### `ws list`
 
 List all workstreams with status, sync info, diff stats, duration, and last commit.
 
+### `ws dashboard`
+
+Open the interactive TUI dashboard. Browse all workstreams, view diffs, add review comments, resume agents, and open editors — all with keyboard shortcuts.
+
+```bash
+ws dashboard              # interactive dashboard
+```
+
 ### `ws diff [name]`
 
 Show the git diff for a workstream's branch. Without a name, shows diffs for all workstreams.
 
-### `ws switch [name]`
-
-Switch to a workstream and pick an action. Without a name, opens an interactive TUI picker showing all workstreams with diff previews. After selecting a workstream (or passing one by name), presents an action menu:
-
-- **Open in editor** — creates the worktree if needed and opens it in your editor
-- **Resume Claude session** — drops you into the live Claude session (interactive). Requires a captured session ID from a prior `ws run`.
-- **View diff & review** — browse changes and add review comments
-- **Resume with new prompt** — send new instructions to the agent (hands-off)
-- **Resume with review comments** — send stored review comments to the agent
-
 ```bash
-ws switch              # interactive workstream picker
-ws switch add-tests    # go straight to action picker
-ws switch add-tests -e cursor   # open directly in Cursor (skip action picker)
+ws diff add-tests         # interactive diff viewer
+ws diff --raw             # raw diff output for all workstreams
 ```
 
-### `ws resume <name>`
+### `ws view <name>`
 
-Re-run the agent hands-off with new instructions. The agent resumes from its prior session.
+Open a workstream in your editor.
 
 ```bash
-ws resume add-tests -p "Also add integration tests"    # with inline prompt
-ws resume add-tests --comments                         # send stored review comments
-ws resume add-tests                                    # interactive menu
+ws view add-tests              # open in default editor
+ws view add-tests -e cursor    # open in Cursor
+ws view add-tests --no-editor  # print the worktree path
 ```
 
-Comments are cleared automatically after a successful resume.
+Supported editors: VS Code (`code`), Cursor, Zed, Windsurf, WebStorm. Your choice is remembered for future sessions.
+
+### `ws prompt <name>`
+
+Set or update the prompt for a workstream.
+
+```bash
+ws prompt add-tests -p "Add unit tests for all API routes"
+ws prompt add-tests                # interactive prompt input
+```
+
+### `ws checkout <name>`
+
+Print the worktree path for a workstream. Useful for navigating to worktrees in your shell.
+
+```bash
+cd $(ws checkout add-tests)    # navigate to the worktree
+ws checkout add-tests          # print the absolute path
+```
 
 ### `ws destroy [name]`
 
@@ -149,36 +166,63 @@ ws destroy --all -y        # skip confirmation
 
 ## Workflow
 
-```
-ws init → ws create → ws run → ws status/diff → ws switch → ws resume
-                                    ↑                              |
-                                    └──────── iterate ─────────────┘
+```mermaid
+graph LR
+    A[ws init] --> B[ws create]
+    A --> E[ws dashboard]
+    B --> C[ws run]
+    C --> D[ws list / ws diff]
+    D --> E
+    E -->|resume| C
+    E -->|edit| F[ws view]
+    D -->|satisfied| G[git merge / PR]
 ```
 
 1. **Define** workstreams with prompts describing the work
 2. **Run** them in parallel — each agent works in its own worktree
-3. **Review** the results with `ws diff` and `ws switch`
-4. **Iterate** using `ws switch` (editor, interactive session, review) or `ws resume` (send comments/new prompt hands-off)
+3. **Review** the results with `ws diff` and `ws dashboard`
+4. **Iterate** using `ws dashboard` (resume, review, edit) or `ws run <name> -p "..."` (hands-off resume)
 5. **Merge** when satisfied using standard git commands or GitHub PRs
 
 ## Project Structure
 
 ```
 src/
-  index.ts          # CLI entry point, registers all commands
-  cli/              # Command implementations (one file per command)
+  index.ts            # CLI entry point, registers all commands
+  cli/                # Command implementations
+    init.ts           # ws init
+    create.ts         # ws create
+    run.ts            # ws run (includes resume logic)
+    list.ts           # ws list
+    dashboard.ts      # ws dashboard (interactive TUI)
+    view.ts           # ws view (open in editor)
+    diff.ts           # ws diff
+    prompt.ts         # ws prompt
+    checkout.ts       # ws checkout
+    destroy.ts        # ws destroy
   core/
-    agent.ts        # AgentAdapter — spawns agents, streams logs, captures session IDs
-    config.ts       # Loads workstream.yaml
-    dag.ts          # Builds workstream graph
-    executor.ts     # Parallel execution engine
-    worktree.ts     # Git worktree management
-    state.ts        # State persistence (.workstreams/state.json)
-    events.ts       # Event bus
-    types.ts        # TypeScript interfaces
-    prompt.ts       # Interactive input helpers
-    comments.ts     # Review comment storage
-tests/              # bun:test test files
+    agent.ts          # AgentAdapter — spawns agents, streams logs, captures session IDs
+    config.ts         # Loads and validates workstream.yaml
+    dag.ts            # Builds workstream graph
+    executor.ts       # Parallel execution engine with mutex for worktree creation
+    worktree.ts       # Git worktree management
+    state.ts          # State persistence (.workstreams/state.json)
+    events.ts         # Event bus with typed events and ring buffer
+    types.ts          # TypeScript interfaces
+    errors.ts         # Error hierarchy (ConfigError, AgentError, WorktreeError)
+    prompt.ts         # Interactive input helpers
+    comments.ts       # Review comment storage
+    pending-prompt.ts # Continuation prompt storage
+    notify.ts         # Desktop notifications
+    session-reader.ts # Claude session ID extraction
+  ui/
+    ansi.ts           # ANSI escape sequences, colors, cursor helpers
+    fuzzy.ts          # Fuzzy multi-term AND matching
+    modal.ts          # Reusable modal overlay renderer
+    choice-picker.ts  # Modal choice picker (j/k navigation)
+    workstream-picker.ts  # Dashboard card layout with search
+    diff-parser.ts    # Git diff parser (files → hunks → lines)
+tests/                # bun:test test files
 ```
 
 ## State Directory
@@ -187,10 +231,11 @@ tests/              # bun:test test files
 
 ```
 .workstreams/
-  state.json        # Run state (status, session IDs, exit codes)
-  trees/            # Git worktrees (one per workstream)
-  logs/             # Agent log files (one per workstream)
-  comments/         # Review comments (one JSON file per workstream)
+  state.json          # Run state (status, session IDs, exit codes)
+  trees/              # Git worktrees (one per workstream)
+  logs/               # Agent log files (one per workstream)
+  comments/           # Review comments (one JSON file per workstream)
+  pending-prompts/    # Continuation prompts (one file per workstream)
 ```
 
 ## Development
