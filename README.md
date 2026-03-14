@@ -5,6 +5,20 @@
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
+```
+
+This downloads a standalone binary to `/usr/local/bin/ws`. To install elsewhere:
+
+```bash
+WS_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
+```
+
+### From source
+
+```bash
+git clone https://github.com/workstream-labs/workstreams.git
+cd workstreams
 bun install
 bun link        # makes `ws` available globally
 ```
