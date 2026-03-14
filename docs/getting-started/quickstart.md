@@ -1,6 +1,6 @@
 # Quickstart
 
-Get from zero to parallel AI agents in 5 steps.
+Get from zero to parallel AI agents in a few steps.
 
 ## 1. Initialize
 
@@ -50,9 +50,70 @@ ws dashboard   # interactive dashboard
 
 The dashboard lets you browse diffs, view logs, add review comments, and resume agents — all with keyboard shortcuts.
 
-## 5. Merge
+## 5. Navigate to a Workstream
 
-When a workstream looks good, merge it using standard git workflows — create a GitHub PR from the `ws/<name>` branch, or merge locally with `git merge`.
+Each workstream lives on a `ws/`-prefixed branch. Use `ws checkout` to jump into a worktree:
+
+```bash
+cd $(ws checkout add-tests)   # navigate to the ws/add-tests worktree
+git log --oneline -5           # inspect the branch
+```
+
+Or open it directly in your editor:
+
+```bash
+ws view add-tests              # open in default editor
+ws view add-tests -e cursor    # open in Cursor
+```
+
+You can also do this from the dashboard — select a workstream, press `Enter`, and choose "Open in editor".
+
+## 6. Sync with Main and Resolve Conflicts
+
+If `main` has moved ahead while your workstream was running, pull in the latest changes:
+
+```bash
+cd $(ws checkout add-tests)    # enter the worktree
+git merge main                 # merge main into ws/add-tests
+```
+
+If there are conflicts, resolve them in your editor:
+
+```bash
+ws view add-tests              # opens the worktree in your editor — fix conflicts there
+```
+
+Then complete the merge:
+
+```bash
+cd $(ws checkout add-tests)
+git add .
+git commit -m "merge: resolve conflicts with main"
+```
+
+Alternatively, you can resume the agent to handle conflicts for you:
+
+```bash
+ws run add-tests -p "Resolve the merge conflicts with main"
+```
+
+## 7. Merge into Main
+
+When a workstream looks good, switch back to `main` and merge:
+
+```bash
+cd /path/to/your-repo          # return to the main working directory
+git checkout main
+git merge ws/add-tests          # or: git merge --squash ws/add-tests
+```
+
+Or create a GitHub PR from the `ws/add-tests` branch for code review.
+
+After merging, clean up the workstream:
+
+```bash
+ws destroy add-tests            # removes worktree and branch
+```
 
 ## What Just Happened?
 
