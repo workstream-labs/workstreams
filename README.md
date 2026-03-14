@@ -48,8 +48,12 @@ To install to a custom directory:
 ```bash
 WS_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
 ```
+</details>
 
-### From source
+<details>
+<summary>Install from source</summary>
+
+Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)).
 
 Requires [Bun](https://bun.sh) and at least one AI coding agent (e.g. [Claude Code](https://claude.ai/code)).
 
@@ -166,6 +170,7 @@ graph LR
 
 **Binary install:**
 
+**Binary install:**
 ```bash
 sudo rm /usr/local/bin/ws          # default location
 rm "$WS_INSTALL_DIR/ws"            # custom location
