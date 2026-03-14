@@ -353,16 +353,19 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
     ? focused ? theme.accent + "33" : "#264F7822"
     : undefined;
 
-  const nameMaxW = width - 6;
-  const displayName = entry.name.length > nameMaxW
-    ? entry.name.slice(0, nameMaxW - 1) + "\u2026"
-    : entry.name;
-
-  // Brief metadata
+  // Brief metadata — compute first so we can subtract its width from the name budget
   let meta = "";
   if (entry.status === "running") meta = "running";
   else if (entry.filesChanged > 0) meta = `+${entry.additions} -${entry.deletions}`;
   else if (!entry.hasWorktree) meta = "no tree";
+
+  // Available content = width - paddingLeft(1). Row: icon(1) + gap(1) + name + gap(1) + meta
+  const metaLen = meta ? meta.length + 1 : 0; // +1 for trailing space
+  const prefixLen = 3; // icon(1) + gap(1) + paddingLeft(1)
+  const nameMaxW = Math.max(4, width - prefixLen - metaLen - 1);
+  const displayName = entry.name.length > nameMaxW
+    ? entry.name.slice(0, nameMaxW - 1) + "\u2026"
+    : entry.name;
 
   const promptMaxW = width - 5;
   const promptDisplay = entry.prompt
@@ -370,8 +373,8 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
     : "(no prompt)";
 
   return (
-    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1 }} width={width}>
-      <box flexDirection="row" gap={1}>
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1, overflow: "hidden" }} width={width}>
+      <box flexDirection="row" gap={1} style={{ overflow: "hidden" }}>
         <text fg={st.color}>{icon}</text>
         <text fg={selected ? theme.text : theme.textMuted} bold={selected}>{displayName}</text>
         <box flexGrow={1} />
