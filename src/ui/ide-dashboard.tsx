@@ -359,28 +359,30 @@ function WorkstreamListItem({ entry, selected, focused, width, spinnerFrame }: {
   else if (entry.filesChanged > 0) meta = `+${entry.additions} -${entry.deletions}`;
   else if (!entry.hasWorktree) meta = "no tree";
 
-  // Available content = width - paddingLeft(1). Row: icon(1) + gap(1) + name + gap(1) + meta
+  // Content width = width - paddingLeft(2)
+  // Row 1: "icon name" with optional right-aligned meta
+  // "▶ " = 2 chars for icon+space, then name, then " meta " on the right
+  const contentW = width - 2; // paddingLeft
   const metaLen = meta ? meta.length + 1 : 0; // +1 for trailing space
-  const prefixLen = 3; // icon(1) + gap(1) + paddingLeft(1)
-  const nameMaxW = Math.max(4, width - prefixLen - metaLen - 1);
+  const nameMaxW = Math.max(4, contentW - 2 - metaLen); // 2 = icon + space
   const displayName = entry.name.length > nameMaxW
     ? entry.name.slice(0, nameMaxW - 1) + "\u2026"
     : entry.name;
 
-  const promptMaxW = width - 5;
+  const promptMaxW = contentW - 2; // indented under name
   const promptDisplay = entry.prompt
     ? (entry.prompt.length > promptMaxW ? entry.prompt.slice(0, promptMaxW - 1) + "\u2026" : entry.prompt)
     : "(no prompt)";
 
   return (
-    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1, overflow: "hidden" }} width={width}>
-      <box flexDirection="row" gap={1} style={{ overflow: "hidden" }}>
-        <text fg={st.color}>{icon}</text>
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 2, overflow: "hidden" }} width={width}>
+      <box flexDirection="row" style={{ overflow: "hidden" }}>
+        <text fg={st.color}>{icon} </text>
         <text fg={selected ? theme.text : theme.textMuted} bold={selected}>{displayName}</text>
         <box flexGrow={1} />
         {meta && <text fg={theme.textMuted}>{meta} </text>}
       </box>
-      <text fg={theme.textMuted} paddingLeft={3}>{promptDisplay}</text>
+      <text fg={theme.textMuted} paddingLeft={2}>{promptDisplay}</text>
     </box>
   );
 }
@@ -397,12 +399,12 @@ function AddWorkstreamButton({ selected, focused, width }: {
     : undefined;
 
   return (
-    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 1 }} width={width}>
-      <box flexDirection="row" gap={1}>
-        <text fg={selected && focused ? theme.accent : theme.textMuted}>+</text>
+    <box style={{ minHeight: ITEM_HEIGHT, backgroundColor: bg, paddingLeft: 2 }} width={width}>
+      <box flexDirection="row">
+        <text fg={selected && focused ? theme.accent : theme.textMuted}>+ </text>
         <text fg={selected ? theme.text : theme.textMuted} bold={selected}>Add workstream</text>
       </box>
-      <text fg={theme.textMuted} paddingLeft={3}>Create a new workstream node</text>
+      <text fg={theme.textMuted} paddingLeft={2}>Create a new workstream node</text>
     </box>
   );
 }
