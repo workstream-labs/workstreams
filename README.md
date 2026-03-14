@@ -33,7 +33,9 @@ Experience true parallelism — stop engineering solo and start managing a team 
 
 ## Why ws?
 
-You have a list of tasks — tests to write, types to fix, docs to add. Instead of running one agent at a time, `ws` spawns them all in parallel, each in its own git worktree and branch. No conflicts between agents. No waiting.
+**True parallelism, not fake concurrency.** Every coding agent runs simultaneously in its own isolated git worktree — a full, independent copy of the filesystem. No lock contention, no merge conflicts mid-run, no agents stepping on each other. Define ten tasks, get ten agents working at once.
+
+**A real review cycle, not a prompt-and-pray workflow.** `ws` brings the software design lifecycle to AI-generated code. Browse diffs in an interactive TUI, leave inline review comments on any workstream, then resume the agent with your feedback — the same define → run → review → iterate loop your team already uses, now with agents in the seat.
 
 Works with **Claude Code** out of the box. **Codex**, **Aider**, and custom agents — coming soon.
 
