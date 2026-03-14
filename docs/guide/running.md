@@ -32,7 +32,7 @@ ws run --dry-run
 
 - Have no `prompt` defined (workspace-only entries)
 - Are already running or queued
-- Already have a completed session (use `ws resume` instead)
+- Already have a completed session (use `ws run <name> -p "..."` to resume)
 
 ## Monitoring Progress
 
@@ -45,7 +45,7 @@ ws list
 Or open the interactive dashboard:
 
 ```bash
-ws switch
+ws dashboard
 ```
 
 The dashboard refreshes automatically and shows live status with spinner animations for running workstreams.
@@ -65,10 +65,10 @@ Press `Ctrl+C` to abort. Running workstreams are marked as `failed` with error "
 
 ## Resuming with New Instructions
 
-If a workstream already has a session, `ws run` with `-p` automatically resumes it:
+If a workstream already has a session, `ws run` with `-p` automatically resumes it. Pending review comments and continuation prompts are included automatically.
 
 ```bash
 ws run auth -p "Also add refresh token support"
 ```
 
-This is equivalent to `ws resume auth -p "Also add refresh token support"`. See [Resuming Work](/guide/resuming) for details.
+See [Resuming Work](/guide/resuming) for details.

@@ -45,7 +45,7 @@ Check status with the list command or open the interactive dashboard:
 
 ```bash
 ws list        # quick status overview
-ws switch      # interactive dashboard
+ws dashboard   # interactive dashboard
 ```
 
 The dashboard lets you browse diffs, view logs, add review comments, and resume agents — all with keyboard shortcuts.
