@@ -6,7 +6,7 @@ import type {
 import type { WorkstreamGraph } from "./dag";
 import { WorktreeManager } from "./worktree";
 import { AgentAdapter } from "./agent";
-import { saveState, saveStateSync, appendWorkstreamStatus, appendWorkstreamStatusSync } from "./state";
+import { loadState, saveState, saveStateSync, appendWorkstreamStatus, appendWorkstreamStatusSync } from "./state";
 import type { EventBus } from "./events";
 import { notifyStatus, notifyRunComplete } from "./notify";
 
@@ -175,7 +175,14 @@ export class Executor {
 
       ws.exitCode = result.exitCode;
       if (result.sessionId) ws.sessionId = result.sessionId;
-      ws.status = result.exitCode === 0 ? "success" : "failed";
+      // Check if interrupted by dashboard before overwriting status
+      const freshState = await loadState();
+      const freshWs = freshState?.currentRun?.workstreams?.[ws.name];
+      if (freshWs?.status === "interrupted") {
+        ws.status = "interrupted";
+      } else {
+        ws.status = result.exitCode === 0 ? "success" : "failed";
+      }
       if (result.exitCode !== 0) {
         ws.error = `Agent exited with code ${result.exitCode}`;
         await logLine(`FAILED: ${ws.error}`);
