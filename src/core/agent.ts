@@ -152,30 +152,9 @@ export class AgentAdapter {
 
       const exitCode = await proc.exited;
 
-      // Auto-commit any changes the agent made
-      if (exitCode === 0) {
-        await this.autoCommit(absWorkDir, appendLog);
-      }
-
       return { exitCode, sessionId };
     } catch (e: any) {
       throw new AgentError(`Agent failed: ${e.message}`);
     }
-  }
-
-  private async autoCommit(
-    workDir: string,
-    appendLog: (data: string | Uint8Array) => Promise<void>,
-  ): Promise<void> {
-    const { $ } = await import("bun");
-
-    const status = await $`git -C ${workDir} status --porcelain`.quiet();
-    const changes = status.stdout.toString().trim();
-    if (!changes) return;
-
-    try {
-      await $`git -C ${workDir} add -A`.quiet();
-      await $`git -C ${workDir} commit -m "ws: apply agent changes"`.quiet();
-    } catch {}
   }
 }

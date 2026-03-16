@@ -72,7 +72,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
     if (hasWorktree) {
       const [info, stats] = await Promise.all([
         getBranchInfo(branch),
-        getDiffStats(branch),
+        getDiffStats(branch, worktreePath),
       ]);
 
       const syncPlain = info.ahead || info.behind ? `↑${info.ahead} ↓${info.behind}` : "·";

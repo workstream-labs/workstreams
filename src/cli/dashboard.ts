@@ -89,7 +89,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
     if (hasWorktree) {
       const [bi, ds, dirtyResult] = await Promise.all([
         getBranchInfo(branch),
-        getDiffStats(branch),
+        getDiffStats(branch, worktreePath),
         $`git -C ${worktreePath} status --porcelain`.quiet().catch(() => null),
       ]);
       branchInfo = bi;
@@ -207,14 +207,6 @@ async function actionOpenSession(name: string, ws: WorkstreamState, state: Proje
 
   const exitCode = await proc.exited;
   console.log(`\nReturned from Claude session for "${name}".`);
-
-  const { $ } = await import("bun");
-  const gitStatus = await $`git -C ${absWorktreePath} status --porcelain`.quiet().catch(() => null);
-  const changes = gitStatus?.stdout.toString().trim();
-  if (changes) {
-    await $`git -C ${absWorktreePath} add -A`.quiet().catch(() => {});
-    await $`git -C ${absWorktreePath} commit -m "ws: apply agent changes"`.quiet().catch(() => {});
-  }
 
   ws.status = exitCode === 0 ? "success" : "failed";
   ws.finishedAt = new Date().toISOString();
