@@ -24,6 +24,7 @@ export interface AgentRunOptions {
   prompt: string;
   logFile: string;
   agentConfig: AgentConfig;
+  expectedBranch?: string;
   onSessionId?: (id: string) => void | Promise<void>;
   onPid?: (pid: number) => void | Promise<void>;
 }
@@ -59,6 +60,25 @@ export class AgentAdapter {
       timestamp: new Date().toISOString(),
     });
     await appendLog(syntheticUserMsg + "\n");
+
+    // ── Pre-flight: guarantee we are on the expected worktree branch ──
+    if (options.expectedBranch) {
+      const { $ } = await import("bun");
+      const headResult = await $`git -C ${absWorkDir} rev-parse --abbrev-ref HEAD`.quiet().catch(() => null);
+      const currentBranch = headResult?.stdout.toString().trim();
+
+      if (currentBranch !== options.expectedBranch) {
+        // Attempt to checkout the correct branch inside the worktree
+        try {
+          await $`git -C ${absWorkDir} checkout ${options.expectedBranch}`.quiet();
+        } catch {
+          throw new AgentError(
+            `Worktree at ${absWorkDir} is on branch "${currentBranch}" instead of "${options.expectedBranch}" and checkout failed. ` +
+            `Refusing to run agent to avoid writing to the wrong branch.`,
+          );
+        }
+      }
+    }
 
     try {
       const proc = Bun.spawn([agentConfig.command, ...args], {

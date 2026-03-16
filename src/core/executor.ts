@@ -161,6 +161,7 @@ export class Executor {
         prompt: node.def.prompt,
         logFile: ws.logFile,
         agentConfig: this.config.agent,
+        expectedBranch: ws.branch,
         onSessionId: async (id) => {
           ws.sessionId = id;
           await appendWorkstreamStatus(ws);
