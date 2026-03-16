@@ -99,7 +99,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
 
     const hasSession = !!state?.currentRun?.workstreams?.[def.name]?.sessionId;
     const commentsData = await loadComments(def.name);
-    const commentCount = commentsData.comments.length;
+    const commentCount = commentsData.comments.length + (commentsData.overallComment ? 1 : 0);
     const pendingPromptText = await loadPendingPrompt(def.name);
 
     return {

@@ -63,7 +63,7 @@ export async function listAction(configPath: string = "workstream.yaml") {
     }
 
     const commentsData = await loadComments(def.name);
-    const commentCount = commentsData.comments.length;
+    const commentCount = commentsData.comments.length + (commentsData.overallComment ? 1 : 0);
     const commentsStr = commentCount > 0
       ? `${A.brightYellow}${commentCount} comment${commentCount > 1 ? "s" : ""}${A.reset}`
       : "";
