@@ -132,9 +132,13 @@ export async function ensureWorktree(name: string, state: any, config: any): Pro
   const worktreePath = `.workstreams/trees/${name}`;
   const absPath = resolve(worktreePath);
   const { stat } = await import("fs/promises");
-  const exists = await stat(worktreePath).then(() => true).catch(() => false);
+  const dirExists = await stat(worktreePath).then(() => true).catch(() => false);
+  // A plain directory without a .git entry is not a valid worktree — git
+  // commands inside it would resolve to the parent repo (the base branch).
+  const isValidWorktree = dirExists &&
+    await stat(`${worktreePath}/.git`).then(() => true).catch(() => false);
 
-  if (!exists) {
+  if (!isValidWorktree) {
     const def = config.workstreams.find((w: any) => w.name === name);
     const wt = new WorktreeManager();
     console.log(`Creating worktree for "${name}" on branch ws/${name}...`);
@@ -520,6 +524,12 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             }
 
             s.currentRun.finishedAt = undefined;
+
+            // Ensure worktree exists before spawning the agent — the
+            // onCreateWorkstream callback is fire-and-forget so the auto-refresh
+            // may expose the workstream before its worktree is ready.
+            const cfg = await loadConfig("workstream.yaml");
+            await ensureWorktree(name, s, cfg);
 
             if (hasSession) {
               // Resume: send only the user's prompt (comments are sent

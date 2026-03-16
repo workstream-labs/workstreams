@@ -339,6 +339,7 @@ async function runResumeBackground(name: string, configPath: string, resumePromp
       prompt: resumePrompt,
       logFile: ws.logFile,
       agentConfig: resumeAgentConfig,
+      expectedBranch: ws.branch,
       onSessionId: async (id) => {
         // Don't overwrite the original session ID — the new ID from a
         // resumed session is not resumable by Claude's --resume flag.
