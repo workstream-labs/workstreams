@@ -626,7 +626,7 @@ function DiffFileItem({ file, selected, focused, width }: {
 
 const DIFF_FILE_PANEL_W = 30;
 
-function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, unifiedCommentIndices, fileComments, bottomSlot, scrollEnabled = true }: {
+function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, unifiedCommentIndices, fileComments, bottomSlot, scrollEnabled = true, overallComment, addCommentSelected }: {
   rawDiff: string | null;
   loading: boolean;
   focused: boolean;
@@ -639,6 +639,8 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   unifiedCommentIndices: Map<number, "old" | "new" | "both">;
   fileComments: ReviewComment[];
   bottomSlot?: React.ReactNode;
+  overallComment?: string;
+  addCommentSelected?: boolean;
 }) {
   const fileScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
 
@@ -853,11 +855,33 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
             {files.map((f: ProcessedFile, i: number) => (
               <DiffFileItem
                 file={f}
-                selected={i === clampedIdx}
+                selected={i === clampedIdx && !addCommentSelected}
                 focused={focused && subFocus === "files"}
                 width={DIFF_FILE_PANEL_W - 2}
               />
             ))}
+            {/* Separator + overall comment entry */}
+            <box height={1} style={{ paddingLeft: 2, width: DIFF_FILE_PANEL_W - 2 }}>
+              <text fg={theme.textMuted}>{"\u2500".repeat(DIFF_FILE_PANEL_W - 5)}</text>
+            </box>
+            <box
+              height={1}
+              style={{
+                flexDirection: "row",
+                backgroundColor: addCommentSelected
+                  ? (focused && subFocus === "files" ? theme.accent + "22" : "#264F7822")
+                  : undefined,
+                paddingLeft: 1,
+                width: DIFF_FILE_PANEL_W - 2,
+              }}
+            >
+              <text fg={addCommentSelected && focused && subFocus === "files" ? theme.accent : theme.textMuted}>
+                {addCommentSelected ? "\u25B6" : " "}{" "}
+              </text>
+              <text fg={overallComment ? "#e5c07b" : theme.accent}>
+                {overallComment ? "Edit comment" : "+ Add comment"}
+              </text>
+            </box>
           </scrollbox>
         </box>
 
@@ -982,6 +1006,53 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
       {side === "new" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
       <box style={{ flexGrow: 1, flexBasis: 0 }}>{commentBox}</box>
       {side === "old" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
+    </box>
+  );
+}
+
+// ─── Inline overall comment form ─────────────────────────────────────────────
+
+function InlineOverallCommentForm({ onTextChange, initialValue, isEditing }: {
+  onTextChange: (v: string) => void;
+  initialValue?: string;
+  isEditing?: boolean;
+}) {
+  return (
+    <box
+      style={{
+        flexShrink: 0,
+        minHeight: 8,
+        maxHeight: 12,
+        borderStyle: "single",
+        borderColor: theme.border,
+        margin: 1,
+        padding: 1,
+        flexDirection: "column",
+      }}
+    >
+      <box flexDirection="row">
+        <text fg={theme.textMuted}>{isEditing ? "editing overall comment" : "overall comment"}</text>
+      </box>
+      <textarea
+        placeholder="Write an overall comment on the diff..."
+        initialValue={initialValue}
+        focused={true}
+        onInput={onTextChange}
+        style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
+      />
+      <box flexDirection="row" marginTop={1}>
+        <text fg={theme.accent} bold>{"\u21B5"}</text>
+        <text fg={theme.textMuted}> {isEditing ? "update" : "submit"}  </text>
+        <text fg={theme.text}>esc</text>
+        <text fg={theme.textMuted}> cancel</text>
+        {isEditing && (
+          <>
+            <text fg={theme.textMuted}>  </text>
+            <text fg="#c53b53">ctrl+d</text>
+            <text fg={theme.textMuted}> delete</text>
+          </>
+        )}
+      </box>
     </box>
   );
 }
@@ -1443,6 +1514,10 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
   const [flashMessage, setFlashMessage] = React.useState<string | null>(null);
 
+  // ─── Overall comment state ─────────────────────────────────
+  const [showOverallCommentForm, setShowOverallCommentForm] = React.useState(false);
+  const overallCommentTextRef = React.useRef("");
+
   // ─── Overlay state ───────────────────────────────────────────
   const [showActionPicker, setShowActionPicker] = React.useState(false);
   const [actionPickerOptions, setActionPickerOptions] = React.useState<ActionOption[]>([]);
@@ -1475,6 +1550,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     ) as ProcessedFile[];
   }, [diffData]);
 
+  const isAddCommentEntry = diffFileIndex >= diffFiles.length;
   const clampedDiffIdx = Math.min(diffFileIndex, Math.max(0, diffFiles.length - 1));
   const currentDiffFile = diffFiles[clampedDiffIdx] as ProcessedFile | undefined;
   const currentFileName = currentDiffFile ? getFileName(currentDiffFile).replace(/^[ab]\//, "") : "";
@@ -1616,7 +1692,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   React.useEffect(() => {
     setCursorLine(0);
     setEditingCommentIndex(null);
-  }, [diffFileIndex]);
+  }, [clampedDiffIdx]);
 
   // ─── Load comments ─────────────────────────────────────────
   const refreshComments = React.useCallback(async () => {
@@ -1706,6 +1782,27 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setShowCommentForm(false);
     setEditingCommentIndex(null);
     setFlashMessage("\u2714 comment deleted");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleOverallCommentSubmit = async () => {
+    const text = overallCommentTextRef.current;
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    const updated = { ...current, overallComment: text.trim() || undefined };
+    await saveComments(updated);
+    await refreshComments();
+    setShowOverallCommentForm(false);
+    setFlashMessage(text.trim() ? "\u2714 overall comment saved" : "\u2714 overall comment cleared");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleOverallCommentDelete = async () => {
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    const updated = { ...current, overallComment: undefined };
+    await saveComments(updated);
+    await refreshComments();
+    setShowOverallCommentForm(false);
+    setFlashMessage("\u2714 overall comment deleted");
     setTimeout(() => setFlashMessage(null), 1500);
   };
 
@@ -1799,6 +1896,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         }
         return;
       }
+      return; // let textarea handle other keys
+    }
+    // ─── Overall comment form mode ──────────────────────
+    if (showOverallCommentForm) {
+      if (n === "escape") { setShowOverallCommentForm(false); return; }
+      if (n === "return" && !key.shift) { handleOverallCommentSubmit(); return; }
+      if (key.ctrl && n === "d" && comments?.overallComment) { handleOverallCommentDelete(); return; }
       return; // let textarea handle other keys
     }
 
@@ -2041,7 +2145,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
       if (diffSubFocus === "files") {
         if (n === "j" || n === "down") {
-          setDiffFileIndex((v: number) => v + 1); // clamped in DiffPanel
+          setDiffFileIndex((v: number) => Math.min(v + 1, diffFiles.length)); // allow add comment entry
           return;
         }
         if (n === "k" || n === "up") {
@@ -2049,6 +2153,12 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           return;
         }
         if (n === "return" || n === "right") {
+          if (isAddCommentEntry) {
+            // Open overall comment form
+            overallCommentTextRef.current = comments?.overallComment ?? "";
+            setShowOverallCommentForm(true);
+            return;
+          }
           setDiffSubFocus("diff");
           return;
         }
@@ -2224,6 +2334,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               cursorLine={cursorLine}
               unifiedCommentIndices={unifiedCommentIndices}
               fileComments={fileComments}
+              overallComment={comments?.overallComment}
+              addCommentSelected={isAddCommentEntry}
               bottomSlot={
                 <>
                   {flashMessage && (
@@ -2241,6 +2353,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                       side={commentSide}
                       viewMode={viewMode}
                       canToggle={commentCanToggle}
+                    />
+                  )}
+                  {showOverallCommentForm && (
+                    <InlineOverallCommentForm
+                      key={comments?.overallComment ? "edit-overall" : "new-overall"}
+                      onTextChange={(v) => { overallCommentTextRef.current = v; }}
+                      initialValue={comments?.overallComment}
+                      isEditing={!!comments?.overallComment}
                     />
                   )}
                 </>
