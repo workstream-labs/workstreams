@@ -28,6 +28,7 @@ export interface WorkstreamEntry {
   hasPendingPrompt: boolean;
   pendingPromptText?: string;
   isDirty: boolean;
+  startedAt?: string;
 }
 
 export type DashboardAction =

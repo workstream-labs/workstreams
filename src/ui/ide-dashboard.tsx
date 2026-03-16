@@ -530,13 +530,14 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
 
 // ─── Logs panel (embeds SessionMessages) ─────────────────────────────────────
 
-function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true }: {
+function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true, startedAt }: {
   messages: DisplayMessage[];
   status: string;
   follow: boolean;
   showThinking: boolean;
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   scrollEnabled?: boolean;
+  startedAt?: string;
 }) {
   // Check if the conversation has completed: the last message is a result
   // (not just any result — previous turns have results too)
@@ -570,6 +571,7 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
         messages={messages}
         showThinking={showThinking}
         isRunning={isRunning}
+        startedAt={startedAt}
       />
     </scrollbox>
   );
@@ -2303,6 +2305,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     follow={follow}
                     showThinking={showThinking}
                     scrollRef={logsScrollRef}
+                    startedAt={selectedEntry?.startedAt}
                   />
                   {rightMode === "logs" && flashMessage && (
                     <box style={{ flexDirection: "row", flexShrink: 0, paddingLeft: 1 }}>

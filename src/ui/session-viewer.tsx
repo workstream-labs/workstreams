@@ -74,12 +74,16 @@ export function Spinner({ color, children }: { color?: string; children?: React.
   );
 }
 
-function ElapsedTime() {
-  const [elapsed, setElapsed] = React.useState(0);
+function ElapsedTime({ startedAt }: { startedAt?: string }) {
+  const calcElapsed = () => {
+    if (!startedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  };
+  const [elapsed, setElapsed] = React.useState(calcElapsed);
   React.useEffect(() => {
-    const id = setInterval(() => setElapsed((v: number) => v + 1), 1000);
+    const id = setInterval(() => setElapsed(calcElapsed()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [startedAt]);
   const m = Math.floor(elapsed / 60);
   const s = elapsed % 60;
   const label = m > 0 ? `(${m}m ${s.toString().padStart(2, "0")}s)` : `(${s}s)`;
@@ -411,10 +415,11 @@ function ResultMsg({ msg }: { msg: Extract<DisplayMessage, { role: "result" }> }
 
 // ─── Reusable SessionMessages (embeddable, no header/footer/keyboard) ────────
 
-export function SessionMessages({ messages, showThinking, isRunning }: {
+export function SessionMessages({ messages, showThinking, isRunning, startedAt }: {
   messages: DisplayMessage[];
   showThinking: boolean;
   isRunning: boolean;
+  startedAt?: string;
 }) {
   const lastAst = messages.reduce((a: number, m: DisplayMessage, i: number) => m.role === "assistant" ? i : a, -1);
   return (
@@ -433,7 +438,7 @@ export function SessionMessages({ messages, showThinking, isRunning }: {
       {isRunning && (
         <box paddingLeft={3} marginTop={1} flexDirection="row" gap={1}>
           <Spinner color={theme.accent}>Working...</Spinner>
-          <ElapsedTime />
+          <ElapsedTime startedAt={startedAt} />
         </box>
       )}
     </box>
@@ -442,8 +447,8 @@ export function SessionMessages({ messages, showThinking, isRunning }: {
 
 // ─── Main SessionApp ────────────────────────────────────────────────────────
 
-function SessionApp({ name, status, messages: init, logFile }: {
-  name: string; status: string; messages: DisplayMessage[]; logFile: string;
+function SessionApp({ name, status, messages: init, logFile, startedAt }: {
+  name: string; status: string; messages: DisplayMessage[]; logFile: string; startedAt?: string;
 }) {
   const { width } = useTerminalDimensions();
   const renderer = useRenderer();
@@ -544,7 +549,7 @@ function SessionApp({ name, status, messages: init, logFile }: {
           {isRunning && (
             <box paddingLeft={3} marginTop={1} flexDirection="row" gap={1}>
               <Spinner color={theme.accent}>Working...</Spinner>
-              <ElapsedTime />
+              <ElapsedTime startedAt={startedAt} />
             </box>
           )}
         </box>
@@ -622,6 +627,7 @@ export interface SessionViewerOptions {
   logFile: string;
   status: string;
   sessionId?: string; // kept for compat but not used — we read logFile directly
+  startedAt?: string;
 }
 
 export async function openSessionViewer(options: SessionViewerOptions): Promise<void> {
@@ -658,7 +664,7 @@ export async function openSessionViewer(options: SessionViewerOptions): Promise<
     if (isRich) {
       createRoot(renderer).render(
         <SessionApp name={options.name} status={options.status}
-          messages={messages} logFile={options.logFile} />
+          messages={messages} logFile={options.logFile} startedAt={options.startedAt} />
       );
     } else {
       // Fallback for non-stream-json logs or empty files

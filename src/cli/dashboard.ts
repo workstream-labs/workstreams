@@ -115,6 +115,7 @@ async function buildEntries(config: any, state: any): Promise<WorkstreamEntry[]>
       hasPendingPrompt: !!pendingPromptText,
       pendingPromptText: pendingPromptText ?? undefined,
       isDirty,
+      startedAt: state?.currentRun?.workstreams?.[def.name]?.startedAt,
     } as WorkstreamEntry;
   });
 
@@ -244,6 +245,7 @@ async function actionViewLogs(name: string, state: any) {
     name,
     logFile: ws.logFile,
     status: ws.status,
+    startedAt: ws.startedAt,
   });
 }
 
