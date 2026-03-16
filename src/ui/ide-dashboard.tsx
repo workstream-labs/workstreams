@@ -530,13 +530,14 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
 
 // ─── Logs panel (embeds SessionMessages) ─────────────────────────────────────
 
-function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true }: {
+function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true, onFollowChange }: {
   messages: DisplayMessage[];
   status: string;
   follow: boolean;
   showThinking: boolean;
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   scrollEnabled?: boolean;
+  onFollowChange?: (follow: boolean) => void;
 }) {
   // Check if the conversation has completed: the last message is a result
   // (not just any result — previous turns have results too)
@@ -544,15 +545,31 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
   const isConversationDone = lastMsg?.role === "result";
   const isRunning = status === "running" && !isConversationDone;
 
+  const lastAutoScroll = React.useRef(0);
+
   // Auto-follow: scroll to bottom when messages change.
   // Use a short delay so the scrollbox layout has updated with the new content.
   React.useEffect(() => {
     if (!follow) return;
     const tick = () => scrollRef.current?.scrollBy(100_000);
     tick();
-    const id = setTimeout(tick, 32);
+    lastAutoScroll.current = Date.now();
+    const id = setTimeout(() => { tick(); lastAutoScroll.current = Date.now(); }, 32);
     return () => clearTimeout(id);
   }, [messages, follow]);
+
+  // Auto-disable follow when user scrolls away from bottom
+  React.useEffect(() => {
+    if (!follow) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastAutoScroll.current < 300) return;
+      const sb = scrollRef.current;
+      if (!sb) return;
+      const atBottom = sb.scrollTop + sb.viewport.height >= sb.scrollHeight - 3;
+      if (!atBottom) onFollowChange?.(false);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [follow, onFollowChange]);
 
   return (
     <scrollbox
@@ -2303,6 +2320,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     follow={follow}
                     showThinking={showThinking}
                     scrollRef={logsScrollRef}
+                    onFollowChange={setFollow}
                   />
                   {rightMode === "logs" && flashMessage && (
                     <box style={{ flexDirection: "row", flexShrink: 0, paddingLeft: 1 }}>
