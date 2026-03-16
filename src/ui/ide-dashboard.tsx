@@ -137,12 +137,23 @@ function parseFilePathsFromPaste(text: string): Attachment[] {
 
 function formatPromptWithAttachments(prompt: string, attachments: Attachment[]): string {
   if (attachments.length === 0) return prompt;
-  const refs = attachments.map(a =>
-    a.type === "image"
-      ? `[Image: ${a.path}]`
-      : `[File: ${a.path}]`
-  );
-  return refs.join("\n") + "\n\n" + prompt;
+  const imageAttachments = attachments.filter(a => a.type === "image");
+  const fileAttachments = attachments.filter(a => a.type === "file");
+  const parts: string[] = [];
+  if (imageAttachments.length > 0) {
+    parts.push(
+      "Read the following image file(s) using the Read tool before responding:\n" +
+      imageAttachments.map(a => a.path).join("\n")
+    );
+  }
+  if (fileAttachments.length > 0) {
+    parts.push(
+      "Read the following file(s) for context:\n" +
+      fileAttachments.map(a => a.path).join("\n")
+    );
+  }
+  parts.push(prompt);
+  return parts.join("\n\n");
 }
 
 // ─── Attachment pills component ──────────────────────────────────────────────
@@ -1881,9 +1892,10 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     // Must be before global keys so printable chars go to textarea
     if (chatInputFocused) {
       if (n === "return") {
-        const prompt = chatInputValueRef.current.trim();
-        if (prompt && selectedEntry && !isAgentActive) {
+        const rawPrompt = chatInputValueRef.current.trim();
+        if (rawPrompt && selectedEntry && !isAgentActive) {
           const entryName = selectedEntry.name;
+          const prompt = formatPromptWithAttachments(rawPrompt, attachments);
           options.onSendPrompt(entryName, prompt).then((sent) => {
             if (!sent) {
               // Revert optimistic status
