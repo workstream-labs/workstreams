@@ -192,27 +192,42 @@ async function actionOpenEditor(name: string, state: any, config: any, editorOpt
 
 // ─── Action: Open Claude session (interactive) ───────────────────────────────
 
-async function actionOpenSession(name: string, ws: WorkstreamState, state: ProjectState) {
-  if (!ws.sessionId) {
-    console.error("Error: no session ID captured for this workstream.");
-    return;
-  }
+async function actionOpenSession(name: string, ws: WorkstreamState, _state: ProjectState): Promise<boolean> {
+  if (!ws.sessionId) return false;
 
+  // Open the Claude session in a new terminal window so it doesn't conflict
+  // with the dashboard's TUI (alternate screen + raw mode). The session runs
+  // independently, allowing the user to keep using the dashboard.
   const absWorktreePath = resolve(ws.worktreePath);
-  const proc = Bun.spawn(["claude", "--dangerously-skip-permissions", "--resume", ws.sessionId], {
-    cwd: absWorktreePath,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const shellCmd = `cd ${shellEscape(absWorktreePath)} && claude --resume ${shellEscape(ws.sessionId)}`;
 
-  const exitCode = await proc.exited;
-  console.log(`\nReturned from Claude session for "${name}".`);
+  if (process.platform === "darwin") {
+    // Use AppleScript to open a new Terminal.app window with the resume command
+    const script = `tell application "Terminal"
+  activate
+  do script "${shellCmd.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"
+end tell`;
+    const proc = Bun.spawn(["osascript", "-e", script], { stdio: ["ignore", "pipe", "ignore"] });
+    await proc.exited;
+    return proc.exitCode === 0;
+  } else {
+    // Try common Linux terminal emulators
+    const terminals = [
+      ["gnome-terminal", "--", "bash", "-c", shellCmd],
+      ["xterm", "-e", shellCmd],
+    ];
+    for (const args of terminals) {
+      try {
+        Bun.spawn(args, { stdio: ["ignore", "ignore", "ignore"] });
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+}
 
-  ws.status = exitCode === 0 ? "success" : "failed";
-  ws.finishedAt = new Date().toISOString();
-  await appendWorkstreamStatus(ws);
-  console.log(`Status updated to: ${ws.status}`);
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 // ─── Action: View diff ───────────────────────────────────────────────────────
@@ -330,7 +345,7 @@ async function dispatchAction(action: DashboardAction, state: any, config: any):
     case "open-session": {
       const ws = state.currentRun?.workstreams?.[action.name];
       if (ws) await actionOpenSession(action.name, ws, state);
-      return false;
+      return true;
     }
 
     case "run": {
@@ -441,6 +456,12 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
             }
             await openEditor(absPath, resolved);
             return true;
+          },
+          onOpenSession: async (name: string): Promise<boolean> => {
+            const s = await loadState() ?? freshState;
+            const ws = s.currentRun?.workstreams?.[name];
+            if (!ws) return false;
+            return actionOpenSession(name, ws, s);
           },
           onCreateWorkstream: async (name: string): Promise<boolean> => {
             try {

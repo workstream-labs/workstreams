@@ -68,6 +68,7 @@ export interface IdeDashboardOptions {
   onSendPrompt: (name: string, prompt: string) => Promise<boolean>;
   onInterrupt: (name: string) => Promise<void>;
   onOpenEditor?: (name: string) => Promise<boolean>;
+  onOpenSession?: (name: string) => Promise<boolean>;
   onCreateWorkstream?: (name: string) => Promise<boolean>;
   onDestroy?: (name: string) => Promise<boolean>;
 }
@@ -1944,6 +1945,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         if (opt.action === "editor" && options.onOpenEditor) {
           options.onOpenEditor(selectedEntry.name).then((opened) => {
             setFlashMessage(opened ? "\u2714 Editor opened" : "Could not open editor");
+            setTimeout(() => setFlashMessage(null), 2000);
+          });
+          return;
+        }
+        // Handle "open-session" inline — open in new terminal, keep dashboard open
+        if (opt.action === "open-session" && options.onOpenSession) {
+          options.onOpenSession(selectedEntry.name).then((opened) => {
+            setFlashMessage(opened ? "\u2714 Session opened in new terminal" : "Could not open session");
             setTimeout(() => setFlashMessage(null), 2000);
           });
           return;
