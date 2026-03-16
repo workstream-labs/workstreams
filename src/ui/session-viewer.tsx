@@ -500,9 +500,27 @@ function SessionApp({ name, status, messages: init, logFile, startedAt }: {
     return () => { if (watcher) watcher.close(); };
   }, [logFile]);
 
+  const lastAutoScroll = React.useRef(0);
+
   React.useEffect(() => {
-    if (follow && scrollRef.current) scrollRef.current.scrollBy(100_000);
+    if (follow && scrollRef.current) {
+      scrollRef.current.scrollBy(100_000);
+      lastAutoScroll.current = Date.now();
+    }
   }, [messages, follow]);
+
+  // Auto-disable follow when user scrolls away from bottom
+  React.useEffect(() => {
+    if (!follow) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastAutoScroll.current < 300) return;
+      const sb = scrollRef.current;
+      if (!sb) return;
+      const atBottom = sb.scrollTop + sb.viewport.height >= sb.scrollHeight - 3;
+      if (!atBottom) setFollow(false);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [follow]);
 
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
@@ -592,7 +610,27 @@ function FallbackApp({ name, status, logFile }: { name: string; status: string; 
     return () => { if (watcher) watcher.close(); };
   }, [logFile]);
 
-  React.useEffect(() => { if (follow && scrollRef.current) scrollRef.current.scrollBy(100_000); }, [lines, follow]);
+  const lastAutoScroll = React.useRef(0);
+
+  React.useEffect(() => {
+    if (follow && scrollRef.current) {
+      scrollRef.current.scrollBy(100_000);
+      lastAutoScroll.current = Date.now();
+    }
+  }, [lines, follow]);
+
+  // Auto-disable follow when user scrolls away from bottom
+  React.useEffect(() => {
+    if (!follow) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastAutoScroll.current < 300) return;
+      const sb = scrollRef.current;
+      if (!sb) return;
+      const atBottom = sb.scrollTop + sb.viewport.height >= sb.scrollHeight - 3;
+      if (!atBottom) setFollow(false);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [follow]);
 
   useKeyboard((key: any) => {
     const n = key.name ?? key.sequence ?? "";
