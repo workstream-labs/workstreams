@@ -206,6 +206,23 @@ export async function getDiffStats(branch: string, worktreePath?: string): Promi
       }
     }
 
+    // Count untracked (new) files in the worktree — git diff HEAD misses them
+    if (worktreePath) {
+      const untracked = await $`git -C ${worktreePath} ls-files --others --exclude-standard`.quiet().catch(() => null);
+      if (untracked) {
+        const untrackedFiles = untracked.stdout.toString().trim().split("\n")
+          .filter(f => f && !f.startsWith(".claude/"));
+        for (const file of untrackedFiles) {
+          if (files.has(file)) continue;
+          try {
+            const content = await Bun.file(`${worktreePath}/${file}`).text();
+            const lineCount = content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+            files.set(file, { add: Math.max(lineCount, 1), del: 0 });
+          } catch {}
+        }
+      }
+    }
+
     let additions = 0;
     let deletions = 0;
     for (const { add, del } of files.values()) {

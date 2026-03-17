@@ -129,7 +129,24 @@ esac
   async diff(name: string): Promise<string> {
     const path = `${TREES_DIR}/${name}`;
     const result = await $`git -C ${path} diff HEAD`.quiet();
-    return result.stdout.toString();
+    let diff = result.stdout.toString();
+
+    // Include untracked (new) files — git diff HEAD only shows tracked changes
+    const untracked = await $`git -C ${path} ls-files --others --exclude-standard`.quiet().catch(() => null);
+    if (untracked) {
+      const files = untracked.stdout.toString().trim().split("\n")
+        .filter(f => f && !f.startsWith(".claude/"));
+      for (const file of files) {
+        try {
+          await $`git -C ${path} diff --no-index -- /dev/null ${file}`.quiet();
+        } catch (e: any) {
+          // git diff --no-index exits 1 when files differ — expected for new files
+          if (e.stdout) diff += e.stdout.toString();
+        }
+      }
+    }
+
+    return diff;
   }
 
   async diffBranch(branch: string, baseBranch?: string): Promise<string> {
