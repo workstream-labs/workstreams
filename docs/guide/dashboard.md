@@ -70,13 +70,13 @@ Press `Enter` on a workstream to see context-sensitive actions:
 - View logs
 
 **If changes exist:**
-- View diff & review — opens the [diff viewer](/guide/reviewing)
+- View diff & review: opens the [diff viewer](/guide/reviewing)
 
 ## Search
 
-Press `/` to enter search mode. Type to filter workstreams — matching uses multi-term AND logic:
+Press `/` to enter search mode. Type to filter workstreams. Matching uses multi-term AND logic:
 
-- `auth pass` — finds workstreams matching both "auth" AND "pass"
+- `auth pass` finds workstreams matching both "auth" and "pass"
 - Search checks names, prompts, and status
 
 Press `Enter` to confirm the filter, `Esc` to clear.

@@ -5,8 +5,8 @@ Complete reference for `workstream.yaml`.
 ## Top-Level Structure
 
 ```yaml
-agent:       # Required — agent configuration
-workstreams: # Optional — workstream definitions
+agent:       # Required
+workstreams: # Optional
 ```
 
 ## `agent`
@@ -23,7 +23,7 @@ workstreams: # Optional — workstream definitions
 
 | Command | Flags |
 |---|---|
-| `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose` |
+| `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose --include-partial-messages` |
 | `codex` | `--full-auto` |
 | `aider` | `--yes` |
 | Any other | None |

@@ -12,7 +12,7 @@ The agent continues from where it left off, with full context of its previous wo
 
 ## Resume with Review Comments
 
-After adding inline comments in the [diff viewer](/guide/reviewing), resume the workstream — pending comments are automatically included:
+After adding inline comments in the [diff viewer](/guide/reviewing), resume the workstream. Pending comments are included automatically:
 
 ```bash
 ws run auth -p "Address the review comments"

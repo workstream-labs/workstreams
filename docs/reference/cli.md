@@ -33,8 +33,9 @@ ws create <name> [options]
 | Option | Description |
 |---|---|
 | `-p, --prompt <text>` | Prompt for the agent |
+| `-b, --base <branch>` | Base branch for the worktree (defaults to HEAD) |
 
-Creates the config entry only — does not run the agent or create a worktree. Omit `-p` to create a prompt-less workspace.
+Creates the config entry only. Does not run the agent or create a worktree. Omit `-p` to create a prompt-less workspace.
 
 ---
 

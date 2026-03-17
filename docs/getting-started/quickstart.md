@@ -1,6 +1,6 @@
 # Quickstart
 
-Get from zero to parallel AI agents in a few steps.
+From zero to parallel agents in a few steps.
 
 ## 1. Initialize
 
@@ -48,7 +48,7 @@ ws list        # quick status overview
 ws dashboard   # interactive dashboard
 ```
 
-The dashboard lets you browse diffs, view logs, add review comments, and resume agents — all with keyboard shortcuts.
+The dashboard shows diffs, logs, review comments, and lets you resume agents. See [keyboard shortcuts](/reference/keyboard-shortcuts).
 
 ## 5. Navigate to a Workstream
 
@@ -66,7 +66,7 @@ ws view add-tests              # open in default editor
 ws view add-tests -e cursor    # open in Cursor
 ```
 
-You can also do this from the dashboard — select a workstream, press `Enter`, and choose "Open in editor".
+You can also do this from the dashboard: select a workstream, press `Enter`, and choose "Open in editor".
 
 ## 6. Sync with Main and Resolve Conflicts
 
@@ -80,7 +80,7 @@ git merge main                 # merge main into ws/add-tests
 If there are conflicts, resolve them in your editor:
 
 ```bash
-ws view add-tests              # opens the worktree in your editor — fix conflicts there
+ws view add-tests              # opens the worktree in your editor to fix conflicts
 ```
 
 Then complete the merge:
@@ -115,16 +115,8 @@ After merging, clean up the workstream:
 ws destroy add-tests            # removes worktree and branch
 ```
 
-## What Just Happened?
-
-In a few minutes, three AI agents worked on your codebase simultaneously:
-
-- Each ran in an **isolated git worktree** — no conflicts between agents
-- Each created its own **branch** (`ws/<name>`) — clean git history
-- Results live on **branches** (`ws/<name>`) — merge via GitHub PR or git
-
 ## Next Steps
 
-- [Configuration](/getting-started/configuration) — full `workstream.yaml` reference
-- [Concepts](/guide/concepts) — understand the architecture
-- [Dashboard](/guide/dashboard) — master the interactive TUI
+- [Configuration](/getting-started/configuration): `workstream.yaml` reference
+- [Concepts](/guide/concepts): how worktrees and parallel execution work
+- [Dashboard](/guide/dashboard): keyboard shortcuts and features
