@@ -6,6 +6,8 @@ The interactive dashboard is the central hub for managing workstreams.
 ws dashboard
 ```
 
+![Dashboard](/dashboard.png)
+
 ## Layout
 
 The dashboard displays workstreams as compact cards:

@@ -43,6 +43,7 @@ export default defineConfig({
           { text: "Reviewing Changes", link: "/guide/reviewing" },
           { text: "Resuming Work", link: "/guide/resuming" },
           { text: "Agents", link: "/guide/agents" },
+          { text: "Merging", link: "/guide/merging" },
         ],
       },
       {

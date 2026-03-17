@@ -2,6 +2,8 @@
 
 Parallel AI coding agents in isolated git worktrees.
 
+![Dashboard](docs/public/dashboard.png)
+
 ## Install
 
 ```bash

@@ -48,6 +48,8 @@ ws list        # quick status overview
 ws dashboard   # interactive dashboard
 ```
 
+![ws list](/list.png)
+
 The dashboard shows diffs, logs, review comments, and lets you resume agents. See [keyboard shortcuts](/reference/keyboard-shortcuts).
 
 ## 5. Navigate to a Workstream

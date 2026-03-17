@@ -10,6 +10,8 @@ ws diff auth-feature
 
 This opens an interactive diff viewer. For raw output (useful for piping):
 
+![Diff viewer](/diff-viewer.png)
+
 ```bash
 ws diff auth --raw
 ws diff                  # raw diffs for all workstreams
