@@ -16,20 +16,20 @@ hero:
 features:
   - icon: "\u26A1"
     title: Parallel Execution
-    details: Run multiple AI agents simultaneously, each in its own git worktree. No conflicts, no waiting.
+    details: Every agent gets its own git worktree. They all run at the same time without stepping on each other.
   - icon: "\U0001F916"
     title: Multi-Agent Support
-    details: Works with Claude, Codex, and Aider out of the box. Bring your own agent with a single config line.
+    details: Built for Claude Code. Codex and Aider support is experimental.
   - icon: "\U0001F5A5\uFE0F"
     title: Interactive Dashboard
-    details: Monitor all workstreams, browse diffs, add inline review comments, and resume agents — all from the terminal.
+    details: Browse diffs, add review comments, and resume agents from a terminal TUI.
   - icon: "\U0001F500"
     title: Clean Git Workflow
-    details: Each workstream gets its own branch. Squash-merge results when ready. No mess in your main branch.
+    details: Each workstream gets its own branch. Squash-merge when you're done.
   - icon: "\U0001F4AC"
     title: Review & Resume
-    details: Add inline comments on diffs. Resume agents with your feedback. Iterate until the code is right.
+    details: Comment on diffs. Resume the agent with your feedback. Repeat until it's right.
   - icon: "\U0001F4CB"
-    title: Simple YAML Config
-    details: Define workstreams in a single workstream.yaml file. Map or array format — your choice.
+    title: YAML Config
+    details: One workstream.yaml file. Map or array format.
 ---

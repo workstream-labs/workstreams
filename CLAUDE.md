@@ -16,7 +16,7 @@ bun test tests/dag.test.ts  # run a single test file
 bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
-The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `diff`, `destroy`, `resume`, `switch`.
+The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `dashboard`, `diff`, `view`, `checkout`, `destroy`.
 
 ## workstream.yaml Config Format
 
@@ -46,7 +46,7 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `config.ts` — Loads and validates `workstream.yaml`. Accepts both map and array `workstreams` formats; `base_branch` and `baseBranch` are both valid keys.
 - `dag.ts` — Builds a graph of workstream nodes from definitions.
 - `executor.ts` — `Executor` runs all workstreams in parallel. Serializes worktree creation via a mutex (`worktreeLock`) to prevent git lock races. Handles SIGINT/SIGTERM cleanup.
-- `agent.ts` — `AgentAdapter` spawns the configured agent in each worktree. Auto-injects accept flags per agent (`--dangerously-skip-permissions --output-format stream-json --verbose` for claude, `--full-auto` for codex, `--yes` for aider). Strips `CLAUDECODE` from the environment before spawning child agents. Parses Claude's stream-json stdout to extract `session_id` for later resume. Auto-commits any uncommitted changes after a successful agent run (`ws: apply agent changes`).
+- `agent.ts` — `AgentAdapter` spawns the configured agent in each worktree. Auto-injects accept flags per agent (`--dangerously-skip-permissions --output-format stream-json --verbose --include-partial-messages` for claude, `--full-auto` for codex, `--yes` for aider). Strips `CLAUDECODE` from the environment before spawning child agents. Parses Claude's stream-json stdout to extract `session_id` for later resume. Auto-commits any uncommitted changes after a successful agent run (`ws: apply agent changes`).
 - `worktree.ts` — `WorktreeManager` wraps git worktree commands. Creates branches prefixed `ws/` in `.workstreams/trees/`. `diff(name)` diffs against HEAD within the worktree; `diffBranch(branch, base)` diffs the branch against a base ref from the main repo.
 - `state.ts` — Persists run state to `.workstreams/state.json`.
 - `events.ts` — `EventBus` with typed events, wildcard listeners, and a ring buffer for replay.
@@ -54,13 +54,19 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `errors.ts` — Error hierarchy: `WorkstreamError` → `ConfigError`, `AgentError`, `WorktreeError`.
 - `prompt.ts` — Interactive input helpers (`prompt`, `promptChoice`) using Node.js readline.
 - `comments.ts` — Review comment storage in `.workstreams/comments/<name>.json`. Load, save, clear, and format comments as agent prompts.
+- `pending-prompt.ts` — Persistent pending prompts in `.workstreams/pending-prompts/`. Auto-loaded on resume.
+- `notify.ts` — Desktop notifications for agent completion.
+- `session-reader.ts` — Parses agent session logs to extract state markers.
 
 **CLI commands** (`src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `src/index.ts`.
-- `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run`. Skips prompt-less workstreams.
-- `resume.ts` — `ws resume <name>`: non-interactive resume with a new prompt (`-p`) or stored review comments (`--comments`). Clears stored comments on success.
-- `switch.ts` — `ws switch [name]`: 2-screen flow: (1) `openDashboard` single-screen dashboard with 3-line workstream cards, inline hotkey actions (`Enter`=editor, `d`=diff, `r`=resume, `p`=prompt modal, `c`=comments), fuzzy search (`/`), help overlay (`?`), context-sensitive footer. Returns `DashboardAction`. (2) `openDiffViewer` for browsing changes (returns to dashboard on quit). Supports `-e` for direct editor open, auto-detects and persists the user's preferred editor in state.
+- `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run` and `-p <prompt>` for resuming with new instructions. Skips prompt-less workstreams. Auto-includes stored review comments and pending prompts when resuming.
+- `dashboard.ts` — `ws dashboard`: IDE-style TUI dashboard with inline log viewer, diff viewer, review comments, pending prompts, create/destroy, and resume. Fuzzy search (`/`), help overlay (`?`), context-sensitive footer.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
-- `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches.
+- `diff.ts` — `ws diff [name]`: show git diff for one or all workstream branches. Opens interactive viewer for single workstream, plain output with `--raw`.
+- `view.ts` — `ws view <name>`: open worktree in editor (`-e <editor>`, `--no-editor` for path only).
+- `checkout.ts` — `ws checkout <name>`: print worktree path for use with `cd $(ws checkout name)`. Auto-creates worktree if missing.
+- `create.ts` — `ws create <name>`: add a new workstream. Supports `-p <prompt>` and `-b <branch>` for base branch.
+- `list.ts` — `ws list`: status overview with diff stats, branch sync info, comment count, and duration.
 
 **TUI layer** (`src/ui/`): All TUI components use raw ANSI escape sequences directly — no external TUI library. They enter the alternate screen, set raw mode, and handle terminal resize.
 - `ansi.ts` — Shared ANSI utilities: color constants (`A`, `C`), `bg256`/`fg256`, cursor/screen helpers, `stripAnsi`, `truncate`, `pad`, `STATUS_STYLE`. Used by all UI files and `list.ts`.
@@ -71,4 +77,4 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `diff-viewer.ts` — `openDiffViewer(name, rawDiff, options?)`: full-screen diff browser with file list panel + diff panel. Supports unified and side-by-side modes, word-level LCS diff highlighting. Optional `returnLabel` shown in footer. Keys: `Tab`/`h`/`l` switch focus, `t` toggle unified/side-by-side, `n`/`p` next/prev file, `j`/`k` scroll, `g`/`G` top/bottom, `d`/`u` half-page.
 - `diff-parser.ts` — Pure parser: `parseDiff(raw)` converts raw `git diff` output into `ParsedDiff` (files -> hunks -> lines with old/new line numbers and type).
 
-**State directory:** `.workstreams/` (gitignored) contains `state.json`, `trees/` (git worktrees), `logs/` (per-workstream log files), and `comments/` (review comments per workstream).
+**State directory:** `.workstreams/` (gitignored) contains `state.json`, `trees/` (git worktrees), `logs/` (per-workstream log files), `comments/` (review comments per workstream), and `pending-prompts/` (continuation prompts).

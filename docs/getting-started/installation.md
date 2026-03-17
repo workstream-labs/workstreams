@@ -98,4 +98,4 @@ rm workstream.yaml      # removes config
 
 ## Next Steps
 
-Head to the [Quickstart](/getting-started/quickstart) to run your first parallel workstream.
+- [Quickstart](/getting-started/quickstart): run your first parallel workstream

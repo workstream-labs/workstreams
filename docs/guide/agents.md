@@ -13,11 +13,12 @@ agent:
 - `--dangerously-skip-permissions` — skip permission prompts
 - `--output-format stream-json` — structured output for session capture
 - `--verbose` — detailed logging
+- `--include-partial-messages` — stream partial messages
 
 **Features with Claude:**
-- **Session capture** — `ws` extracts the session ID from Claude's stream-json output
-- **True resume** — `ws resume` continues the exact same conversation with full context
-- **Auto-commit** — successful changes are committed automatically
+- Session capture: `ws` extracts the session ID from Claude's stream-json output
+- Resume: `ws run <name> -p` continues the exact same conversation with full context
+- Auto-commit: successful changes are committed automatically
 
 ### Custom Model
 

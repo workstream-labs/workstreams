@@ -8,7 +8,7 @@ Run all workstreams in parallel:
 ws run
 ```
 
-This creates worktrees and branches for each workstream, then spawns agents simultaneously. The command returns immediately — agents run in the background.
+This creates worktrees and branches for each workstream, then spawns agents simultaneously. Agents run in the background.
 
 ## Run a Single Workstream
 

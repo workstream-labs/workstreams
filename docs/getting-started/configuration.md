@@ -41,7 +41,7 @@ When `acceptAll` is `true` (the default), `ws` automatically adds flags based on
 
 | Agent | Flags |
 |---|---|
-| `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose` |
+| `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose --include-partial-messages` |
 | `codex` | `--full-auto` |
 | `aider` | `--yes` |
 | Other | No flags injected |
@@ -92,7 +92,7 @@ workstreams:
     # No prompt — just creates a worktree for manual work
 ```
 
-These workspaces show as status `workspace` and are skipped by `ws run`. Use them to open an editor via `ws switch sandbox -e cursor` for manual work.
+These workspaces show as status `workspace` and are skipped by `ws run`. Use them to open an editor via `ws view sandbox -e cursor` for manual work.
 
 ## Directory Structure
 
@@ -121,11 +121,11 @@ The `.workstreams/` directory is automatically added to `.gitignore`.
 
 `ws` validates your config on every command. Common errors:
 
-- **Missing `agent.command`** — the agent binary is required
-- **Duplicate workstream names** — each name must be unique
-- **Invalid YAML** — check syntax with a YAML linter
+- Missing `agent.command`: the agent binary is required
+- Duplicate workstream names: each name must be unique
+- Invalid YAML: check syntax with a YAML linter
 
 ## Next Steps
 
-- [Concepts](/guide/concepts) — understand worktrees, agents, and parallel execution
-- [Agents](/guide/agents) — detailed agent configuration for Claude, Codex, and Aider
+- [Concepts](/guide/concepts): how worktrees, agents, and parallel execution work
+- [Agents](/guide/agents): agent configuration for Claude, Codex, and Aider

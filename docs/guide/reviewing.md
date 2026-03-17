@@ -10,6 +10,8 @@ ws diff auth-feature
 
 This opens an interactive diff viewer. For raw output (useful for piping):
 
+![Diff viewer](/diff-viewer.png)
+
 ```bash
 ws diff auth --raw
 ws diff                  # raw diffs for all workstreams
@@ -54,9 +56,9 @@ The typical review loop:
 1. Run `ws diff auth` to browse changes
 2. Press `c` to comment on lines that need work
 3. Press `q` to exit the diff viewer
-4. Run `ws run auth -p "Address review comments"` to resume — pending comments are automatically included
+4. Run `ws run auth -p "Address review comments"` to resume. Pending comments are included automatically.
 5. The agent addresses your feedback
 6. Repeat until satisfied
 7. Merge via GitHub PR or `git merge`
 
-You can also start the review from the dashboard — select a workstream, press `Enter`, and choose "View diff & review".
+You can also start the review from the dashboard: select a workstream, press `Enter`, and choose "View diff & review".
