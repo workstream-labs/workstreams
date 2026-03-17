@@ -17,6 +17,7 @@ export interface ReviewComment {
 export interface WorkstreamComments {
   workstream: string;
   comments: ReviewComment[];
+  overallComment?: string;
   updatedAt: string;
 }
 
@@ -56,31 +57,44 @@ export async function deleteComment(name: string, index: number): Promise<Workst
 }
 
 export function formatCommentsAsPrompt(data: WorkstreamComments): string {
-  if (data.comments.length === 0) return "";
+  const hasComments = data.comments.length > 0;
+  const hasOverall = !!data.overallComment;
 
-  const sections = data.comments.map((c, i) => {
-    const typeLabel = c.lineType === "add" ? "added" : c.lineType === "remove" ? "removed" : "unchanged";
-    const loc = c.line
-      ? `${c.filePath}:${c.line} (${typeLabel} line, ${c.side ?? "new"} side)`
-      : c.filePath;
+  if (!hasComments && !hasOverall) return "";
 
-    const parts = [`### Comment ${i + 1}: ${loc}`, c.text];
+  const parts: string[] = [];
 
-    if (c.diffContext) {
-      parts.push("Surrounding diff context:");
-      parts.push("```diff", c.diffContext, "```");
-    } else if (c.lineContent) {
-      parts.push(`Line: \`${c.lineContent}\``);
-    }
+  if (hasOverall) {
+    parts.push("## Overall Comment", "", data.overallComment!, "");
+  }
 
-    return parts.join("\n");
-  });
+  if (hasComments) {
+    const sections = data.comments.map((c, i) => {
+      const typeLabel = c.lineType === "add" ? "added" : c.lineType === "remove" ? "removed" : "unchanged";
+      const loc = c.line
+        ? `${c.filePath}:${c.line} (${typeLabel} line, ${c.side ?? "new"} side)`
+        : c.filePath;
 
-  return [
-    "I have the following review comments on the changes you made. Each comment includes the file, line number, whether the line was added/removed/unchanged, and the surrounding diff for context.",
-    "",
-    ...sections,
-    "",
-    "Please address each comment. Use the diff context to understand what changed and apply the fix to the correct location in the current working tree.",
-  ].join("\n");
+      const inner = [`### Comment ${i + 1}: ${loc}`, c.text];
+
+      if (c.diffContext) {
+        inner.push("Surrounding diff context:");
+        inner.push("```diff", c.diffContext, "```");
+      } else if (c.lineContent) {
+        inner.push(`Line: \`${c.lineContent}\``);
+      }
+
+      return inner.join("\n");
+    });
+
+    parts.push(
+      "I have the following review comments on the changes you made. Each comment includes the file, line number, whether the line was added/removed/unchanged, and the surrounding diff for context.",
+      "",
+      ...sections,
+      "",
+      "Please address each comment. Use the diff context to understand what changed and apply the fix to the correct location in the current working tree.",
+    );
+  }
+
+  return parts.join("\n");
 }

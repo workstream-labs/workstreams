@@ -39,7 +39,11 @@ Interactive viewer keys: j/k scroll, Tab switch panels, t toggle side-by-side,
           process.exit(1);
         }
         try {
-          const diff = await wt.diffBranch(`ws/${n}`);
+          const [branchDiff, uncommittedDiff] = await Promise.all([
+            wt.diffBranch(`ws/${n}`),
+            wt.diff(n),
+          ]);
+          const diff = branchDiff + uncommittedDiff;
           await openDiffViewer(n, diff);
         } catch (e: any) {
           console.error(`Error: ${e.message}`);
@@ -59,7 +63,11 @@ Interactive viewer keys: j/k scroll, Tab switch panels, t toggle side-by-side,
         if (ws.status !== "success" && ws.status !== "running") continue;
 
         try {
-          const diff = await wt.diffBranch(`ws/${n}`);
+          const [branchDiff, uncommittedDiff] = await Promise.all([
+            wt.diffBranch(`ws/${n}`),
+            wt.diff(n),
+          ]);
+          const diff = branchDiff + uncommittedDiff;
           if (diff.trim()) {
             console.log(`\x1b[1m=== ${n} ===\x1b[0m`);
             console.log(diff);

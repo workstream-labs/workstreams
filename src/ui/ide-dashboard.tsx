@@ -68,6 +68,7 @@ export interface IdeDashboardOptions {
   onSendPrompt: (name: string, prompt: string) => Promise<boolean>;
   onInterrupt: (name: string) => Promise<void>;
   onOpenEditor?: (name: string) => Promise<boolean>;
+  onOpenSession?: (name: string) => Promise<boolean>;
   onCreateWorkstream?: (name: string) => Promise<boolean>;
   onDestroy?: (name: string) => Promise<boolean>;
 }
@@ -137,12 +138,23 @@ function parseFilePathsFromPaste(text: string): Attachment[] {
 
 function formatPromptWithAttachments(prompt: string, attachments: Attachment[]): string {
   if (attachments.length === 0) return prompt;
-  const refs = attachments.map(a =>
-    a.type === "image"
-      ? `[Image: ${a.path}]`
-      : `[File: ${a.path}]`
-  );
-  return refs.join("\n") + "\n\n" + prompt;
+  const imageAttachments = attachments.filter(a => a.type === "image");
+  const fileAttachments = attachments.filter(a => a.type === "file");
+  const parts: string[] = [];
+  if (imageAttachments.length > 0) {
+    parts.push(
+      "Read the following image file(s) using the Read tool before responding:\n" +
+      imageAttachments.map(a => a.path).join("\n")
+    );
+  }
+  if (fileAttachments.length > 0) {
+    parts.push(
+      "Read the following file(s) for context:\n" +
+      fileAttachments.map(a => a.path).join("\n")
+    );
+  }
+  parts.push(prompt);
+  return parts.join("\n\n");
 }
 
 // ─── Attachment pills component ──────────────────────────────────────────────
@@ -519,13 +531,15 @@ function RightPanelTabs({ mode, onSwitch, wsName, wsStatus }: {
 
 // ─── Logs panel (embeds SessionMessages) ─────────────────────────────────────
 
-function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true }: {
+function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEnabled = true, startedAt, onFollowChange}: {
   messages: DisplayMessage[];
   status: string;
   follow: boolean;
   showThinking: boolean;
   scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   scrollEnabled?: boolean;
+  startedAt?: string;
+  onFollowChange?: (follow: boolean) => void;
 }) {
   // Check if the conversation has completed: the last message is a result
   // (not just any result — previous turns have results too)
@@ -533,15 +547,31 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
   const isConversationDone = lastMsg?.role === "result";
   const isRunning = status === "running" && !isConversationDone;
 
+  const lastAutoScroll = React.useRef(0);
+
   // Auto-follow: scroll to bottom when messages change.
   // Use a short delay so the scrollbox layout has updated with the new content.
   React.useEffect(() => {
     if (!follow) return;
     const tick = () => scrollRef.current?.scrollBy(100_000);
     tick();
-    const id = setTimeout(tick, 32);
+    lastAutoScroll.current = Date.now();
+    const id = setTimeout(() => { tick(); lastAutoScroll.current = Date.now(); }, 32);
     return () => clearTimeout(id);
   }, [messages, follow]);
+
+  // Auto-disable follow when user scrolls away from bottom
+  React.useEffect(() => {
+    if (!follow) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastAutoScroll.current < 300) return;
+      const sb = scrollRef.current;
+      if (!sb) return;
+      const atBottom = sb.scrollTop + sb.viewport.height >= sb.scrollHeight - 3;
+      if (!atBottom) onFollowChange?.(false);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [follow, onFollowChange]);
 
   return (
     <scrollbox
@@ -559,6 +589,7 @@ function LogsPanel({ messages, status, follow, showThinking, scrollRef, scrollEn
         messages={messages}
         showThinking={showThinking}
         isRunning={isRunning}
+        startedAt={startedAt}
       />
     </scrollbox>
   );
@@ -615,7 +646,7 @@ function DiffFileItem({ file, selected, focused, width }: {
 
 const DIFF_FILE_PANEL_W = 30;
 
-function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, unifiedCommentIndices, fileComments, bottomSlot, scrollEnabled = true }: {
+function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollRef, diffRef, viewMode, cursorLine, unifiedCommentIndices, fileComments, bottomSlot, scrollEnabled = true, overallComment, addCommentSelected }: {
   rawDiff: string | null;
   loading: boolean;
   focused: boolean;
@@ -628,6 +659,8 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
   unifiedCommentIndices: Map<number, "old" | "new" | "both">;
   fileComments: ReviewComment[];
   bottomSlot?: React.ReactNode;
+  overallComment?: string;
+  addCommentSelected?: boolean;
 }) {
   const fileScrollRef = React.useRef<ScrollBoxRenderable | null>(null);
 
@@ -842,11 +875,33 @@ function DiffPanel({ rawDiff, loading, focused, fileIndex, subFocus, diffScrollR
             {files.map((f: ProcessedFile, i: number) => (
               <DiffFileItem
                 file={f}
-                selected={i === clampedIdx}
+                selected={i === clampedIdx && !addCommentSelected}
                 focused={focused && subFocus === "files"}
                 width={DIFF_FILE_PANEL_W - 2}
               />
             ))}
+            {/* Separator + overall comment entry */}
+            <box height={1} style={{ paddingLeft: 2, width: DIFF_FILE_PANEL_W - 2 }}>
+              <text fg={theme.textMuted}>{"\u2500".repeat(DIFF_FILE_PANEL_W - 5)}</text>
+            </box>
+            <box
+              height={1}
+              style={{
+                flexDirection: "row",
+                backgroundColor: addCommentSelected
+                  ? (focused && subFocus === "files" ? theme.accent + "22" : "#264F7822")
+                  : undefined,
+                paddingLeft: 1,
+                width: DIFF_FILE_PANEL_W - 2,
+              }}
+            >
+              <text fg={addCommentSelected && focused && subFocus === "files" ? theme.accent : theme.textMuted}>
+                {addCommentSelected ? "\u25B6" : " "}{" "}
+              </text>
+              <text fg={overallComment ? "#e5c07b" : theme.accent}>
+                {overallComment ? "Edit comment" : "+ Add comment"}
+              </text>
+            </box>
           </scrollbox>
         </box>
 
@@ -971,6 +1026,53 @@ function InlineCommentForm({ fileName, fileLine, onTextChange, initialValue, isE
       {side === "new" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
       <box style={{ flexGrow: 1, flexBasis: 0 }}>{commentBox}</box>
       {side === "old" && <box style={{ flexGrow: 1, flexBasis: 0 }} />}
+    </box>
+  );
+}
+
+// ─── Inline overall comment form ─────────────────────────────────────────────
+
+function InlineOverallCommentForm({ onTextChange, initialValue, isEditing }: {
+  onTextChange: (v: string) => void;
+  initialValue?: string;
+  isEditing?: boolean;
+}) {
+  return (
+    <box
+      style={{
+        flexShrink: 0,
+        minHeight: 8,
+        maxHeight: 12,
+        borderStyle: "single",
+        borderColor: theme.border,
+        margin: 1,
+        padding: 1,
+        flexDirection: "column",
+      }}
+    >
+      <box flexDirection="row">
+        <text fg={theme.textMuted}>{isEditing ? "editing overall comment" : "overall comment"}</text>
+      </box>
+      <textarea
+        placeholder="Write an overall comment on the diff..."
+        initialValue={initialValue}
+        focused={true}
+        onInput={onTextChange}
+        style={{ marginTop: 1, minHeight: 3, backgroundColor: theme.backgroundElement }}
+      />
+      <box flexDirection="row" marginTop={1}>
+        <text fg={theme.accent} bold>{"\u21B5"}</text>
+        <text fg={theme.textMuted}> {isEditing ? "update" : "submit"}  </text>
+        <text fg={theme.text}>esc</text>
+        <text fg={theme.textMuted}> cancel</text>
+        {isEditing && (
+          <>
+            <text fg={theme.textMuted}>  </text>
+            <text fg="#c53b53">ctrl+d</text>
+            <text fg={theme.textMuted}> delete</text>
+          </>
+        )}
+      </box>
     </box>
   );
 }
@@ -1432,6 +1534,10 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   const [editingCommentIndex, setEditingCommentIndex] = React.useState<number | null>(null);
   const [flashMessage, setFlashMessage] = React.useState<string | null>(null);
 
+  // ─── Overall comment state ─────────────────────────────────
+  const [showOverallCommentForm, setShowOverallCommentForm] = React.useState(false);
+  const overallCommentTextRef = React.useRef("");
+
   // ─── Overlay state ───────────────────────────────────────────
   const [showActionPicker, setShowActionPicker] = React.useState(false);
   const [actionPickerOptions, setActionPickerOptions] = React.useState<ActionOption[]>([]);
@@ -1464,6 +1570,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     ) as ProcessedFile[];
   }, [diffData]);
 
+  const isAddCommentEntry = diffFileIndex >= diffFiles.length;
   const clampedDiffIdx = Math.min(diffFileIndex, Math.max(0, diffFiles.length - 1));
   const currentDiffFile = diffFiles[clampedDiffIdx] as ProcessedFile | undefined;
   const currentFileName = currentDiffFile ? getFileName(currentDiffFile).replace(/^[ab]\//, "") : "";
@@ -1605,7 +1712,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
   React.useEffect(() => {
     setCursorLine(0);
     setEditingCommentIndex(null);
-  }, [diffFileIndex]);
+  }, [clampedDiffIdx]);
 
   // ─── Load comments ─────────────────────────────────────────
   const refreshComments = React.useCallback(async () => {
@@ -1695,6 +1802,27 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     setShowCommentForm(false);
     setEditingCommentIndex(null);
     setFlashMessage("\u2714 comment deleted");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleOverallCommentSubmit = async () => {
+    const text = overallCommentTextRef.current;
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    const updated = { ...current, overallComment: text.trim() || undefined };
+    await saveComments(updated);
+    await refreshComments();
+    setShowOverallCommentForm(false);
+    setFlashMessage(text.trim() ? "\u2714 overall comment saved" : "\u2714 overall comment cleared");
+    setTimeout(() => setFlashMessage(null), 1500);
+  };
+
+  const handleOverallCommentDelete = async () => {
+    const current = comments ?? { workstream: selectedName, comments: [], updatedAt: new Date().toISOString() };
+    const updated = { ...current, overallComment: undefined };
+    await saveComments(updated);
+    await refreshComments();
+    setShowOverallCommentForm(false);
+    setFlashMessage("\u2714 overall comment deleted");
     setTimeout(() => setFlashMessage(null), 1500);
   };
 
@@ -1790,6 +1918,13 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
       }
       return; // let textarea handle other keys
     }
+    // ─── Overall comment form mode ──────────────────────
+    if (showOverallCommentForm) {
+      if (n === "escape") { setShowOverallCommentForm(false); return; }
+      if (n === "return" && !key.shift) { handleOverallCommentSubmit(); return; }
+      if (key.ctrl && n === "d" && comments?.overallComment) { handleOverallCommentDelete(); return; }
+      return; // let textarea handle other keys
+    }
 
     // ─── Action picker mode ────────────────────────────
     if (showActionPicker) {
@@ -1810,6 +1945,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
         if (opt.action === "editor" && options.onOpenEditor) {
           options.onOpenEditor(selectedEntry.name).then((opened) => {
             setFlashMessage(opened ? "\u2714 Editor opened" : "Could not open editor");
+            setTimeout(() => setFlashMessage(null), 2000);
+          });
+          return;
+        }
+        // Handle "open-session" inline — open in new terminal, keep dashboard open
+        if (opt.action === "open-session" && options.onOpenSession) {
+          options.onOpenSession(selectedEntry.name).then((opened) => {
+            setFlashMessage(opened ? "\u2714 Session opened in new terminal" : "Could not open session");
             setTimeout(() => setFlashMessage(null), 2000);
           });
           return;
@@ -1881,9 +2024,10 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
     // Must be before global keys so printable chars go to textarea
     if (chatInputFocused) {
       if (n === "return") {
-        const prompt = chatInputValueRef.current.trim();
-        if (prompt && selectedEntry && !isAgentActive) {
+        const rawPrompt = chatInputValueRef.current.trim();
+        if (rawPrompt && selectedEntry && !isAgentActive) {
           const entryName = selectedEntry.name;
+          const prompt = formatPromptWithAttachments(rawPrompt, attachments);
           options.onSendPrompt(entryName, prompt).then((sent) => {
             if (!sent) {
               // Revert optimistic status
@@ -2029,7 +2173,7 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
 
       if (diffSubFocus === "files") {
         if (n === "j" || n === "down") {
-          setDiffFileIndex((v: number) => v + 1); // clamped in DiffPanel
+          setDiffFileIndex((v: number) => Math.min(v + 1, diffFiles.length)); // allow add comment entry
           return;
         }
         if (n === "k" || n === "up") {
@@ -2037,6 +2181,12 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
           return;
         }
         if (n === "return" || n === "right") {
+          if (isAddCommentEntry) {
+            // Open overall comment form
+            overallCommentTextRef.current = comments?.overallComment ?? "";
+            setShowOverallCommentForm(true);
+            return;
+          }
           setDiffSubFocus("diff");
           return;
         }
@@ -2181,6 +2331,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                     follow={follow}
                     showThinking={showThinking}
                     scrollRef={logsScrollRef}
+                    startedAt={selectedEntry?.startedAt}
+                    onFollowChange={setFollow}
                   />
                   {rightMode === "logs" && flashMessage && (
                     <box style={{ flexDirection: "row", flexShrink: 0, paddingLeft: 1 }}>
@@ -2212,6 +2364,8 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
               cursorLine={cursorLine}
               unifiedCommentIndices={unifiedCommentIndices}
               fileComments={fileComments}
+              overallComment={comments?.overallComment}
+              addCommentSelected={isAddCommentEntry}
               bottomSlot={
                 <>
                   {flashMessage && (
@@ -2229,6 +2383,14 @@ function IdeDashboard({ entries: initialEntries, options, onAction }: IdeDashboa
                       side={commentSide}
                       viewMode={viewMode}
                       canToggle={commentCanToggle}
+                    />
+                  )}
+                  {showOverallCommentForm && (
+                    <InlineOverallCommentForm
+                      key={comments?.overallComment ? "edit-overall" : "new-overall"}
+                      onTextChange={(v) => { overallCommentTextRef.current = v; }}
+                      initialValue={comments?.overallComment}
+                      isEditing={!!comments?.overallComment}
                     />
                   )}
                 </>
