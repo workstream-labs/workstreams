@@ -52,7 +52,7 @@ ws run
 Each workstream goes through a lifecycle:
 
 ```
-ready → queued → running → success / failed
+ready → queued → running → success / failed / interrupted
 ```
 
 | Status | Meaning |
@@ -62,6 +62,7 @@ ready → queued → running → success / failed
 | `running` | Agent is actively working |
 | `success` | Agent completed without errors |
 | `failed` | Agent exited with an error |
+| `interrupted` | Agent was interrupted (e.g. Ctrl+C) |
 | `workspace` | No prompt, manual workspace only |
 
 ## Session Capture
@@ -78,7 +79,7 @@ The core workflow is iterative:
 4. Repeat until you're happy
 5. Merge
 
-Comments and pending prompts are stored in `.workstreams/comments/` and `.workstreams/pending-prompts/`. They're automatically included when resuming and cleared on success.
+Comments are stored in `.workstreams/comments/` and automatically included when resuming. They're cleared on success.
 
 ## Branches
 

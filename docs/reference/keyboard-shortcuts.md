@@ -18,18 +18,7 @@ All keyboard shortcuts for the TUI components.
 | Key | Action |
 |---|---|
 | `Enter` | Open action picker for selected workstream |
-| `/` | Enter search mode |
-| `?` | Toggle help overlay |
 | `q` / `Esc` / `Ctrl+C` | Quit dashboard |
-
-### Search Mode
-
-| Key | Action |
-|---|---|
-| *Type* | Filter workstreams (multi-term AND match) |
-| `↑` / `↓` | Navigate filtered results |
-| `Enter` | Confirm filter |
-| `Esc` | Clear search and return to normal mode |
 
 ## Diff Viewer (`ws diff <name>`)
 

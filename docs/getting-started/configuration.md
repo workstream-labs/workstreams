@@ -29,7 +29,7 @@ The `agent` block configures which AI coding agent to use.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `command` | `string` | — | **Required.** Binary name or full path (`claude`, `codex`, `aider`, or a custom command). |
+| `command` | `string` | — | **Required.** Agent binary name or full path (currently `claude`). |
 | `args` | `string[]` | `[]` | Extra arguments passed before the prompt. |
 | `env` | `object` | `{}` | Extra environment variables for the agent process. |
 | `timeout` | `number` | — | Timeout in seconds. Agent is killed if it exceeds this. |
@@ -42,9 +42,6 @@ When `acceptAll` is `true` (the default), `ws` automatically adds flags based on
 | Agent | Flags |
 |---|---|
 | `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose --include-partial-messages` |
-| `codex` | `--full-auto` |
-| `aider` | `--yes` |
-| Other | No flags injected |
 
 Set `acceptAll: false` to disable this behavior and control flags manually via `args`.
 
@@ -111,8 +108,6 @@ your-repo/
       dark-mode.log
     comments/              # Review comments
       add-tests.json
-    pending-prompts/       # Continuation prompts
-      add-tests.txt
 ```
 
 The `.workstreams/` directory is automatically added to `.gitignore`.
@@ -128,4 +123,4 @@ The `.workstreams/` directory is automatically added to `.gitignore`.
 ## Next Steps
 
 - [Concepts](/guide/concepts): how worktrees, agents, and parallel execution work
-- [Agents](/guide/agents): agent configuration for Claude, Codex, and Aider
+- [Agents](/guide/agents): agent configuration and custom models

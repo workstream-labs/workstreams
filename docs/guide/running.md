@@ -36,19 +36,13 @@ ws run --dry-run
 
 ## Monitoring Progress
 
-While agents run, check status with:
-
-```bash
-ws list
-```
-
-Or open the interactive dashboard:
+Open the [dashboard](/guide/dashboard) to monitor progress:
 
 ```bash
 ws dashboard
 ```
 
-The dashboard refreshes automatically and shows live status with spinner animations for running workstreams.
+The dashboard refreshes automatically and shows live status with spinner animations for running workstreams. You can also use `ws list` for a quick status overview.
 
 ## How It Works
 
@@ -61,11 +55,11 @@ The dashboard refreshes automatically and shows live status with spinner animati
 
 ## Signal Handling
 
-Press `Ctrl+C` to abort. Running workstreams are marked as `failed` with error "Aborted by user". State is saved before exit.
+Press `Ctrl+C` to abort. Running workstreams are marked as `interrupted`. State is saved before exit.
 
 ## Resuming with New Instructions
 
-If a workstream already has a session, `ws run` with `-p` automatically resumes it. Pending review comments and continuation prompts are included automatically.
+If a workstream already has a session, `ws run` with `-p` automatically resumes it. Stored review comments are included automatically.
 
 ```bash
 ws run auth -p "Also add refresh token support"

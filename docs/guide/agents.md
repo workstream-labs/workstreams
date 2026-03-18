@@ -1,8 +1,8 @@
 # Agents
 
-`ws` supports multiple AI coding agents. Configure your preferred agent in the `agent` section of `workstream.yaml`.
+`ws` currently supports **Claude Code** as the AI coding agent. Additional agent support is coming soon.
 
-## Claude (Default)
+## Claude Code
 
 ```yaml
 agent:
@@ -15,9 +15,9 @@ agent:
 - `--verbose` — detailed logging
 - `--include-partial-messages` — stream partial messages
 
-**Features with Claude:**
+**Features:**
 - Session capture: `ws` extracts the session ID from Claude's stream-json output
-- Resume: `ws run <name> -p` continues the exact same conversation with full context
+- Resume: `ws run <name> -p "..."` continues the exact same conversation with full context
 - Auto-commit: successful changes are committed automatically
 
 ### Custom Model
@@ -30,41 +30,6 @@ agent:
   env:
     ANTHROPIC_MODEL: claude-sonnet-4-20250514
 ```
-
-## Codex
-
-```yaml
-agent:
-  command: codex
-```
-
-**Auto-injected flags:** `--full-auto`
-
-Codex does not support session resume. When resumed, a fresh session runs in the existing worktree with previous changes intact.
-
-## Aider
-
-```yaml
-agent:
-  command: aider
-```
-
-**Auto-injected flags:** `--yes`
-
-Like Codex, Aider does not support session resume. Fresh sessions pick up where the previous one left off via the existing worktree state.
-
-## Custom Agents
-
-Use any command-line tool as an agent:
-
-```yaml
-agent:
-  command: /path/to/my-agent
-  args: ["--some-flag"]
-  acceptAll: false    # No auto-injected flags for custom agents
-```
-
-The agent receives the prompt as the last argument. It runs with the worktree directory as the working directory.
 
 ## Disabling Auto-Accept Flags
 

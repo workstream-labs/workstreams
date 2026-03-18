@@ -19,14 +19,11 @@ workstreams: # Optional
 | `timeout` | `number` | No | — | Kill agent after this many seconds |
 | `acceptAll` | `boolean` | No | `true` | Auto-inject accept flags for known agents |
 
-### Auto-Injected Flags by Agent
+### Auto-Injected Flags
 
 | Command | Flags |
 |---|---|
 | `claude` | `--dangerously-skip-permissions --output-format stream-json --verbose --include-partial-messages` |
-| `codex` | `--full-auto` |
-| `aider` | `--yes` |
-| Any other | None |
 
 ## `workstreams`
 
