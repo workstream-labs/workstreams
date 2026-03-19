@@ -2,6 +2,20 @@
 
 Each workstream lives on a `ws/<name>` branch. When you're done iterating, merge it like any other branch.
 
+## Commit changes on the workstream branch
+
+Before merging, make sure all changes on the workstream branch are committed:
+
+```bash
+cd $(ws checkout add-tests)
+git add .
+git commit -m "finalize changes"
+```
+
+::: tip
+If the agent completed successfully, changes are auto-committed. This step is only needed if you made manual edits in the worktree.
+:::
+
 ## Merge into main
 
 ```bash

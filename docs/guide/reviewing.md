@@ -2,19 +2,17 @@
 
 ## View Diffs
 
-View changes from a specific workstream:
+From the dashboard, select a workstream, press `Enter`, and choose "View diff & review". Or from the command line:
 
 ```bash
-ws diff auth-feature
+ws diff auth-feature             # interactive diff viewer
 ```
-
-This opens an interactive diff viewer. For raw output (useful for piping):
 
 ![Diff viewer](/diff-viewer.png)
 
 ```bash
-ws diff auth --raw
-ws diff                  # raw diffs for all workstreams
+ws diff auth --raw               # raw output (for piping)
+ws diff                          # raw diffs for all workstreams
 ```
 
 ## Interactive Diff Viewer
@@ -51,14 +49,10 @@ Comments are shown as inline markers in the diff viewer and are automatically in
 
 ## Review Workflow
 
-The typical review loop:
-
-1. Run `ws diff auth` to browse changes
-2. Press `c` to comment on lines that need work
-3. Press `q` to exit the diff viewer
-4. Run `ws run auth -p "Address review comments"` to resume. Pending comments are included automatically.
-5. The agent addresses your feedback
+1. Open the dashboard with `ws dashboard` (or run `ws diff auth` directly)
+2. Select a workstream and choose "View diff & review"
+3. Press `c` to comment on lines that need work
+4. Press `q` to exit the diff viewer
+5. Resume with `ws run auth -p "Address review comments"` — comments are included automatically
 6. Repeat until satisfied
 7. Merge via GitHub PR or `git merge`
-
-You can also start the review from the dashboard: select a workstream, press `Enter`, and choose "View diff & review".

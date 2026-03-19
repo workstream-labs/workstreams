@@ -4,10 +4,7 @@
 
 - **[Bun](https://bun.sh)** v1.0 or later
 - **Git** 2.20 or later (for worktree support)
-- At least one AI coding agent installed:
-  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (recommended)
-  - [Codex](https://github.com/openai/codex)
-  - [Aider](https://aider.chat)
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** installed
 
 ## Install
 

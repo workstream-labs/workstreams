@@ -18,8 +18,8 @@ features:
     title: Parallel Execution
     details: Every agent gets its own git worktree. They all run at the same time without stepping on each other.
   - icon: "\U0001F916"
-    title: Multi-Agent Support
-    details: Built for Claude Code. Codex and Aider support is experimental.
+    title: Built for Claude Code
+    details: Deep integration with Claude Code — session capture, true resume with full context, and auto-commit on success.
   - icon: "\U0001F5A5\uFE0F"
     title: Interactive Dashboard
     details: Browse diffs, add review comments, and resume agents from a terminal TUI.

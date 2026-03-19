@@ -101,7 +101,15 @@ ws run add-tests -p "Resolve the merge conflicts with main"
 
 ## 7. Merge into Main
 
-When a workstream looks good, switch back to `main` and merge:
+When a workstream looks good, first make sure all changes on the workstream branch are committed:
+
+```bash
+cd $(ws checkout add-tests)
+git add .
+git commit -m "finalize changes"
+```
+
+Then switch back to `main` and merge:
 
 ```bash
 cd /path/to/your-repo          # return to the main working directory
