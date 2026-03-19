@@ -8,6 +8,7 @@ import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/com
 import { loadPendingPrompt, clearPendingPrompt } from "../core/pending-prompt";
 import { notifyStatus } from "../core/notify";
 import type { AgentConfig, RunState, WorkstreamState } from "../core/types";
+import { buildBgArgs } from "../core/spawn-args";
 
 export function runCommand() {
   return new Command("run")
@@ -99,7 +100,7 @@ Agents are spawned in the background. Use "ws dashboard" to monitor progress.
         await appendWorkstreamStatus(state.currentRun.workstreams[name]);
         await saveState(state);
 
-        const bgArgs = ["bun", Bun.main, "run", "-c", opts.config, name];
+        const bgArgs = buildBgArgs(["run", "-c", opts.config, name]);
         const proc = Bun.spawn(bgArgs, {
           cwd: process.cwd(),
           env: { ...process.env, WS_BACKGROUND: "1" },
@@ -174,7 +175,7 @@ Agents are spawned in the background. Use "ws dashboard" to monitor progress.
       await saveState(state);
 
       // Spawn detached background worker
-      const bgArgs = ["bun", Bun.main, "run", "-c", opts.config];
+      const bgArgs = buildBgArgs(["run", "-c", opts.config]);
       const proc = Bun.spawn(bgArgs, {
         cwd: process.cwd(),
         env: { ...process.env, WS_BACKGROUND: "1" },
@@ -245,7 +246,7 @@ async function handleResume(
   await saveState(state);
 
   // Spawn background worker for resume
-  const bgArgs = ["bun", Bun.main, "run", name, "-c", opts.config, "-p", combinedPrompt];
+  const bgArgs = buildBgArgs(["run", name, "-c", opts.config, "-p", combinedPrompt]);
   const proc = Bun.spawn(bgArgs, {
     cwd: process.cwd(),
     env: { ...process.env, WS_BACKGROUND: "1", WS_RESUME_MODE: "1" },

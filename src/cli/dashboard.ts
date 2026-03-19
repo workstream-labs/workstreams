@@ -12,6 +12,7 @@ import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
 import { openIdeDashboard, type IdeDashboardOptions } from "../ui/ide-dashboard.js";
 import type { ProjectState, WorkstreamState } from "../core/types";
+import { buildBgArgs } from "../core/spawn-args";
 
 export const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },
@@ -268,7 +269,7 @@ async function actionViewLogs(name: string, state: any) {
 
 async function actionRun(name: string, ws: WorkstreamState, state: any) {
   // Don't set status here — ws run handles validation and status updates itself
-  const bgArgs = ["bun", Bun.main, "run", name];
+  const bgArgs = buildBgArgs(["run", name]);
   const proc = Bun.spawn(bgArgs, {
     cwd: process.cwd(),
     stdin: "ignore",
@@ -559,7 +560,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
               await saveState(s);
 
               // Spawn background resume worker directly
-              const bgArgs = ["bun", Bun.main, "run", name, "-c", "workstream.yaml", "-p", prompt];
+              const bgArgs = buildBgArgs(["run", name, "-c", "workstream.yaml", "-p", prompt]);
               const proc = Bun.spawn(bgArgs, {
                 cwd: process.cwd(),
                 env: { ...process.env, WS_BACKGROUND: "1", WS_RESUME_MODE: "1" },
@@ -578,7 +579,7 @@ Dashboard keys: Enter=editor, d=diff, r=resume session, p=prompt agent,
               await saveState(s);
 
               // Spawn background executor directly
-              const bgArgs = ["bun", Bun.main, "run", "-c", "workstream.yaml", name];
+              const bgArgs = buildBgArgs(["run", "-c", "workstream.yaml", name]);
               const proc = Bun.spawn(bgArgs, {
                 cwd: process.cwd(),
                 env: { ...process.env, WS_BACKGROUND: "1" },
