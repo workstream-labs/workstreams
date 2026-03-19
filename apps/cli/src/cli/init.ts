@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { loadState } from "../core/state";
+import { loadState } from "@workstreams/core";
 
 export function initCommand() {
   return new Command("init")
@@ -34,7 +34,7 @@ Examples:
       await mkdir(".workstreams/logs", { recursive: true });
 
       // Init state
-      const { saveState, defaultState } = await import("../core/state");
+      const { saveState, defaultState } = await import("@workstreams/core");
       const cwd = process.cwd();
       await saveState(defaultState(cwd));
 

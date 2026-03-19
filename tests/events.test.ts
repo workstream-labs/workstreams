@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { EventBus } from "../src/core/events";
-import type { WorkstreamEvent, EventType } from "../src/core/types";
+import { EventBus } from "@workstreams/core";
+import type { WorkstreamEvent, EventType } from "@workstreams/core";
 
 function makeEvent(type: EventType, name?: string): WorkstreamEvent {
   return { type, timestamp: new Date().toISOString(), name };

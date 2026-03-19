@@ -42,7 +42,7 @@ import {
   saveComments,
   type ReviewComment,
   type WorkstreamComments,
-} from "../core/comments";
+} from "@workstreams/core";
 
 let parsersRegistered = false;
 

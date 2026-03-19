@@ -13,5 +13,10 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@opentuah/react"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/*/src/**/*.ts",
+    "apps/*/src/**/*.tsx",
+    "tests/**/*.ts"
+  ]
 }

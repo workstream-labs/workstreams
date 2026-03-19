@@ -1,20 +1,12 @@
 {
-  "name": "workstreams",
+  "name": "@workstreams/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
   "bin": {
-    "ws": "apps/cli/src/index.ts"
+    "ws": "src/index.ts"
   },
   "scripts": {
-    "dev": "bun run apps/cli/src/index.ts",
-    "test": "bun test",
-    "desktop:dev": "cd apps/desktop && bun run dev",
-    "postinstall": "rm -rf node_modules/critique/node_modules"
+    "dev": "bun run src/index.ts"
   },
   "dependencies": {
     "@workstreams/core": "workspace:*",

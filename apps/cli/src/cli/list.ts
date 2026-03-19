@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { loadConfig } from "../core/config";
-import { loadState } from "../core/state";
+import { loadConfig } from "@workstreams/core";
+import { loadState } from "@workstreams/core";
 import { getBranchInfo, getDiffStats } from "../ui/workstream-picker.js";
 import { A, STATUS_STYLE, pad } from "../ui/ansi.js";
-import { loadComments } from "../core/comments";
+import { loadComments } from "@workstreams/core";
 
 function formatDuration(ms: number): string {
   const s = Math.round(ms / 1000);

@@ -1,0 +1,16 @@
+{
+  "name": "@workstreams/desktop",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/main/index.ts",
+  "scripts": {
+    "dev": "echo 'Desktop app not yet configured. See Step 2.'",
+    "build": "echo 'Desktop app not yet configured.'"
+  },
+  "dependencies": {
+    "@workstreams/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

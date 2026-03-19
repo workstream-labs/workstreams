@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { loadState } from "../core/state.js";
-import { WorktreeManager } from "../core/worktree.js";
+import { loadState } from "@workstreams/core";
+import { WorktreeManager } from "@workstreams/core";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 
 export function diffCommand() {

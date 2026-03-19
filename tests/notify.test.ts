@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { notifyStatus, notifyRunComplete } from "../src/core/notify";
-import type { WorkstreamStatus } from "../src/core/types";
+import { notifyStatus, notifyRunComplete } from "@workstreams/core";
+import type { WorkstreamStatus } from "@workstreams/core";
 
 describe("notifyStatus", () => {
   // These functions call osascript which is macOS-specific.

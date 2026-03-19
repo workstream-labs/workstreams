@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { loadState, saveState } from "../core/state";
-import { loadConfig } from "../core/config";
+import { loadState, saveState } from "@workstreams/core";
+import { loadConfig } from "@workstreams/core";
 import { EDITORS, openEditor, resolveEditor, ensureWorktree } from "./dashboard";
 
 export function viewCommand() {

@@ -4,7 +4,7 @@ import {
   ConfigError,
   AgentError,
   WorktreeError,
-} from "../src/core/errors";
+} from "@workstreams/core";
 
 describe("error classes", () => {
   it("WorkstreamError has correct name and message", () => {
