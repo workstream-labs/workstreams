@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { WorktreeManager } from "../src/core/worktree";
+import { WorktreeManager } from "@workstreams/core";
 import { mkdir, rm } from "fs/promises";
 import { $ } from "bun";
 

@@ -42,7 +42,7 @@ import {
   Spinner,
   SessionMessages,
 } from "./session-viewer.js";
-import { parseSessionJsonlContent, type DisplayMessage } from "../core/session-reader.js";
+import { parseSessionJsonlContent, type DisplayMessage } from "@workstreams/core";
 import type { WorkstreamEntry, DashboardAction } from "./workstream-picker.js";
 import {
   loadComments,
@@ -50,7 +50,7 @@ import {
   formatCommentsAsPrompt,
   type ReviewComment,
   type WorkstreamComments,
-} from "../core/comments";
+} from "@workstreams/core";
 
 let parsersRegistered = false;
 

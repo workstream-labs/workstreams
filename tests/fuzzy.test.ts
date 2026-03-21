@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { fuzzyFilter } from "../src/ui/fuzzy";
+import { fuzzyFilter } from "../apps/cli/src/ui/fuzzy";
 
 describe("fuzzyFilter", () => {
   const items = ["add-tests", "dark-mode", "fix-bug", "add-feature"];

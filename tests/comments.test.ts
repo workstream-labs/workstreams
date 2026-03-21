@@ -7,7 +7,7 @@ import {
   formatCommentsAsPrompt,
   type WorkstreamComments,
   type ReviewComment,
-} from "../src/core/comments";
+} from "@workstreams/core";
 import { mkdir, rm } from "fs/promises";
 
 const TEST_DIR = "/tmp/test-ws-comments";

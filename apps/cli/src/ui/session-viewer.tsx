@@ -20,8 +20,8 @@ import { getResolvedTheme, getSyntaxTheme, rgbaToHex } from "critique/dist/theme
 import parsersConfig from "critique/dist/parsers-config.js";
 import { createPatch } from "diff";
 import path from "path";
-import type { DisplayMessage, AssistantPart } from "../core/session-reader.js";
-import { parseSessionJsonlContent } from "../core/session-reader.js";
+import type { DisplayMessage, AssistantPart } from "@workstreams/core";
+import { parseSessionJsonlContent } from "@workstreams/core";
 
 let parsersRegistered = false;
 

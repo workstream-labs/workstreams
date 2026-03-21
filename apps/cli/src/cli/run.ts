@@ -1,14 +1,14 @@
 import { Command } from "commander";
-import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
-import { loadConfig } from "../core/config";
-import { buildGraph } from "../core/dag";
-import { Executor } from "../core/executor";
-import { AgentAdapter } from "../core/agent";
-import { loadComments, clearComments, formatCommentsAsPrompt } from "../core/comments";
-import { loadPendingPrompt, clearPendingPrompt } from "../core/pending-prompt";
-import { notifyStatus } from "../core/notify";
-import type { AgentConfig, RunState, WorkstreamState } from "../core/types";
-import { buildBgArgs } from "../core/spawn-args";
+import { loadState, saveState, appendWorkstreamStatus } from "@workstreams/core";
+import { loadConfig } from "@workstreams/core";
+import { buildGraph } from "@workstreams/core";
+import { Executor } from "@workstreams/core";
+import { AgentAdapter } from "@workstreams/core";
+import { loadComments, clearComments, formatCommentsAsPrompt } from "@workstreams/core";
+import { loadPendingPrompt, clearPendingPrompt } from "@workstreams/core";
+import { notifyStatus } from "@workstreams/core";
+import type { AgentConfig, RunState, WorkstreamState } from "@workstreams/core";
+import { buildBgArgs } from "@workstreams/core";
 
 export function runCommand() {
   return new Command("run")

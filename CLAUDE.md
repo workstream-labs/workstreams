@@ -13,7 +13,7 @@ bun install              # install dependencies
 bun link                 # make `ws` available globally
 bun test                 # run all tests
 bun test tests/dag.test.ts  # run a single test file
-bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
+bun run apps/cli/src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
 The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `dashboard`, `diff`, `view`, `checkout`, `destroy`.
@@ -42,7 +42,15 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 
 **Runtime:** Bun (TypeScript, ESNext modules). Uses `bun:test` for testing, `Bun.spawn` for process management.
 
-**Core engine** (`src/core/`):
+**Monorepo structure:**
+```
+packages/core/       Shared engine (published as @workstreams/core)
+apps/cli/            CLI app (the `ws` binary)
+apps/desktop/        Desktop app (WIP)
+tests/               bun:test
+```
+
+**Core engine** (`packages/core/src/`):
 - `config.ts` — Loads and validates `workstream.yaml`. Accepts both map and array `workstreams` formats; `base_branch` and `baseBranch` are both valid keys.
 - `dag.ts` — Builds a graph of workstream nodes from definitions.
 - `executor.ts` — `Executor` runs all workstreams in parallel. Serializes worktree creation via a mutex (`worktreeLock`) to prevent git lock races. Handles SIGINT/SIGTERM cleanup.
@@ -57,8 +65,9 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `pending-prompt.ts` — Persistent pending prompts in `.workstreams/pending-prompts/`. Auto-loaded on resume.
 - `notify.ts` — Desktop notifications for agent completion.
 - `session-reader.ts` — Parses agent session logs to extract state markers.
+- `diff-parser.ts` — Pure parser: `parseDiff(raw)` converts raw `git diff` output into `ParsedDiff` (files -> hunks -> lines with old/new line numbers and type).
 
-**CLI commands** (`src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `src/index.ts`.
+**CLI commands** (`apps/cli/src/cli/`): Each file exports a function returning a `Commander` `Command` instance. All commands are registered in `apps/cli/src/index.ts`.
 - `run.ts` — `ws run [name]`: run all (or one) workstream(s). Supports `--dry-run` and `-p <prompt>` for resuming with new instructions. Skips prompt-less workstreams. Auto-includes stored review comments and pending prompts when resuming.
 - `dashboard.ts` — `ws dashboard`: IDE-style TUI dashboard with inline log viewer, diff viewer, review comments, pending prompts, create/destroy, and resume. Fuzzy search (`/`), help overlay (`?`), context-sensitive footer.
 - `destroy.ts` — `ws destroy [name]`: remove worktree and branch. Supports `--all` and `-y`.
@@ -68,13 +77,12 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 - `create.ts` — `ws create <name>`: add a new workstream. Supports `-p <prompt>` and `-b <branch>` for base branch.
 - `list.ts` — `ws list`: status overview with diff stats, branch sync info, comment count, and duration.
 
-**TUI layer** (`src/ui/`): All TUI components use raw ANSI escape sequences directly — no external TUI library. They enter the alternate screen, set raw mode, and handle terminal resize.
+**TUI layer** (`apps/cli/src/ui/`): All TUI components use raw ANSI escape sequences directly — no external TUI library. They enter the alternate screen, set raw mode, and handle terminal resize.
 - `ansi.ts` — Shared ANSI utilities: color constants (`A`, `C`), `bg256`/`fg256`, cursor/screen helpers, `stripAnsi`, `truncate`, `pad`, `STATUS_STYLE`. Used by all UI files and `list.ts`.
 - `fuzzy.ts` — Simple multi-term AND matching: `fuzzyFilter(items, query, getText)` returns matching indices.
 - `modal.ts` — Reusable modal overlay renderer: `renderModal(opts)` and `renderInputModal(opts)` using Unicode box-drawing, centered on screen.
 - `choice-picker.ts` — `openChoicePicker(title, options)`: modal overlay picker. Returns selected index or `null`. Keys: `j`/`k`/arrows navigate, `enter` confirm, `q`/`ESC` cancel.
 - `workstream-picker.ts` — `openDashboard(entries)`: single-screen dashboard with 3-line card layout, search/prompt/help modals. Returns `DashboardAction`. Also exports `getBranchInfo`, `getDiffStats`, `getBranchDiff` git helpers. `WorkstreamEntry` includes `hasSession`, `commentCount`, `isDirty`.
 - `diff-viewer.ts` — `openDiffViewer(name, rawDiff, options?)`: full-screen diff browser with file list panel + diff panel. Supports unified and side-by-side modes, word-level LCS diff highlighting. Optional `returnLabel` shown in footer. Keys: `Tab`/`h`/`l` switch focus, `t` toggle unified/side-by-side, `n`/`p` next/prev file, `j`/`k` scroll, `g`/`G` top/bottom, `d`/`u` half-page.
-- `diff-parser.ts` — Pure parser: `parseDiff(raw)` converts raw `git diff` output into `ParsedDiff` (files -> hunks -> lines with old/new line numbers and type).
 
 **State directory:** `.workstreams/` (gitignored) contains `state.json`, `trees/` (git worktrees), `logs/` (per-workstream log files), `comments/` (review comments per workstream), and `pending-prompts/` (continuation prompts).

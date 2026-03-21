@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { buildGraph } from "../src/core/dag";
-import type { WorkstreamDef } from "../src/core/types";
+import { buildGraph } from "@workstreams/core";
+import type { WorkstreamDef } from "@workstreams/core";
 
 describe("buildGraph", () => {
   it("builds a graph from workstream defs", () => {

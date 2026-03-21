@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { resolve } from "path";
-import { loadConfig } from "../core/config";
-import { loadState, saveState, appendWorkstreamStatus } from "../core/state";
-import { WorktreeManager } from "../core/worktree";
+import { loadConfig } from "@workstreams/core";
+import { loadState, saveState, appendWorkstreamStatus } from "@workstreams/core";
+import { WorktreeManager } from "@workstreams/core";
 
 export function checkoutCommand() {
   return new Command("checkout")

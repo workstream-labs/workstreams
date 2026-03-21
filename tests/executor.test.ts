@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { Executor } from "../src/core/executor";
-import { buildGraph } from "../src/core/dag";
-import { saveState } from "../src/core/state";
-import type { ProjectState, RunState, WorkstreamConfig } from "../src/core/types";
+import { Executor } from "@workstreams/core";
+import { buildGraph } from "@workstreams/core";
+import { saveState } from "@workstreams/core";
+import type { ProjectState, RunState, WorkstreamConfig } from "@workstreams/core";
 import { mkdir, rm } from "fs/promises";
 import { $ } from "bun";
 
