@@ -14,18 +14,18 @@ bun link
 ```bash
 bun test                           # run all tests
 bun test tests/dag.test.ts         # run one test
-bun run src/index.ts -- --help     # run CLI without building
+bun run apps/cli/src/index.ts -- --help     # run CLI without building
 ```
 
 ## Project layout
 
 ```
-src/
-  index.ts       CLI entry point
-  cli/           One file per command (init, create, run, list, dashboard, etc.)
-  core/          Engine — config loading, executor, agent spawning, worktree management, state
-  ui/            TUI components — all raw ANSI, no external TUI library
-tests/           bun:test
+packages/core/src/   Shared engine — config, executor, agent spawning, worktree, state
+apps/cli/src/        CLI app
+  cli/               One file per command (init, create, run, list, dashboard, etc.)
+  ui/                TUI components — all raw ANSI, no external TUI library
+apps/desktop/        Desktop app (WIP)
+tests/               bun:test
 ```
 
 Runtime state goes in `.workstreams/` (gitignored): worktrees, logs, comments, state JSON.
