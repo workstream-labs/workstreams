@@ -1,0 +1,452 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Emitter } from '../../../../base/common/event.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry } from '../../../services/orchestrator/common/orchestratorService.js';
+import { OrchestratorPart } from './orchestratorPart.js';
+import { basename } from '../../../../base/common/path.js';
+import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { IGitWorktreeService } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { localize } from '../../../../nls.js';
+import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { URI } from '../../../../base/common/uri.js';
+import { IEditorGroupsService, IEditorWorkingSet } from '../../../services/editor/common/editorGroupsService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+
+interface IPersistedRepositoryState {
+	readonly path: string;
+	readonly isCollapsed: boolean;
+}
+
+interface IPersistedOrchestratorState {
+	readonly repositories: IPersistedRepositoryState[];
+	readonly activeWorktreePath: string | undefined;
+}
+
+export class OrchestratorServiceImpl extends Disposable implements IOrchestratorService {
+
+	static readonly STORAGE_KEY = 'orchestrator.repositoryState';
+
+	declare readonly _serviceBrand: undefined;
+
+	private _repositories: IRepositoryEntry[] = [];
+	private _activeWorktree: IWorktreeEntry | undefined;
+
+	private readonly _onDidChangeRepositories = this._register(new Emitter<void>());
+	readonly onDidChangeRepositories = this._onDidChangeRepositories.event;
+
+	private readonly _onDidChangeActiveWorktree = this._register(new Emitter<IWorktreeEntry>());
+	readonly onDidChangeActiveWorktree = this._onDidChangeActiveWorktree.event;
+
+	private readonly _onDidApplyWorktreeEditorState = this._register(new Emitter<IWorktreeEntry>());
+	readonly onDidApplyWorktreeEditorState = this._onDidApplyWorktreeEditorState.event;
+
+	private readonly _onDidRemoveWorktree = this._register(new Emitter<{ repoPath: string; worktreePath: string }>());
+	readonly onDidRemoveWorktree = this._onDidRemoveWorktree.event;
+
+	private readonly _part: OrchestratorPart;
+	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
+
+	/**
+	 * Resolves when the initial restore from persisted state is complete.
+	 * Callers that need fully-populated repositories should await this.
+	 */
+	readonly whenReady: Promise<void>;
+
+	pendingTerminalRestore: Promise<void> = Promise.resolve();
+
+	/** @internal Exposed only for layout system registration */
+	get part(): OrchestratorPart { return this._part; }
+
+	get repositories(): readonly IRepositoryEntry[] { return this._repositories; }
+	get activeWorktree(): IWorktreeEntry | undefined { return this._activeWorktree; }
+
+	constructor(
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IFileDialogService private readonly fileDialogService: IFileDialogService,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@IGitWorktreeService private readonly gitService: IGitWorktreeService,
+		@IWorkspaceEditingService private readonly workspaceEditingService: IWorkspaceEditingService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
+		@ILogService private readonly logService: ILogService,
+		@INotificationService private readonly notificationService: INotificationService,
+		@IStorageService private readonly storageService: IStorageService,
+	) {
+		super();
+		this._part = this._register(instantiationService.createInstance(OrchestratorPart));
+		this.wirePartEvents();
+		this.whenReady = this.restoreState();
+	}
+
+	private wirePartEvents(): void {
+		this._register(this._part.onDidRequestAddRepository(() => this.pickAndAddRepository()));
+		this._register(this._part.onDidRequestRemoveRepository(repo => this.removeRepository(repo.path)));
+		this._register(this._part.onDidToggleCollapse(repo => this.toggleRepositoryCollapsed(repo.path)));
+		this._register(this._part.onDidRequestAddWorktree(repo => this.pickAndAddWorktree(repo.path)));
+		this._register(this._part.onDidRequestDeleteWorktree(({ repo, worktree }) => this.removeWorktree(repo.path, worktree.branch)));
+		this._register(this._part.onDidSelectWorktree(worktree => this.switchTo(worktree)));
+
+		this._register(this.onDidChangeRepositories(() => this._part.setRepositories([...this._repositories])));
+	}
+
+	private async pickAndAddRepository(): Promise<void> {
+		const uris = await this.fileDialogService.showOpenDialog({
+			title: localize('selectRepository', "Select Repository Folder"),
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+		});
+
+		if (uris && uris.length > 0) {
+			await this.addRepository(uris[0].fsPath);
+		}
+	}
+
+	private async pickAndAddWorktree(repoPath: string): Promise<void> {
+		const name = await this.quickInputService.input({
+			title: localize('worktreeName', "New Worktree"),
+			placeHolder: localize('worktreeNamePlaceholder', "Worktree name (becomes branch name)"),
+			prompt: localize('worktreeNamePrompt', "Enter a name for the new worktree"),
+			validateInput: async (value) => validateWorktreeName(value)
+		});
+
+		if (!name) {
+			return;
+		}
+
+		await this.addWorktree(repoPath, name, '');
+	}
+
+	async addRepository(path: string): Promise<void> {
+		if (this._repositories.some(r => r.path === path)) {
+			return;
+		}
+
+		// Ensure it's a git repo; init if not
+		const isGit = await this.gitService.isGitRepository(path);
+		if (!isGit) {
+			await this.gitService.initRepository(path);
+		}
+
+		// Get current branch and discover existing worktrees
+		const currentBranch = await this.gitService.getCurrentBranch(path);
+		const gitWorktrees = await this.gitService.listWorktrees(path);
+
+		// Build worktree entries from discovered worktrees
+		const worktrees: IWorktreeEntry[] = gitWorktrees
+			.filter(wt => !wt.isBare)
+			.map(wt => ({
+				name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+				path: wt.path,
+				branch: wt.branch,
+				isActive: false,
+			}));
+
+		// If no worktrees found (fresh init), add the main worktree
+		if (worktrees.length === 0) {
+			worktrees.push({
+				name: 'local',
+				path,
+				branch: currentBranch,
+				isActive: false,
+			});
+		}
+
+		const entry: IRepositoryEntry = {
+			name: basename(path),
+			path,
+			worktrees,
+			isCollapsed: false,
+		};
+		this._repositories = [...this._repositories, entry];
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+
+		// Auto-select the current branch worktree
+		const mainWorktree = entry.worktrees.find(w => w.branch === currentBranch);
+		if (mainWorktree) {
+			await this.switchTo(mainWorktree);
+		}
+	}
+
+	async removeRepository(repoPath: string): Promise<void> {
+		const repo = this._repositories.find(r => r.path === repoPath);
+		if (repo && this._activeWorktree && repo.worktrees.some(w => w.path === this._activeWorktree!.path)) {
+			this._activeWorktree = undefined;
+		}
+
+		this._repositories = this._repositories.filter(r => r.path !== repoPath);
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+	}
+
+	toggleRepositoryCollapsed(repoPath: string): void {
+		this._repositories = this._repositories.map(r =>
+			r.path === repoPath ? { ...r, isCollapsed: !r.isCollapsed } : r
+		);
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+	}
+
+	async addWorktree(repoPath: string, name: string, description: string): Promise<void> {
+		// Create actual git worktree
+		const worktreePath = await this.gitService.addWorktree(repoPath, name);
+
+		const worktree: IWorktreeEntry = {
+			name: friendlyName(name),
+			path: worktreePath,
+			branch: name,
+			description,
+			isActive: false,
+		};
+
+		this._repositories = this._repositories.map(r =>
+			r.path === repoPath ? { ...r, worktrees: [...r.worktrees, worktree] } : r
+		);
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+	}
+
+	async removeWorktree(repoPath: string, branchName: string): Promise<void> {
+		const repo = this._repositories.find(r => r.path === repoPath);
+		const worktree = repo?.worktrees.find(w => w.branch === branchName);
+
+		// Skip the main worktree — it is the repo root and cannot be removed
+		if (worktree && worktree.path !== repoPath) {
+			try {
+				await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				this.notificationService.notify({
+					severity: Severity.Error,
+					message: localize('worktreeRemoveFailed', "Failed to remove worktree: {0}", message),
+				});
+				return;
+			}
+		}
+
+		if (this._activeWorktree?.branch === branchName) {
+			this._activeWorktree = undefined;
+		}
+
+		const worktreePath = worktree?.path;
+
+		this._repositories = this._repositories.map(r =>
+			r.path === repoPath
+				? { ...r, worktrees: r.worktrees.filter(w => w.branch !== branchName) }
+				: r
+		);
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+
+		if (worktreePath) {
+			this._onDidRemoveWorktree.fire({ repoPath, worktreePath });
+		}
+	}
+
+	async switchTo(worktree: IWorktreeEntry): Promise<void> {
+		const previousPath = this._activeWorktree?.path;
+		this._activeWorktree = worktree;
+
+		this._repositories = this._repositories.map(r => ({
+			...r,
+			worktrees: r.worktrees.map(w => ({
+				...w,
+				isActive: w.path === worktree.path
+			}))
+		}));
+		this._onDidChangeRepositories.fire();
+		this.saveState();
+
+		if (previousPath !== worktree.path) {
+			this.logService.trace(`[OrchestratorService] switchTo: "${previousPath}" → "${worktree.path}"`);
+
+			/**
+			 * Step 0: Wait for any in-flight phase-2 terminal restore to finish.
+			 * showBackgroundTerminal's internal openEditor is async and not awaited,
+			 * so its deferred tab creation can race with our saveWorkingSet if we
+			 * don't wait here.
+			 */
+			await this.pendingTerminalRestore;
+
+			/**
+			 * Step 1: Fire worktree change — listeners background old terminals,
+			 * removing terminal editor tabs from all groups.
+			 */
+			this._onDidChangeActiveWorktree.fire(worktree);
+
+			/**
+			 * Step 2: Save current editor state. Terminal tabs were removed in
+			 * step 1, so the saved state is clean — no ghost terminal references.
+			 * Empty groups left by backgrounded terminals are preserved so
+			 * applyWorkingSet restores the exact grid layout (terminals will be
+			 * placed back into those slots in phase 2).
+			 */
+			if (previousPath) {
+				const workingSet = this.editorGroupsService.saveWorkingSet(previousPath);
+				this._workingSetMap.set(previousPath, workingSet);
+			}
+
+			/**
+			 * Step 3: Restore editor state for target worktree (or clean slate).
+			 */
+			const savedSet = this._workingSetMap.get(worktree.path);
+			await this.editorGroupsService.applyWorkingSet(savedSet ?? 'empty');
+
+			/**
+			 * Step 4: Swap workspace folder.
+			 */
+			const folderData = { uri: URI.file(worktree.path) };
+			const currentFolders = this.workspaceContextService.getWorkspace().folders;
+			if (currentFolders.length === 0) {
+				await this.workspaceEditingService.addFolders([folderData], true);
+			} else {
+				await this.workspaceEditingService.updateFolders(0, currentFolders.length, [folderData], true);
+			}
+
+			/**
+			 * Step 5: Fire after working set + folder swap — listeners show
+			 * terminals for the new worktree. No race with save/apply possible.
+			 */
+			this._onDidApplyWorktreeEditorState.fire(worktree);
+		} else {
+			this._onDidChangeActiveWorktree.fire(worktree);
+		}
+	}
+
+	private saveState(): void {
+		const state: IPersistedOrchestratorState = {
+			repositories: this._repositories.map(r => ({
+				path: r.path,
+				isCollapsed: r.isCollapsed,
+			})),
+			activeWorktreePath: this._activeWorktree?.path,
+		};
+		this.storageService.store(
+			OrchestratorServiceImpl.STORAGE_KEY,
+			JSON.stringify(state),
+			StorageScope.APPLICATION,
+			StorageTarget.MACHINE
+		);
+	}
+
+	private async restoreState(): Promise<void> {
+		const raw = this.storageService.get(OrchestratorServiceImpl.STORAGE_KEY, StorageScope.APPLICATION);
+		if (!raw) {
+			return;
+		}
+
+		let persisted: IPersistedOrchestratorState;
+		try {
+			persisted = JSON.parse(raw);
+		} catch {
+			this.logService.warn('[OrchestratorService] Failed to parse persisted state, ignoring.');
+			return;
+		}
+
+		if (!Array.isArray(persisted.repositories) || persisted.repositories.length === 0) {
+			return;
+		}
+
+		// Restore each repository by rediscovering worktrees from git
+		for (const saved of persisted.repositories) {
+			try {
+				const isGit = await this.gitService.isGitRepository(saved.path);
+				if (!isGit) {
+					this.logService.trace(`[OrchestratorService] Skipping non-git path during restore: "${saved.path}"`);
+					continue;
+				}
+
+				const currentBranch = await this.gitService.getCurrentBranch(saved.path);
+				const gitWorktrees = await this.gitService.listWorktrees(saved.path);
+
+				const worktrees: IWorktreeEntry[] = gitWorktrees
+					.filter(wt => !wt.isBare)
+					.map(wt => ({
+						name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+						path: wt.path,
+						branch: wt.branch,
+						isActive: false,
+					}));
+
+				if (worktrees.length === 0) {
+					worktrees.push({
+						name: 'local',
+						path: saved.path,
+						branch: currentBranch,
+						isActive: false,
+					});
+				}
+
+				this._repositories.push({
+					name: basename(saved.path),
+					path: saved.path,
+					worktrees,
+					isCollapsed: saved.isCollapsed,
+				});
+			} catch (err) {
+				this.logService.warn(`[OrchestratorService] Failed to restore repository "${saved.path}":`, err);
+			}
+		}
+
+		if (this._repositories.length > 0) {
+			this._onDidChangeRepositories.fire();
+		}
+
+		// Restore active worktree selection
+		if (persisted.activeWorktreePath) {
+			for (const repo of this._repositories) {
+				const match = repo.worktrees.find(w => w.path === persisted.activeWorktreePath);
+				if (match) {
+					await this.switchTo(match);
+					break;
+				}
+			}
+		}
+	}
+}
+
+export function friendlyName(branch: string): string {
+	const lastSegment = branch.split('/').pop() || branch;
+	return lastSegment.replace(/-/g, ' ');
+}
+
+export function validateWorktreeName(value: string): string | undefined {
+	if (!value.trim()) {
+		return localize('worktreeNameRequired', "Name is required");
+	}
+	if (/\s/.test(value)) {
+		return localize('worktreeNameNoSpaces', "Name cannot contain spaces");
+	}
+	if (/[~^:\\/]/.test(value)) {
+		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, \\, or /");
+	}
+	if (/\.\./.test(value)) {
+		return localize('worktreeNameNoDots', "Name cannot contain '..'");
+	}
+	if (/@\{/.test(value)) {
+		return localize('worktreeNameNoReflog', "Name cannot contain '@{brace}'");
+	}
+	if (/\.lock$/.test(value)) {
+		return localize('worktreeNameNoLock', "Name cannot end with '.lock'");
+	}
+	if (/^\./.test(value) || /\.$/.test(value)) {
+		return localize('worktreeNameNoDotEdge', "Name cannot start or end with '.'");
+	}
+	if (/[\x00-\x1f\x7f]/.test(value)) {
+		return localize('worktreeNameNoControl', "Name cannot contain control characters");
+	}
+	return undefined;
+}
+
+registerSingleton(IOrchestratorService, OrchestratorServiceImpl, InstantiationType.Eager);
