@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { loadState, saveState, defaultState } from "@workstreams/core";
-import { WorktreeManager } from "@workstreams/core";
+import { loadState, saveState, defaultState } from "../core";
+import { WorktreeManager } from "../core";
 import { parse, stringify } from "yaml";
 import { rm, unlink } from "fs/promises";
 

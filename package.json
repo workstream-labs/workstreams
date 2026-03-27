@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*",
     "apps/*"
   ],
   "bin": {
@@ -17,7 +16,6 @@
     "postinstall": "rm -rf node_modules/critique/node_modules"
   },
   "dependencies": {
-    "@workstreams/core": "workspace:*",
     "commander": "^13.1.0",
     "yaml": "^2.7.0",
     "critique": "0.1.122",

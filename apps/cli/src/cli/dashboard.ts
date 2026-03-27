@@ -1,18 +1,18 @@
 import { Command } from "commander";
 import { resolve } from "path";
-import { loadState, saveState, appendWorkstreamStatus } from "@workstreams/core";
-import { loadConfig, validateWorkstreamName } from "@workstreams/core";
-import { WorktreeManager } from "@workstreams/core";
-import { loadComments, formatCommentsAsPrompt } from "@workstreams/core";
-import { loadPendingPrompt, savePendingPrompt } from "@workstreams/core";
-import { notifyStatus } from "@workstreams/core";
+import { loadState, saveState, appendWorkstreamStatus } from "../core";
+import { loadConfig, validateWorkstreamName } from "../core";
+import { WorktreeManager } from "../core";
+import { loadComments, formatCommentsAsPrompt } from "../core";
+import { loadPendingPrompt, savePendingPrompt } from "../core";
+import { notifyStatus } from "../core";
 import { getBranchInfo, getDiffStats, type WorkstreamEntry, type DashboardAction } from "../ui/workstream-picker.js";
 import { openChoicePicker, type ChoiceOption } from "../ui/choice-picker.js";
 import { openDiffViewer } from "../ui/diff-viewer.js";
 import { openSessionViewer } from "../ui/session-viewer.js";
 import { openIdeDashboard, type IdeDashboardOptions } from "../ui/ide-dashboard.js";
-import type { ProjectState, WorkstreamState } from "@workstreams/core";
-import { buildBgArgs } from "@workstreams/core";
+import type { ProjectState, WorkstreamState } from "../core";
+import { buildBgArgs } from "../core";
 
 export const EDITORS: Record<string, { label: string; mac: string; linux: string }> = {
   code: { label: "VS Code", mac: "Visual Studio Code", linux: "code" },

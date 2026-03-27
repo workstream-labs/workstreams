@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { parse, stringify } from "yaml";
-import { WorktreeManager } from "@workstreams/core";
-import { validateWorkstreamName } from "@workstreams/core";
-import { loadState, saveState, appendWorkstreamStatus } from "@workstreams/core";
+import { WorktreeManager } from "../core";
+import { validateWorkstreamName } from "../core";
+import { loadState, saveState, appendWorkstreamStatus } from "../core";
 
 const ERR_NO_CONFIG = "Error: workstream.yaml not found. Run `ws init` first.";
 const ERR_ALREADY_EXISTS = (name: string) => `Error: workstream "${name}" already exists`;

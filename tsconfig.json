@@ -11,10 +11,13 @@
     "rootDir": ".",
     "declaration": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "@opentuah/react"
+    "jsxImportSource": "@opentuah/react",
+    "baseUrl": ".",
+    "paths": {
+      "@core": ["./apps/cli/src/core"]
+    }
   },
   "include": [
-    "packages/*/src/**/*.ts",
     "apps/*/src/**/*.ts",
     "apps/*/src/**/*.tsx",
     "tests/**/*.ts"

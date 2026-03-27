@@ -42,15 +42,17 @@ Array format is also supported (`workstreams: [{name: ..., prompt: ...}]`).
 
 **Runtime:** Bun (TypeScript, ESNext modules). Uses `bun:test` for testing, `Bun.spawn` for process management.
 
-**Monorepo structure:**
+**Project structure:**
 ```
-packages/core/       Shared engine (published as @workstreams/core)
 apps/cli/            CLI app (the `ws` binary)
+  src/core/          Core engine
+  src/cli/           CLI commands
+  src/ui/            TUI components
 apps/desktop/        Desktop app (WIP)
 tests/               bun:test
 ```
 
-**Core engine** (`packages/core/src/`):
+**Core engine** (`apps/cli/src/core/`):
 - `config.ts` — Loads and validates `workstream.yaml`. Accepts both map and array `workstreams` formats; `base_branch` and `baseBranch` are both valid keys.
 - `dag.ts` — Builds a graph of workstream nodes from definitions.
 - `executor.ts` — `Executor` runs all workstreams in parallel. Serializes worktree creation via a mutex (`worktreeLock`) to prevent git lock races. Handles SIGINT/SIGTERM cleanup.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { defaultState, loadState, saveState } from "@workstreams/core";
+import { defaultState, loadState, saveState } from "@core";
 import { mkdir, rm } from "fs/promises";
 
 const TEST_DIR = "/tmp/test-ws-state";

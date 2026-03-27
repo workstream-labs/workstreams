@@ -1,4 +1,4 @@
-// @workstreams/core — re-exports all core modules
+// Core — re-exports all core modules
 
 // Types
 export type {
