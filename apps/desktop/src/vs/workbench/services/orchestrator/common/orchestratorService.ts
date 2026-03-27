@@ -45,6 +45,7 @@ export interface IOrchestratorService {
 	 */
 	pendingTerminalRestore: Promise<void>;
 
+	pickAndAddRepository(): Promise<void>;
 	addRepository(path: string): Promise<void>;
 	removeRepository(repoPath: string): Promise<void>;
 	toggleRepositoryCollapsed(repoPath: string): void;

@@ -99,7 +99,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this._register(this.onDidChangeRepositories(() => this._part.setRepositories([...this._repositories])));
 	}
 
-	private async pickAndAddRepository(): Promise<void> {
+	async pickAndAddRepository(): Promise<void> {
 		const uris = await this.fileDialogService.showOpenDialog({
 			title: localize('selectRepository', "Select Repository Folder"),
 			canSelectFiles: false,
