@@ -1,0 +1,279 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* -- Container -- */
+
+.monaco-workbench .part.orchestrator {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	background-color: var(--vscode-sideBar-background);
+	border-right: 1px solid var(--vscode-panel-border, var(--vscode-sideBar-border, transparent));
+	user-select: none;
+}
+
+/* -- Content -- */
+
+.monaco-workbench .part.orchestrator .orchestrator-content {
+	flex: 1;
+	overflow-y: auto;
+	padding: 4px 0;
+}
+
+/* -- Repository Section -- */
+
+.monaco-workbench .part.orchestrator .repo-section {
+	margin-bottom: 0;
+	border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.06));
+}
+
+.monaco-workbench .part.orchestrator .repo-section:last-child {
+	border-bottom: none;
+}
+
+/* -- Repository Header -- */
+
+.monaco-workbench .part.orchestrator .repo-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 10px;
+	cursor: pointer;
+	border-bottom: 1px solid transparent;
+	transition: background-color 0.1s ease;
+}
+
+.monaco-workbench .part.orchestrator .repo-header:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.monaco-workbench .part.orchestrator .repo-header-left {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	flex: 1;
+}
+
+.monaco-workbench .part.orchestrator .repo-chevron {
+	font-size: 12px;
+	flex-shrink: 0;
+	opacity: 0.8;
+}
+
+.monaco-workbench .part.orchestrator .repo-avatar {
+	width: 22px;
+	height: 22px;
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 11px;
+	font-weight: 700;
+	flex-shrink: 0;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	text-transform: uppercase;
+}
+
+.monaco-workbench .part.orchestrator .repo-name {
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.monaco-workbench .part.orchestrator .repo-count {
+	font-size: 11px;
+	opacity: 0.5;
+	flex-shrink: 0;
+}
+
+/* -- Repository Header Actions -- */
+
+.monaco-workbench .part.orchestrator .repo-header-actions {
+	display: none;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.monaco-workbench .part.orchestrator .repo-header:hover .repo-header-actions {
+	display: flex;
+}
+
+.monaco-workbench .part.orchestrator .repo-action {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	font-size: 14px;
+	cursor: pointer;
+	opacity: 0.6;
+}
+
+.monaco-workbench .part.orchestrator .repo-action:hover {
+	opacity: 1;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* -- Worktree List -- */
+
+.monaco-workbench .part.orchestrator .worktree-list {
+	padding: 0 0 6px 0;
+	margin-left: 22px;
+}
+
+.monaco-workbench .part.orchestrator .worktree-item {
+	display: flex;
+	align-items: center;
+	padding: 5px 8px 5px 0;
+	cursor: pointer;
+	gap: 6px;
+	transition: background-color 0.1s ease;
+	position: relative;
+}
+
+.monaco-workbench .part.orchestrator .worktree-connector {
+	width: 16px;
+	flex-shrink: 0;
+	align-self: stretch;
+	position: relative;
+}
+
+/* Vertical line + horizontal branch (├-- style) */
+.monaco-workbench .part.orchestrator .worktree-connector::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 12px;
+	height: 50%;
+	border-left: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+	border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+	border-bottom-left-radius: 4px;
+}
+
+/* Vertical line continues down for non-last items (├--) */
+.monaco-workbench .part.orchestrator .worktree-item:not(:last-child) .worktree-connector::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 0;
+	width: 1px;
+	height: 50%;
+	border-left: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+}
+
+.monaco-workbench .part.orchestrator .worktree-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.monaco-workbench .part.orchestrator .worktree-item.active {
+	background-color: rgba(255, 255, 255, 0.04);
+	position: relative;
+}
+
+.monaco-workbench .part.orchestrator .worktree-item.active::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 4px;
+	bottom: 4px;
+	width: 2px;
+	border-radius: 1px;
+	background-color: var(--vscode-focusBorder);
+}
+
+.monaco-workbench .part.orchestrator .worktree-icon {
+	font-size: 14px;
+	flex-shrink: 0;
+	opacity: 0.7;
+}
+
+.monaco-workbench .part.orchestrator .worktree-item.active .worktree-icon {
+	opacity: 1;
+}
+
+.monaco-workbench .part.orchestrator .worktree-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.monaco-workbench .part.orchestrator .worktree-name {
+	font-size: 12px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	line-height: 1.4;
+}
+
+.monaco-workbench .part.orchestrator .worktree-branch {
+	font-size: 10px;
+	opacity: 0.6;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	margin-top: 1px;
+	font-family: var(--monaco-monospace-font);
+	line-height: 1.3;
+}
+
+/* -- Worktree Delete Button -- */
+
+.monaco-workbench .part.orchestrator .worktree-delete {
+	flex-shrink: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	opacity: 0.5;
+}
+
+.monaco-workbench .part.orchestrator .worktree-item:hover .worktree-delete {
+	display: flex;
+}
+
+.monaco-workbench .part.orchestrator .worktree-delete:hover {
+	opacity: 1;
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+/* -- Footer -- */
+
+.monaco-workbench .part.orchestrator .orchestrator-footer {
+	margin-top: auto;
+	padding: 8px;
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-sideBar-border, transparent));
+}
+
+.monaco-workbench .part.orchestrator .add-repo-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 6px;
+	cursor: pointer;
+	border-radius: 5px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	background: transparent;
+	border: 1px dashed rgba(255, 255, 255, 0.1);
+	width: 100%;
+	box-sizing: border-box;
+	transition: background-color 0.1s ease, border-color 0.15s ease;
+}
+
+.monaco-workbench .part.orchestrator .add-repo-button:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	border-color: var(--vscode-descriptionForeground);
+}
