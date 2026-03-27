@@ -9,11 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+cd apps/cli              # all commands run from apps/cli/
 bun install              # install dependencies
 bun link                 # make `ws` available globally
 bun test                 # run all tests
 bun test tests/dag.test.ts  # run a single test file
-bun run apps/cli/src/index.ts -- --help  # run the CLI directly (note the -- separator)
+bun run src/index.ts -- --help  # run the CLI directly (note the -- separator)
 ```
 
 The CLI is invoked as `ws`. Key subcommands: `init`, `create`, `run`, `list`, `dashboard`, `diff`, `view`, `checkout`, `destroy`.
@@ -48,8 +49,10 @@ apps/cli/            CLI app (the `ws` binary)
   src/core/          Core engine
   src/cli/           CLI commands
   src/ui/            TUI components
+  tests/             bun:test
+  docs/              VitePress documentation site
+  install.sh         Install script
 apps/desktop/        Desktop app (WIP)
-tests/               bun:test
 ```
 
 **Core engine** (`apps/cli/src/core/`):

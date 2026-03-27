@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseDiff, fileStat } from "@core";
+import { parseDiff, fileStat } from "../src/core";
 
 describe("parseDiff", () => {
   it("parses empty input", () => {

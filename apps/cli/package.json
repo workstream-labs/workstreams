@@ -1,12 +1,15 @@
 {
-  "name": "@workstreams/cli",
+  "name": "workstreams",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "bin": {
     "ws": "src/index.ts"
   },
   "scripts": {
-    "dev": "bun run src/index.ts"
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "postinstall": "rm -rf node_modules/critique/node_modules"
   },
   "dependencies": {
     "commander": "^13.1.0",

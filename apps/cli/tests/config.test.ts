@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { validateWorkstreamName } from "@core";
+import { validateWorkstreamName } from "../src/core";
 
 describe("config validation", () => {
   it("parses a valid config", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: echo
@@ -27,7 +27,7 @@ workstreams:
   });
 
   it("rejects missing agent command", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent: {}
 workstreams:
@@ -40,7 +40,7 @@ workstreams:
   });
 
   it("allows missing prompt (workspace-only node)", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: echo
@@ -56,7 +56,7 @@ workstreams:
   });
 
   it("rejects duplicate names", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: echo
@@ -72,7 +72,7 @@ workstreams:
   });
 
   it("defaults acceptAll to true when not specified", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: claude
@@ -88,7 +88,7 @@ workstreams:
   });
 
   it("respects explicit acceptAll: false", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: claude
@@ -105,7 +105,7 @@ workstreams:
   });
 
   it("allows empty workstreams object", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: claude
@@ -119,7 +119,7 @@ workstreams: {}
   });
 
   it("allows missing workstreams section", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: claude
@@ -132,7 +132,7 @@ agent:
   });
 
   it("rejects workstream names with spaces", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: echo
@@ -146,7 +146,7 @@ workstreams:
   });
 
   it("rejects workstream names with special characters", async () => {
-    const { loadConfig } = await import("@core");
+    const { loadConfig } = await import("../src/core");
     const yaml = `
 agent:
   command: echo
