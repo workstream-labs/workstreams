@@ -7,7 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { OrchestratorPart } from './orchestratorPart.js';
 import { basename } from '../../../../base/common/path.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
@@ -52,6 +52,9 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private readonly _onDidRemoveWorktree = this._register(new Emitter<{ repoPath: string; worktreePath: string }>());
 	readonly onDidRemoveWorktree = this._onDidRemoveWorktree.event;
+
+	private readonly _onDidChangeSessionState = this._register(new Emitter<{ worktreePath: string; state: WorktreeSessionState }>());
+	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
 	private readonly _part: OrchestratorPart;
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
@@ -322,6 +325,17 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		} else {
 			this._onDidChangeActiveWorktree.fire(worktree);
 		}
+	}
+
+	setSessionState(worktreePath: string, state: WorktreeSessionState): void {
+		this._repositories = this._repositories.map(r => ({
+			...r,
+			worktrees: r.worktrees.map(w =>
+				w.path === worktreePath ? { ...w, sessionState: state } : w
+			)
+		}));
+		this._onDidChangeRepositories.fire();
+		this._onDidChangeSessionState.fire({ worktreePath, state });
 	}
 
 	private saveState(): void {

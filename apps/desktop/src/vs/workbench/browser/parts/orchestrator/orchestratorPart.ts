@@ -12,7 +12,7 @@ import { $, append, addDisposableListener, EventType } from '../../../../base/br
 import { Emitter } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
-import { IRepositoryEntry, IWorktreeEntry } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 
 export class OrchestratorPart extends Part {
 
@@ -143,7 +143,8 @@ export class OrchestratorPart extends Part {
 					}
 
 					append(item, $('.worktree-connector'));
-					append(item, $('.worktree-icon.codicon.codicon-git-branch'));
+					const iconEl = append(item, $('.worktree-icon'));
+					this._applySessionStateIcon(iconEl, worktree);
 
 					const info = append(item, $('.worktree-info'));
 
@@ -169,6 +170,32 @@ export class OrchestratorPart extends Part {
 					}));
 				}
 			}
+		}
+	}
+
+	private _applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
+		el.className = 'worktree-icon';
+
+		switch (worktree.sessionState) {
+			case WorktreeSessionState.Running:
+				el.classList.add('codicon', 'codicon-loading', 'spin');
+				el.classList.add('state-running');
+				break;
+			case WorktreeSessionState.Waiting:
+				el.classList.add('codicon', 'codicon-debug-pause');
+				el.classList.add('state-waiting');
+				break;
+			case WorktreeSessionState.Done:
+				el.classList.add('codicon', 'codicon-check');
+				el.classList.add('state-done');
+				break;
+			case WorktreeSessionState.Error:
+				el.classList.add('codicon', 'codicon-warning');
+				el.classList.add('state-error');
+				break;
+			default:
+				el.classList.add('codicon', 'codicon-git-branch');
+				break;
 		}
 	}
 

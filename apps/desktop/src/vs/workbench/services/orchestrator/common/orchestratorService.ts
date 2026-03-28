@@ -6,12 +6,21 @@
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Event } from '../../../../base/common/event.js';
 
+export const enum WorktreeSessionState {
+	Idle = 'idle',
+	Running = 'running',
+	Waiting = 'waiting',
+	Done = 'done',
+	Error = 'error',
+}
+
 export interface IWorktreeEntry {
 	readonly name: string;
 	readonly path: string;
 	readonly branch: string;
 	readonly description?: string;
 	readonly isActive: boolean;
+	readonly sessionState?: WorktreeSessionState;
 }
 
 export interface IRepositoryEntry {
@@ -45,6 +54,9 @@ export interface IOrchestratorService {
 	 */
 	pendingTerminalRestore: Promise<void>;
 
+	readonly onDidChangeSessionState: Event<{ worktreePath: string; state: WorktreeSessionState }>;
+
+	setSessionState(worktreePath: string, state: WorktreeSessionState): void;
 	pickAndAddRepository(): Promise<void>;
 	addRepository(path: string): Promise<void>;
 	removeRepository(repoPath: string): Promise<void>;

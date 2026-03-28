@@ -200,6 +200,37 @@
 	opacity: 1;
 }
 
+/* Session state icon colors */
+.monaco-workbench .part.orchestrator .worktree-icon.state-running {
+	color: var(--vscode-progressBar-background);
+	opacity: 1;
+}
+
+.monaco-workbench .part.orchestrator .worktree-icon.state-waiting {
+	color: var(--vscode-editorWarning-foreground);
+	opacity: 1;
+}
+
+.monaco-workbench .part.orchestrator .worktree-icon.state-done {
+	color: var(--vscode-testing-iconPassed);
+	opacity: 1;
+}
+
+.monaco-workbench .part.orchestrator .worktree-icon.state-error {
+	color: var(--vscode-errorForeground);
+	opacity: 1;
+}
+
+/* Spinner animation for running state */
+.monaco-workbench .part.orchestrator .worktree-icon.spin {
+	animation: ws-spin 1s linear infinite;
+}
+
+@keyframes ws-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
 .monaco-workbench .part.orchestrator .worktree-info {
 	flex: 1;
 	min-width: 0;
