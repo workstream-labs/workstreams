@@ -32,6 +32,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
+This is a fork of VS Code (Code - OSS) with two major custom additions: the **Orchestrator** (worktree sidebar in the workbench) and the **Sessions layer** (a separate agent-focused window).
+
 VS Code uses a strict **layered architecture**: `base` → `platform` → `editor` → `workbench` (and `sessions`). Each layer may only import from layers below it.
 
 ### Layer responsibilities
@@ -39,7 +41,7 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 - **`src/vs/platform/`** — Platform services and dependency injection infrastructure. Defines service interfaces (`I*Service`) and their implementations.
 - **`src/vs/editor/`** — The Monaco text editor. Self-contained editor with language services, syntax highlighting, and editing features.
 - **`src/vs/workbench/`** — The full IDE shell. Parts (editor area, sidebar, panel, statusbar), the contribution system, and the extension API.
-- **`src/vs/sessions/`** — Agent sessions window. A dedicated workbench layer for agentic workflows. Sits alongside `vs/workbench`; may import from it but **not** vice versa.
+- **`src/vs/sessions/`** — Agent sessions window. A complete alternative workbench for agentic workflows. Can import from `vs/workbench` but **not** vice versa.
 - **`src/vs/code/`** — Electron main process entry points.
 - **`src/vs/server/`** — Remote server entry points.
 
@@ -91,14 +93,14 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 
 ## Orchestrator (Worktree Sidebar)
 
-This is the main custom addition to this VS Code fork. The orchestrator manages multiple git worktrees per repository, shown in a sidebar to the left of the editor.
+The orchestrator manages multiple git worktrees per repository, shown in a sidebar to the left of the editor. This is the primary custom addition to the workbench layer.
 
 ### Key files
 - **Interface**: `src/vs/workbench/services/orchestrator/common/orchestratorService.ts` — `IOrchestratorService`, `IRepositoryEntry`, `IWorktreeEntry`
 - **Implementation**: `src/vs/workbench/browser/parts/orchestrator/orchestratorService.ts` — `OrchestratorServiceImpl` (registered as eager singleton)
 - **UI**: `src/vs/workbench/browser/parts/orchestrator/orchestratorPart.ts` — `OrchestratorPart` renders the sidebar with repo/worktree list
 - **Git operations**: `src/vs/workbench/services/orchestrator/common/gitWorktreeService.ts` (interface), `electron-browser/` (renderer impl), `electron-main/` (main process impl via IPC)
-- **Terminal handling**: `src/vs/workbench/contrib/orchestrator/browser/orchestratorTerminalContribution.ts` — backgrounds/restores terminals per worktree
+- **Terminal handling**: `src/vs/workbench/contrib/orchestrator/browser/orchestratorTerminalContribution.ts` — backgrounds/restores terminals per worktree, handles Claude session hook events
 - **Tests**: `src/vs/workbench/services/orchestrator/test/browser/orchestratorService.test.ts`
 
 ### How worktree switching works (`switchTo`)
@@ -122,3 +124,71 @@ The editor empty state (`editorGroupWatermark.ts`) shows a workstreams-branded o
 
 ### Workspace dialog
 When the orchestrator is active (has repos in storage), the "Save untitled workspace?" dialog on close is suppressed — the untitled workspace is silently discarded. See `workspaceEditingService.ts` `saveUntitledBeforeShutdown`.
+
+## Claude Session State via Hooks
+
+The app tracks Claude Code lifecycle events in each worktree via a hook-based notification system.
+
+### Architecture (data flow)
+1. **Hook script** (`~/.claude/hooks/workstreams-notify.sh`) — installed automatically on startup. Reads JSON from Claude Code's stdin, extracts event type, and curls the notification server.
+2. **HTTP notification server** (port `51742`, Electron main process) — `src/vs/workbench/services/orchestrator/electron-main/hookNotificationServer.ts`. Maps raw Claude events to normalized states (`Start`, `Stop`, `PermissionRequest`, `SessionEnd`).
+3. **IPC bridge** — `IHookNotificationService` (channel `hookNotification`) proxied from main to renderer.
+4. **Terminal contribution** — `orchestratorTerminalContribution.ts` listens to notifications, updates `WorktreeSessionState` on the orchestrator service, shows toast notifications, and plays accessibility sounds.
+
+### Key files
+- **Hook setup**: `src/vs/workbench/services/orchestrator/electron-main/claudeHookSetup.ts` — writes hook script and registers in `~/.claude/settings.json`
+- **Notification server**: `src/vs/workbench/services/orchestrator/electron-main/hookNotificationServer.ts`
+- **Service interface**: `src/vs/workbench/services/orchestrator/common/hookNotificationService.ts`
+
+### Session states (`WorktreeSessionState` enum)
+- **Idle** — default, git-branch icon
+- **Running** — animated braille spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏), triggered by `UserPromptSubmit`/`PostToolUse`
+- **Waiting** — pause icon, triggered by `Stop` or `PermissionRequest`, with toast notification + sound
+- **Done** — checkmark icon, triggered by `SessionEnd`
+- **Error** — warning icon
+
+### Environment variable
+Terminals created in worktrees get `WORKSTREAMS_WORKTREE_PATH` injected so hook scripts can identify which worktree a Claude session belongs to.
+
+## Sessions Layer (Agent Window)
+
+`src/vs/sessions/` is a complete, independent workbench implementation optimized for agent session workflows. It is **not** an extension of the standard workbench — it's a parallel window type with its own layout, parts, and contributions.
+
+### Key differences from standard workbench
+- **Fixed layout** — no user-configurable part positions
+- **Chat-first UX** — chat bar is a primary part (sidebar left, chat bar center, auxiliary bar right)
+- **Modal editors** — all editors open as overlay modals, not in an editor grid
+- **Simplified chrome** — no activity bar, no status bar, no banner
+- **Separate storage keys** — all parts use `workbench.agentsession.*` prefixes to avoid conflicts
+
+### Grid structure
+```
+Root (HORIZONTAL)
+├── Sidebar (300px)
+└── Right Section (VERTICAL)
+    ├── Titlebar
+    ├── Chat Bar (flex) + Auxiliary Bar (300px)
+    └── Panel (300px, hidden by default)
+```
+
+### Key files
+- **Layout**: `src/vs/sessions/browser/workbench.ts` — main `Workbench` class
+- **Menus**: `src/vs/sessions/browser/menus.ts` — custom menu IDs (`SessionsCommandCenter`, `ChatBarTitle`, etc.)
+- **Parts**: `src/vs/sessions/browser/parts/` — titlebar, sidebar, chat bar, auxiliary bar, panel, project bar
+- **Entry points**: `sessions.desktop.main.ts` (desktop), `sessions.common.main.ts` (shared)
+- **Documentation**: `src/vs/sessions/README.md`, `src/vs/sessions/LAYOUT.md`, `src/vs/sessions/AI_CUSTOMIZATIONS.md`
+
+### Major contributions (in `src/vs/sessions/contrib/`)
+- **sessions/** — session list, management service (`ISessionsManagementService`)
+- **chat/** — chat actions, prompts service, AI customization harness, run scripts
+- **accountMenu/** — sign in/out, settings, updates (sidebar footer)
+- **changes/** — file changes visualization (auxiliary bar)
+- **welcome/** — onboarding flow
+
+## Workbench UI Customizations
+
+Default VS Code UI is modified to focus on the orchestrator-driven workflow:
+
+- **Auxiliary bar (chat panel)** hidden by default — `LayoutStateKeys.AUXILIARYBAR_HIDDEN` defaults to `true`
+- **Outline and Timeline views** registered with `hideByDefault: true`
+- **Terminal button added to title bar** — opens terminal in editor area via `MenuId.LayoutControlMenu`
