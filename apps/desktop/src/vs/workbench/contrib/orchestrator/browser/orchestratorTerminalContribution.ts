@@ -5,7 +5,10 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { localize } from '../../../../nls.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../../../contrib/terminal/browser/terminal.js';
 import { GroupsOrder, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IOrchestratorService, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
@@ -60,6 +63,8 @@ export class OrchestratorTerminalContribution extends Disposable {
 		@IEditorGroupsService private readonly _editorGroupsService: IEditorGroupsService,
 		@ILogService private readonly _logService: ILogService,
 		@IHookNotificationService private readonly _hookNotificationService: IHookNotificationService,
+		@INotificationService private readonly _notificationService: INotificationService,
+		@IAccessibilitySignalService private readonly _signalService: IAccessibilitySignalService,
 	) {
 		super();
 
@@ -71,20 +76,36 @@ export class OrchestratorTerminalContribution extends Disposable {
 		 */
 		this._register(this._hookNotificationService.onDidReceiveNotification(event => {
 			this._logService.info(`${TAG} Hook notification: ${event.eventType} for "${event.worktreePath}"`);
+
+			const worktreeName = this._resolveWorktreeName(event.worktreePath);
+
 			switch (event.eventType) {
 				case 'Start':
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Running);
 					break;
 				case 'Stop':
-					// Stop = Claude finished a turn, waiting for next prompt (esc interrupt or natural end)
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+					this._notificationService.notify({
+						severity: Severity.Info,
+						message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
+						});
+					this._signalService.playSignal(AccessibilitySignal.taskCompleted);
 					break;
 				case 'PermissionRequest':
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+					this._notificationService.notify({
+						severity: Severity.Warning,
+						message: localize('worktreePermission', "{0} — asking permission", worktreeName),
+						});
+					this._signalService.playSignal(AccessibilitySignal.errorAtPosition);
 					break;
 				case 'SessionEnd':
-					// Session fully ended (/exit, quit, etc.)
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Done);
+					this._notificationService.notify({
+						severity: Severity.Info,
+						message: localize('worktreeSessionEnded', "{0} — session ended", worktreeName),
+						});
+					this._signalService.playSignal(AccessibilitySignal.taskCompleted);
 					break;
 			}
 		}));
@@ -344,6 +365,21 @@ export class OrchestratorTerminalContribution extends Disposable {
 
 		this._dumpState('phase2-done');
 		this._logService.trace(`${TAG} ===== PHASE 2 DONE: showed=${toShow.length} fg=${this._terminalService.foregroundInstances.length} =====`);
+	}
+
+	/**
+	 * Resolves a friendly worktree display name from its path.
+	 */
+	private _resolveWorktreeName(worktreePath: string): string {
+		for (const repo of this._orchestratorService.repositories) {
+			for (const wt of repo.worktrees) {
+				if (wt.path === worktreePath) {
+					return wt.name;
+				}
+			}
+		}
+		// Fallback: last path segment
+		return worktreePath.split('/').pop() || worktreePath;
 	}
 
 	/**

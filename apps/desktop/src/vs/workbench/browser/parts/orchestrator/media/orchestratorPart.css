@@ -207,8 +207,8 @@
 	font-size: 14px;
 	width: 14px;
 	text-align: center;
-	color: var(--vscode-progressBar-background);
-	opacity: 1;
+	color: var(--vscode-foreground);
+	opacity: 0.9;
 }
 
 .monaco-workbench .part.orchestrator .worktree-icon.state-waiting {
