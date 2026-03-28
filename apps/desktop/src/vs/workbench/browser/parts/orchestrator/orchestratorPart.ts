@@ -173,25 +173,32 @@ export class OrchestratorPart extends Part {
 		}
 	}
 
+	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+	private static readonly BRAILLE_INTERVAL_MS = 80;
+
 	private _applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
 		el.className = 'worktree-icon';
 
 		switch (worktree.sessionState) {
-			case WorktreeSessionState.Running:
-				el.classList.add('codicon', 'codicon-loading', 'spin');
-				el.classList.add('state-running');
+			case WorktreeSessionState.Running: {
+				el.classList.add('state-running', 'braille-spinner');
+				let frame = 0;
+				el.textContent = OrchestratorPart.BRAILLE_FRAMES[0];
+				const interval = setInterval(() => {
+					frame = (frame + 1) % OrchestratorPart.BRAILLE_FRAMES.length;
+					el.textContent = OrchestratorPart.BRAILLE_FRAMES[frame];
+				}, OrchestratorPart.BRAILLE_INTERVAL_MS);
+				this.renderDisposables.add({ dispose: () => clearInterval(interval) });
 				break;
+			}
 			case WorktreeSessionState.Waiting:
-				el.classList.add('codicon', 'codicon-debug-pause');
-				el.classList.add('state-waiting');
+				el.classList.add('codicon', 'codicon-debug-pause', 'state-waiting');
 				break;
 			case WorktreeSessionState.Done:
-				el.classList.add('codicon', 'codicon-check');
-				el.classList.add('state-done');
+				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			case WorktreeSessionState.Error:
-				el.classList.add('codicon', 'codicon-warning');
-				el.classList.add('state-error');
+				el.classList.add('codicon', 'codicon-warning', 'state-error');
 				break;
 			default:
 				el.classList.add('codicon', 'codicon-git-branch');

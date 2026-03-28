@@ -201,7 +201,12 @@
 }
 
 /* Session state icon colors */
-.monaco-workbench .part.orchestrator .worktree-icon.state-running {
+
+.monaco-workbench .part.orchestrator .worktree-icon.braille-spinner {
+	font-family: monospace;
+	font-size: 14px;
+	width: 14px;
+	text-align: center;
 	color: var(--vscode-progressBar-background);
 	opacity: 1;
 }
@@ -219,16 +224,6 @@
 .monaco-workbench .part.orchestrator .worktree-icon.state-error {
 	color: var(--vscode-errorForeground);
 	opacity: 1;
-}
-
-/* Spinner animation for running state */
-.monaco-workbench .part.orchestrator .worktree-icon.spin {
-	animation: ws-spin 1s linear infinite;
-}
-
-@keyframes ws-spin {
-	from { transform: rotate(0deg); }
-	to { transform: rotate(360deg); }
 }
 
 .monaco-workbench .part.orchestrator .worktree-info {

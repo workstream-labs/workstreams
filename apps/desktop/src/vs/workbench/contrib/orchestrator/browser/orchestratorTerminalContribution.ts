@@ -3,12 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../../../contrib/terminal/browser/terminal.js';
 import { GroupsOrder, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IOrchestratorService, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IHookNotificationService } from '../../../services/orchestrator/common/hookNotificationService.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 
 const TAG = '[OrchestratorTerminal]';
@@ -51,15 +52,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 */
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
 
-	/**
-	 * Per-terminal disposables for line data listeners.
-	 */
-	private readonly _terminalListeners = new Map<number, DisposableStore>();
-
-	/**
-	 * Tracks whether a Claude session is detected per worktree key.
-	 */
-	private readonly _sessionDetected = new Set<string>();
 
 	constructor(
 		@IOrchestratorService private readonly _orchestratorService: IOrchestratorService,
@@ -67,8 +59,35 @@ export class OrchestratorTerminalContribution extends Disposable {
 		@ITerminalEditorService private readonly _terminalEditorService: ITerminalEditorService,
 		@IEditorGroupsService private readonly _editorGroupsService: IEditorGroupsService,
 		@ILogService private readonly _logService: ILogService,
+		@IHookNotificationService private readonly _hookNotificationService: IHookNotificationService,
 	) {
 		super();
+
+		this._logService.info(`${TAG} Contribution initialized`);
+
+		/**
+		 * Hook notification listener: receives Claude Code lifecycle events
+		 * from the main-process HTTP server and updates session state.
+		 */
+		this._register(this._hookNotificationService.onDidReceiveNotification(event => {
+			this._logService.info(`${TAG} Hook notification: ${event.eventType} for "${event.worktreePath}"`);
+			switch (event.eventType) {
+				case 'Start':
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Running);
+					break;
+				case 'Stop':
+					// Stop = Claude finished a turn, waiting for next prompt (esc interrupt or natural end)
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+					break;
+				case 'PermissionRequest':
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+					break;
+				case 'SessionEnd':
+					// Session fully ended (/exit, quit, etc.)
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Done);
+					break;
+			}
+		}));
 
 		/**
 		 * Phase 1: background only (before saveWorkingSet).
@@ -89,8 +108,10 @@ export class OrchestratorTerminalContribution extends Disposable {
 		/**
 		 * Redirect panel terminals to editor and track ownership.
 		 */
+		this._logService.info(`${TAG} Contribution initialized`);
+
 		this._register(this._terminalService.onDidCreateInstance(instance => {
-			this._logService.trace(`${TAG} onDidCreateInstance: ${describeInstance(instance)}`);
+			this._logService.info(`${TAG} onDidCreateInstance: ${describeInstance(instance)}`);
 			if (instance.target === TerminalLocation.Panel) {
 				this._terminalService.moveToEditor(instance);
 				this._logService.trace(`${TAG} Moved panel terminal ${instance.instanceId} → editor`);
@@ -98,10 +119,15 @@ export class OrchestratorTerminalContribution extends Disposable {
 			if (this._activeKey) {
 				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0 });
 				this._logService.trace(`${TAG} Claimed terminal ${instance.instanceId} → "${this._activeKey}"`);
+
+				// Inject worktree path so Claude hooks can identify which worktree this session belongs to
+				const worktreePath = this._findWorktreePath(this._activeKey);
+				if (worktreePath) {
+					instance.sendText(`export WORKSTREAMS_WORKTREE_PATH="${worktreePath}" CLAUDE_EVENT_TYPE=""`, true);
+				}
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
 			}
-			this._monitorTerminalOutput(instance);
 		}));
 
 		/**
@@ -112,12 +138,9 @@ export class OrchestratorTerminalContribution extends Disposable {
 			if (info) {
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}" — removing from ownership`);
 				this._ownership.delete(instance.instanceId);
-				this._updateWorktreeSessionState(info.worktreeKey);
 			} else {
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} (unmanaged)`);
 			}
-			this._terminalListeners.get(instance.instanceId)?.dispose();
-			this._terminalListeners.delete(instance.instanceId);
 			this._dumpState('after-dispose');
 		}));
 
@@ -324,98 +347,17 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
-	 * Attaches a line-data listener to a terminal instance to detect Claude
-	 * stream-json events and update worktree session state accordingly.
+	 * Resolves the original worktree path from a lowercase ownership key.
 	 */
-	private _monitorTerminalOutput(instance: ITerminalInstance): void {
-		const disposables = new DisposableStore();
-		this._terminalListeners.set(instance.instanceId, disposables);
-
-		disposables.add(instance.onLineData(line => {
-			const info = this._ownership.get(instance.instanceId);
-			if (!info) {
-				return;
-			}
-
-			const trimmed = line.trim();
-			if (!trimmed.startsWith('{')) {
-				return;
-			}
-
-			let event: { type?: string; message?: { content?: Array<{ type?: string }> } };
-			try {
-				event = JSON.parse(trimmed);
-			} catch {
-				return;
-			}
-
-			if (!event.type) {
-				return;
-			}
-
-			this._sessionDetected.add(info.worktreeKey);
-
-			switch (event.type) {
-				case 'assistant': {
-					const content = event.message?.content;
-					if (Array.isArray(content) && content.some(b => b.type === 'tool_use')) {
-						this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Running);
-					} else {
-						this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Running);
-					}
-					break;
-				}
-				case 'user':
-					this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Running);
-					break;
-				case 'result':
-					this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Done);
-					break;
-				case 'system':
-					// System events during a session mean it's active
-					if (this._sessionDetected.has(info.worktreeKey)) {
-						this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Running);
-					}
-					break;
-			}
-		}));
-
-		disposables.add(instance.onExit(exitCode => {
-			const info = this._ownership.get(instance.instanceId);
-			if (!info || !this._sessionDetected.has(info.worktreeKey)) {
-				return;
-			}
-			this._sessionDetected.delete(info.worktreeKey);
-			if (exitCode !== undefined && exitCode !== 0) {
-				this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Error);
-			} else {
-				this._setWorktreeState(info.worktreeKey, WorktreeSessionState.Idle);
-			}
-		}));
-	}
-
-	private _setWorktreeState(worktreeKey: string, state: WorktreeSessionState): void {
-		// Find the actual worktree path (ownership stores lowercase keys)
+	private _findWorktreePath(worktreeKey: string): string | undefined {
 		for (const repo of this._orchestratorService.repositories) {
 			for (const wt of repo.worktrees) {
-				if (wt.path.toLowerCase() === worktreeKey && wt.sessionState !== state) {
-					this._orchestratorService.setSessionState(wt.path, state);
-					return;
+				if (wt.path.toLowerCase() === worktreeKey) {
+					return wt.path;
 				}
 			}
 		}
-	}
-
-	/**
-	 * Re-evaluate session state for a worktree after a terminal is disposed.
-	 * If no more terminals are owned by this worktree, reset to idle.
-	 */
-	private _updateWorktreeSessionState(worktreeKey: string): void {
-		const hasTerminals = [...this._ownership.values()].some(o => o.worktreeKey === worktreeKey);
-		if (!hasTerminals) {
-			this._sessionDetected.delete(worktreeKey);
-			this._setWorktreeState(worktreeKey, WorktreeSessionState.Idle);
-		}
+		return undefined;
 	}
 
 	private _onWorktreeRemoved(worktreePath: string): void {
@@ -432,15 +374,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 				}
 			}
 		}
-		this._sessionDetected.delete(key);
-	}
-
-	override dispose(): void {
-		for (const d of this._terminalListeners.values()) {
-			d.dispose();
-		}
-		this._terminalListeners.clear();
-		super.dispose();
 	}
 }
 
