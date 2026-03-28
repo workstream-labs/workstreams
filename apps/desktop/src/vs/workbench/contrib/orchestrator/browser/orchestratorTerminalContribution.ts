@@ -55,7 +55,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 */
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
 
-
 	constructor(
 		@IOrchestratorService private readonly _orchestratorService: IOrchestratorService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
@@ -81,31 +80,28 @@ export class OrchestratorTerminalContribution extends Disposable {
 
 			switch (event.eventType) {
 				case 'Start':
-					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Running);
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Working);
 					break;
-				case 'Stop':
-					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+				case 'Stop': {
+					const isActive = this._orchestratorService.activeWorktree?.path === event.worktreePath;
+					this._orchestratorService.setSessionState(
+						event.worktreePath,
+						isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review
+					);
 					this._notificationService.notify({
 						severity: Severity.Info,
 						message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
 						});
 					this._signalService.playSignal(AccessibilitySignal.taskCompleted);
 					break;
+				}
 				case 'PermissionRequest':
-					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Waiting);
+					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Permission);
 					this._notificationService.notify({
 						severity: Severity.Warning,
 						message: localize('worktreePermission', "{0} — asking permission", worktreeName),
 						});
 					this._signalService.playSignal(AccessibilitySignal.errorAtPosition);
-					break;
-				case 'SessionEnd':
-					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Done);
-					this._notificationService.notify({
-						severity: Severity.Info,
-						message: localize('worktreeSessionEnded', "{0} — session ended", worktreeName),
-						});
-					this._signalService.playSignal(AccessibilitySignal.taskCompleted);
 					break;
 			}
 		}));

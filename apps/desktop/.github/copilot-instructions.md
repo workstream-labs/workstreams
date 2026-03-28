@@ -140,12 +140,11 @@ The app tracks Claude Code lifecycle events in each worktree via a hook-based no
 - **Notification server**: `src/vs/workbench/services/orchestrator/electron-main/hookNotificationServer.ts`
 - **Service interface**: `src/vs/workbench/services/orchestrator/common/hookNotificationService.ts`
 
-### Session states (`WorktreeSessionState` enum)
-- **Idle** — default, git-branch icon
-- **Running** — animated braille spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏), triggered by `UserPromptSubmit`/`PostToolUse`
-- **Waiting** — pause icon, triggered by `Stop` or `PermissionRequest`, with toast notification + sound
-- **Done** — checkmark icon, triggered by `SessionEnd`
-- **Error** — warning icon
+### Session states (`WorktreeSessionState` enum, matches Superset)
+- **Idle** — default, git-branch icon. Set by `Stop` on active worktree
+- **Working** — animated braille spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏), triggered by `Start` (UserPromptSubmit/PostToolUse/PostToolUseFailure)
+- **Permission** — pause icon, triggered by `PermissionRequest`, with toast notification + sound
+- **Review** — checkmark icon, triggered by `Stop` on background (non-active) worktree
 
 ### Environment variable
 Terminals created in worktrees get `WORKSTREAMS_WORKTREE_PATH` injected so hook scripts can identify which worktree a Claude session belongs to.

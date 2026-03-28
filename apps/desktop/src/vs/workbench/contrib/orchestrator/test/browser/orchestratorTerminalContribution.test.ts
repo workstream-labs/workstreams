@@ -14,6 +14,9 @@ import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../
 import { TerminalLocation } from '../../../../../platform/terminal/common/terminal.js';
 import { GroupsOrder, IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { IOrchestratorService, IWorktreeEntry } from '../../../../services/orchestrator/common/orchestratorService.js';
+import { IHookNotificationEvent, IHookNotificationService } from '../../../../services/orchestrator/common/hookNotificationService.js';
+import { INotificationHandle, INotificationService } from '../../../../../platform/notification/common/notification.js';
+import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { OrchestratorTerminalContribution } from '../../browser/orchestratorTerminalContribution.js';
 
@@ -90,6 +93,29 @@ suite('OrchestratorTerminalContribution', () => {
 			override onDidChangeActiveWorktree = onDidChangeActiveWorktree.event;
 			override onDidApplyWorktreeEditorState = onDidApplyWorktreeEditorState.event;
 			override onDidRemoveWorktree = onDidRemoveWorktree.event;
+			override repositories = [];
+		});
+
+		instantiationService.stub(IHookNotificationService, new class extends mock<IHookNotificationService>() {
+			override onDidReceiveNotification = store.add(new Emitter<IHookNotificationEvent>()).event;
+		});
+
+		instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
+			override notify(): INotificationHandle {
+				return {
+					close() { },
+					updateMessage() { },
+					updateSeverity() { },
+					updateActions() { },
+					progress: { infinite() { }, total() { }, worked() { }, done() { } },
+					onDidClose: store.add(new Emitter<void>()).event,
+					onDidChangeVisibility: store.add(new Emitter<boolean>()).event,
+				} as INotificationHandle;
+			}
+		});
+
+		instantiationService.stub(IAccessibilitySignalService, new class extends mock<IAccessibilitySignalService>() {
+			override async playSignal(_signal: AccessibilitySignal): Promise<void> { }
 		});
 
 		instantiationService.stub(ITerminalService, new class extends mock<ITerminalService>() {

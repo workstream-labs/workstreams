@@ -39,8 +39,9 @@ if [ -z "$WORKSTREAMS_WORKTREE_PATH" ]; then
 fi
 
 # Read hook JSON from stdin to extract the event name
+# Use flexible pattern to handle optional whitespace: "key": "value" or "key":"value"
 HOOK_JSON=$(cat)
-EVENT_TYPE=$(echo "$HOOK_JSON" | grep -o '"hook_event_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+EVENT_TYPE=$(echo "$HOOK_JSON" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE '"[^"]*"$' | tr -d '"')
 
 if [ -z "$EVENT_TYPE" ]; then
   exit 0
@@ -85,12 +86,18 @@ export async function setupClaudeHooks(logService: ILogService): Promise<void> {
 
 		const hooks: Record<string, unknown[]> = (settings['hooks'] as Record<string, unknown[]>) || {};
 
-		const eventsToHook = ['UserPromptSubmit', 'Stop', 'PostToolUse', 'PermissionRequest', 'SessionEnd'];
+		// Tool-related hooks use matcher '*' (all tools);
+		// non-tool hooks omit matcher entirely. Matches Superset's registration pattern.
+		const toolEvents = new Set(['PostToolUse', 'PostToolUseFailure', 'PermissionRequest']);
+		const eventsToHook = ['UserPromptSubmit', 'Stop', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest'];
 
 		let changed = false;
 		for (const event of eventsToHook) {
 			const existing: unknown[] = hooks[event] || [];
-			const alreadyRegistered = existing.some((e: unknown) => {
+			const wantsMatcher = toolEvents.has(event);
+
+			// Find existing entry index for our hook command
+			const existingIdx = existing.findIndex((e: unknown) => {
 				if (typeof e !== 'object' || e === null) {
 					return false;
 				}
@@ -103,8 +110,23 @@ export async function setupClaudeHooks(logService: ILogService): Promise<void> {
 					typeof h === 'object' && h !== null && (h as Record<string, unknown>)['command'] === hookCommand
 				);
 			});
-			if (!alreadyRegistered) {
-				existing.push({ matcher: '', hooks: [hookInner] });
+
+			if (existingIdx >= 0) {
+				// Migrate stale entries to match Superset's pattern
+				const entry = existing[existingIdx] as Record<string, unknown>;
+				if (wantsMatcher && entry['matcher'] !== '*') {
+					entry['matcher'] = '*';
+					changed = true;
+				} else if (!wantsMatcher && 'matcher' in entry) {
+					delete entry['matcher'];
+					changed = true;
+				}
+			} else {
+				const entry: Record<string, unknown> = { hooks: [hookInner] };
+				if (wantsMatcher) {
+					entry['matcher'] = '*';
+				}
+				existing.push(entry);
 				hooks[event] = existing;
 				changed = true;
 			}

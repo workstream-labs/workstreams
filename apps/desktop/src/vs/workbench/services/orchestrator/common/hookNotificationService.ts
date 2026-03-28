@@ -8,7 +8,7 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 
 export interface IHookNotificationEvent {
 	readonly worktreePath: string;
-	readonly eventType: 'Start' | 'Stop' | 'PermissionRequest' | 'SessionEnd';
+	readonly eventType: 'Start' | 'Stop' | 'PermissionRequest';
 }
 
 export const IHookNotificationService = createDecorator<IHookNotificationService>('hookNotificationService');

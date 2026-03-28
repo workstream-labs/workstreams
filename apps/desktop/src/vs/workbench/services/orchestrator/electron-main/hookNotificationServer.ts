@@ -22,16 +22,14 @@ export const HOOK_NOTIFICATION_PORT = 51742;
  */
 function mapEventType(raw: string): IHookNotificationEvent['eventType'] | undefined {
 	switch (raw) {
+		case 'Start':
 		case 'UserPromptSubmit':
 		case 'PostToolUse':
 		case 'PostToolUseFailure':
-		case 'SubagentStart':
 			return 'Start';
 		case 'Stop':
-		case 'SubagentStop':
-			return 'Stop';
 		case 'SessionEnd':
-			return 'SessionEnd';
+			return 'Stop';
 		case 'PermissionRequest':
 			return 'PermissionRequest';
 		default:

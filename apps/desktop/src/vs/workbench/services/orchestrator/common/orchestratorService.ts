@@ -8,10 +8,9 @@ import { Event } from '../../../../base/common/event.js';
 
 export const enum WorktreeSessionState {
 	Idle = 'idle',
-	Running = 'running',
-	Waiting = 'waiting',
-	Done = 'done',
-	Error = 'error',
+	Working = 'working',
+	Permission = 'permission',
+	Review = 'review',
 }
 
 export interface IWorktreeEntry {

@@ -180,7 +180,7 @@ export class OrchestratorPart extends Part {
 		el.className = 'worktree-icon';
 
 		switch (worktree.sessionState) {
-			case WorktreeSessionState.Running: {
+			case WorktreeSessionState.Working: {
 				el.classList.add('state-running', 'braille-spinner');
 				let frame = 0;
 				el.textContent = OrchestratorPart.BRAILLE_FRAMES[0];
@@ -191,14 +191,11 @@ export class OrchestratorPart extends Part {
 				this.renderDisposables.add({ dispose: () => clearInterval(interval) });
 				break;
 			}
-			case WorktreeSessionState.Waiting:
+			case WorktreeSessionState.Permission:
 				el.classList.add('codicon', 'codicon-debug-pause', 'state-waiting');
 				break;
-			case WorktreeSessionState.Done:
+			case WorktreeSessionState.Review:
 				el.classList.add('codicon', 'codicon-check', 'state-done');
-				break;
-			case WorktreeSessionState.Error:
-				el.classList.add('codicon', 'codicon-warning', 'state-error');
 				break;
 			default:
 				el.classList.add('codicon', 'codicon-git-branch');
