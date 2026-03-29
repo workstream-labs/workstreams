@@ -1,0 +1,101 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.workstream-comment-widget {
+	padding: 8px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: var(--vscode-editor-background);
+}
+
+.workstream-comment-widget .ws-comment-header {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	font-weight: 600;
+}
+
+.workstream-comment-widget .ws-comment-textarea {
+	width: 100%;
+	min-height: 80px;
+	padding: 8px;
+	border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.1));
+	border-radius: 4px;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size, 13px);
+	resize: vertical;
+	outline: none;
+	box-sizing: border-box;
+}
+
+.workstream-comment-widget .ws-comment-textarea:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.workstream-comment-widget .ws-comment-textarea::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+.workstream-comment-widget .ws-comment-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.workstream-comment-widget .ws-comment-btn {
+	padding: 4px 12px;
+	border: none;
+	border-radius: 4px;
+	font-size: 12px;
+	font-family: var(--vscode-font-family);
+	cursor: pointer;
+	outline: none;
+}
+
+.workstream-comment-widget .ws-comment-btn:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.workstream-comment-widget .ws-comment-btn-cancel {
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.1));
+}
+
+.workstream-comment-widget .ws-comment-btn-cancel:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.workstream-comment-widget .ws-comment-btn-submit {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.workstream-comment-widget .ws-comment-btn-submit:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
+.workstream-comment-widget .ws-comment-btn-submit:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.workstream-comment-widget .ws-comment-btn-delete {
+	background: transparent;
+	color: var(--vscode-errorForeground);
+	border: 1px solid transparent;
+}
+
+.workstream-comment-widget .ws-comment-btn-delete:hover:not(:disabled) {
+	border-color: var(--vscode-errorForeground);
+}
+
+.workstream-comment-widget .ws-comment-btn-delete:disabled {
+	opacity: 0.3;
+	cursor: default;
+}
