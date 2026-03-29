@@ -11,6 +11,9 @@ import { IWorkstreamCommentService } from '../../../services/workstreamComments/
 import { WorkstreamCommentServiceImpl } from '../../../services/workstreamComments/browser/workstreamCommentServiceImpl.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { WorkstreamCommentController } from './workstreamCommentController.js';
 
 // Ensure the service singleton is registered (side-effect import)
@@ -27,6 +30,9 @@ class WorkstreamCommentsContribution extends Disposable {
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
 		@ICodeEditorService private readonly codeEditorService: ICodeEditorService,
+		@IDialogService private readonly dialogService: IDialogService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super();
 
@@ -44,6 +50,9 @@ class WorkstreamCommentsContribution extends Disposable {
 			this.workstreamCommentService,
 			this.orchestratorService,
 			this.codeEditorService,
+			this.dialogService,
+			this.configurationService,
+			this.notificationService,
 		);
 
 		// Update base path when active worktree changes

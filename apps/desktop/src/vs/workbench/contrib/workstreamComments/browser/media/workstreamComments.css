@@ -17,6 +17,16 @@
 	font-weight: 600;
 }
 
+.workstream-comment-widget .ws-comment-body {
+	padding: 6px 0;
+	color: var(--vscode-foreground);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size, 13px);
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	line-height: 1.4;
+}
+
 .workstream-comment-widget .ws-comment-textarea {
 	width: 100%;
 	min-height: 80px;
