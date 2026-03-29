@@ -284,6 +284,9 @@ import './contrib/commands/common/commands.contribution.js';
 // Comments
 import './contrib/comments/browser/comments.contribution.js';
 
+// Workstream Comments (inline diff review)
+import './contrib/workstreamComments/browser/workstreamComments.contribution.js';
+
 // URL Support
 import './contrib/url/browser/url.contribution.js';
 
