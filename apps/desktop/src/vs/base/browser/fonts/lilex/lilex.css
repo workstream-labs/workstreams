@@ -1,0 +1,38 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Lilex — monospace font for the editor (Zed Mono equivalent) */
+
+@font-face {
+	font-family: "Lilex";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("./lilex-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "Lilex";
+	font-style: italic;
+	font-weight: 400;
+	font-display: swap;
+	src: url("./lilex-latin-400-italic.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "Lilex";
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url("./lilex-latin-700-normal.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "Lilex";
+	font-style: italic;
+	font-weight: 700;
+	font-display: swap;
+	src: url("./lilex-latin-700-italic.woff2") format("woff2");
+}

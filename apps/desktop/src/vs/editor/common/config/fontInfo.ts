@@ -219,15 +219,15 @@ export const FONT_VARIATION_TRANSLATE = 'translate';
 /**
  * @internal
  */
-export const DEFAULT_WINDOWS_FONT_FAMILY = 'Consolas, \'Courier New\', monospace';
+export const DEFAULT_WINDOWS_FONT_FAMILY = 'Lilex, Consolas, \'Courier New\', monospace';
 /**
  * @internal
  */
-export const DEFAULT_MAC_FONT_FAMILY = 'Menlo, Monaco, \'Courier New\', monospace';
+export const DEFAULT_MAC_FONT_FAMILY = 'Lilex, Menlo, Monaco, \'Courier New\', monospace';
 /**
  * @internal
  */
-export const DEFAULT_LINUX_FONT_FAMILY = '\'Droid Sans Mono\', monospace';
+export const DEFAULT_LINUX_FONT_FAMILY = 'Lilex, \'Droid Sans Mono\', monospace';
 /**
  * @internal
  */

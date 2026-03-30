@@ -134,6 +134,8 @@
     "yazl": "^2.4.3"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/lilex": "^5.2.1",
     "@playwright/cli": "^0.1.1",
     "@playwright/test": "^1.56.1",
     "@stylistic/eslint-plugin-ts": "^2.8.0",
