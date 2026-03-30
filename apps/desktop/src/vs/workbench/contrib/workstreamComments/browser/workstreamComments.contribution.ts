@@ -224,7 +224,7 @@ registerAction2(class extends Action2 {
 		for (const c of resolvedOnline) {
 			const fileName = basename(c.filePath);
 			const item: CommentPickItem = {
-				label: `$(check) ${fileName}:${c.line}`,
+				label: `$(comment-discussion) ${fileName}:${c.line}`,
 				description: `online \u00B7 @${c.author} \u00B7 resolved`,
 				detail: `    ${c.text}`,
 				picked: false,
