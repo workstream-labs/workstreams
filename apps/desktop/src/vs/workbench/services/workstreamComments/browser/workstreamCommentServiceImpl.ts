@@ -10,7 +10,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread, IWorkstreamCommentChangeEvent } from '../common/workstreamCommentService.js';
+import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread, IWorkstreamCommentChangeEvent, CommentSide, DiffLineType } from '../common/workstreamCommentService.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { joinPath } from '../../../../base/common/resources.js';
 
@@ -23,8 +23,8 @@ interface IPersistedComment {
 	id?: string;
 	filePath: string;
 	line?: number;
-	side?: 'old' | 'new';
-	lineType?: 'add' | 'remove' | 'context';
+	side?: CommentSide;
+	lineType?: DiffLineType;
 	lineContent?: string;
 	text: string;
 	createdAt: string;
@@ -94,7 +94,7 @@ export class WorkstreamCommentServiceImpl extends Disposable implements IWorkstr
 		return this._loadThread(workstream);
 	}
 
-	async addComment(workstream: string, filePath: string, line: number, text: string, side: 'old' | 'new' = 'new', lineType?: 'add' | 'remove' | 'context', lineContent?: string): Promise<IWorkstreamComment> {
+	async addComment(workstream: string, filePath: string, line: number, text: string, side: CommentSide = 'new', lineType?: DiffLineType, lineContent?: string): Promise<IWorkstreamComment> {
 		const thread = await this._loadThread(workstream);
 		const comment: IWorkstreamComment = {
 			id: generateUuid(),

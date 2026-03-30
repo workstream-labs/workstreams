@@ -211,8 +211,16 @@
 	opacity: 0.9;
 }
 
-.monaco-workbench .part.orchestrator .worktree-icon.state-waiting {
-	color: var(--vscode-editorWarning-foreground);
+.monaco-workbench .part.orchestrator .worktree-icon.state-waiting.codicon {
+	background-color: var(--vscode-editorWarning-foreground);
+	color: var(--vscode-editor-background);
+	border-radius: 3px;
+	font: normal normal normal 10px/1 codicon;
+	width: 14px;
+	height: 14px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	opacity: 1;
 }
 

@@ -7,7 +7,7 @@ import './media/workstreamComments.css';
 import { clearNode } from '../../../../base/browser/dom.js';
 import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ZoneWidget } from '../../../../editor/contrib/zoneWidget/browser/zoneWidget.js';
-import { IWorkstreamCommentService, IWorkstreamComment } from '../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IWorkstreamCommentService, IWorkstreamComment, CommentSide } from '../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { Color, RGBA } from '../../../../base/common/color.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -48,7 +48,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		existingComment: IWorkstreamComment | undefined,
 		private readonly _workstreamCommentService: IWorkstreamCommentService,
 		private readonly _orchestratorService: IOrchestratorService,
-		private readonly _side: 'old' | 'new' = 'new',
+		private readonly _side: CommentSide = 'new',
 	) {
 		super(editor, {
 			showFrame: true,

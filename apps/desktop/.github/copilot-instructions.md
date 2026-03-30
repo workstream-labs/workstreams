@@ -11,6 +11,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `extensions/` changes: `npm run gulp compile-extensions`
 - `build/` changes: `cd build && npm run typecheck`
 - Layering violations: `npm run valid-layers-check`
+- Cyclic imports: `npm run check-cyclic-dependencies`
+- Class field init order: `npm run define-class-fields-check`
+- Monaco API surface: `npm run monaco-compile-check`
+- TS security compliance: `npm run tsec-compile-check`
+- vscode.d.ts / proposed APIs: `npm run vscode-dts-compile-check`
+
+### Linting
+- `npm run eslint` — TypeScript ESLint (flat config in `eslint.config.js`)
+- `npm run stylelint` — CSS linting
+- `npm run hygiene` — formatting and code quality checks
+- `npm run precommit` — full pre-commit validation suite
 
 ### Running VS Code from source
 - `./scripts/code.sh` (macOS/Linux) or `scripts\code.bat` (Windows) — launches Electron with the dev build
@@ -48,7 +59,7 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 ### Key patterns
 - **Dependency injection**: Services are injected via constructor parameters (decorated with `@I*Service`). Non-service parameters must come after service parameters.
 - **Contribution model**: Features register via `registerWorkbenchContribution2()` and contribute to extension points. Each contribution in `workbench/contrib/` is a self-contained feature module.
-- **Platform targets**: Code is organized by runtime environment (`common/` = all, `browser/` = web, `node/` = Node.js, `electron-browser/` = Electron renderer, `electron-main/` = Electron main).
+- **Platform targets**: Code is organized by runtime environment (`common/` = all, `browser/` = web, `node/` = Node.js, `electron-browser/` = Electron renderer, `electron-main/` = Electron main, `electron-utility/` = Electron utility process).
 - **Disposables**: All event listeners and resources must be disposed. Use `DisposableStore`, `MutableDisposable`, or `DisposableMap`. Never register disposables to a class from a repeatedly-called method; return `IDisposable` instead.
 - **Events vs method calls**: Events are for broadcasting state changes. Use direct method calls or service interactions for control flow between components.
 
@@ -74,7 +85,13 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 - UI labels use title-style capitalization (prepositions of 4 or fewer letters are lowercase unless first/last)
 
 ### Code quality rules
-- All files must include the Microsoft copyright header
+- All files must include the Microsoft copyright header:
+  ```
+  /*---------------------------------------------------------------------------------------------
+   *  Copyright (c) Microsoft Corporation. All rights reserved.
+   *  Licensed under the MIT License. See License.txt in the project root for license information.
+   *--------------------------------------------------------------------------------------------*/
+  ```
 - Prefer `async`/`await` over `.then()` chains
 - Do not use `any` or `unknown` without strong justification — define proper types
 - Do not export types/functions unless shared across components
@@ -180,15 +197,18 @@ Command: **"Workstream: Send Review Comments to Claude"** (Command Palette, id: 
 
 ### Comment data model
 ```typescript
+type CommentSide = 'old' | 'new';
+type DiffLineType = 'add' | 'remove' | 'context';
+
 IWorkstreamComment {
-  id: string;           // UUID
-  filePath: string;     // relative path within worktree
+  id: string;              // UUID
+  filePath: string;        // relative path within worktree
   line: number;
-  side: 'old' | 'new';
-  lineType?: 'add' | 'remove' | 'context';
+  side: CommentSide;
+  lineType?: DiffLineType;
   lineContent?: string;
   text: string;
-  createdAt: string;
+  createdAt: string;       // ISO 8601
   resolved: boolean;
 }
 ```

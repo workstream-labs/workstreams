@@ -12,7 +12,7 @@ import { ICodeEditorService } from '../../../../editor/browser/services/codeEdit
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import * as languages from '../../../../editor/common/languages.js';
 import { ICommentController, ICommentInfo, ICommentService, INotebookCommentInfo } from '../../comments/browser/commentService.js';
-import { IWorkstreamCommentService } from '../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IWorkstreamCommentService, CommentSide } from '../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -255,7 +255,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			this._disposeWidgetsForEditor(editor);
 
 			const isOriginal = this._isOriginalSideOfDiff(editor);
-			const editorSide: 'old' | 'new' = isOriginal ? 'old' : 'new';
+			const editorSide: CommentSide = isOriginal ? 'old' : 'new';
 
 			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
 			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
@@ -292,7 +292,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 	}
 
-	private _openWidget(editor: ICodeEditor, lineNumber: number, side: 'old' | 'new' = 'new'): void {
+	private _openWidget(editor: ICodeEditor, lineNumber: number, side: CommentSide = 'new'): void {
 		const widgetKey = `${editor.getId()}:${lineNumber}`;
 
 		if (this._activeWidgets.has(widgetKey)) {

@@ -6,6 +6,12 @@
 import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
+/** Which side of the diff a comment targets. */
+export type CommentSide = 'old' | 'new';
+
+/** The diff-hunk line classification. */
+export type DiffLineType = 'add' | 'remove' | 'context';
+
 /**
  * A single inline review comment on a workstream diff.
  * Compatible with the CLI's ReviewComment shape (apps/cli/src/core/comments.ts).
@@ -14,8 +20,8 @@ export interface IWorkstreamComment {
 	readonly id: string;
 	readonly filePath: string;
 	readonly line: number;
-	readonly side: 'old' | 'new';
-	readonly lineType?: 'add' | 'remove' | 'context';
+	readonly side: CommentSide;
+	readonly lineType?: DiffLineType;
 	readonly lineContent?: string;
 	readonly text: string;
 	readonly createdAt: string;
@@ -58,7 +64,7 @@ export interface IWorkstreamCommentService {
 	/**
 	 * Add a new comment. Returns the created comment with generated id.
 	 */
-	addComment(workstream: string, filePath: string, line: number, text: string, side?: 'old' | 'new', lineType?: 'add' | 'remove' | 'context', lineContent?: string): Promise<IWorkstreamComment>;
+	addComment(workstream: string, filePath: string, line: number, text: string, side?: CommentSide, lineType?: DiffLineType, lineContent?: string): Promise<IWorkstreamComment>;
 
 	/**
 	 * Update the text of an existing comment.
