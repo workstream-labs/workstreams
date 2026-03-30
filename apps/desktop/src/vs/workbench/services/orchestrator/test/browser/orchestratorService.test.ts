@@ -22,6 +22,7 @@ class MockGitWorktreeService implements IGitWorktreeService {
 	async isGitRepository(): Promise<boolean> { return true; }
 	async initRepository(): Promise<void> { }
 	async getCurrentBranch(): Promise<string> { return 'main'; }
+	async getRemoteUrl(): Promise<string | undefined> { return undefined; }
 	async listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]> {
 		return [{ path: repoPath, branch: 'main', isBare: false }];
 	}

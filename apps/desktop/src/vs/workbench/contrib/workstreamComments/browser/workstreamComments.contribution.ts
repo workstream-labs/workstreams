@@ -21,13 +21,15 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { localize, localize2 } from '../../../../nls.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IWorkstreamComment } from '../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IGitHubCommentsService } from '../../../services/workstreamComments/common/githubCommentsService.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
 import { VIEWLET_ID } from '../../scm/common/scm.js';
 import { WorkstreamCommentsViewRegistration } from './workstreamCommentsView.js';
 
-// Ensure the service singleton is registered (side-effect import)
+// Ensure the service singletons are registered (side-effect imports)
 import '../../../services/workstreamComments/browser/workstreamCommentServiceImpl.js';
+import '../../../services/workstreamComments/browser/githubCommentsServiceImpl.js';
 
 class WorkstreamCommentsContribution extends Disposable {
 
@@ -218,5 +220,29 @@ registerAction2(class extends Action2 {
 		await terminalService.revealActiveTerminal();
 
 		notificationService.info(localize("sendComments.sent", "Sent {0} comment(s) to Claude and cleared them", picked.length));
+	}
+});
+
+// --- "Sign in to GitHub" action ---
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workstreamComments.signInToGitHub',
+			title: localize2("signInToGitHub", "Workstream: Sign in to GitHub"),
+			f1: true,
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const githubCommentsService = accessor.get(IGitHubCommentsService);
+		const notificationService = accessor.get(INotificationService);
+
+		const success = await githubCommentsService.signIn();
+		if (success) {
+			notificationService.info(localize("signIn.success", "Signed in to GitHub. Fetching PR review comments..."));
+		} else {
+			notificationService.warn(localize("signIn.failed", "GitHub sign-in was cancelled or failed"));
+		}
 	}
 });

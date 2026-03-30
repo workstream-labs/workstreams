@@ -14,21 +14,25 @@ import { TreeView, TreeViewPane } from '../../../browser/parts/views/treeView.js
 import { Extensions, ITreeItem, ITreeViewDataProvider, ITreeViewDescriptor, IViewsRegistry, TreeItemCollapsibleState, ViewContainer } from '../../../common/views.js';
 import { IWorkstreamCommentService } from '../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IGitHubCommentsService, IGitHubPRReviewThread } from '../../../services/workstreamComments/common/githubCommentsService.js';
 
 export const WORKSTREAM_COMMENTS_VIEW_ID = 'workbench.scm.workstreamComments';
 
 const HANDLE_OFFLINE = 'offline';
 const HANDLE_ONLINE = 'online';
-const HANDLE_ONLINE_PLACEHOLDER = 'online/placeholder';
 
 export class WorkstreamCommentsTreeDataProvider extends Disposable implements ITreeViewDataProvider {
 
 	private readonly _onNeedRefresh = this._register(new Emitter<void>());
 	readonly onNeedRefresh = this._onNeedRefresh.event;
 
+	/** Cached online threads for child lookups. */
+	private _onlineThreads: IGitHubPRReviewThread[] = [];
+
 	constructor(
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
+		@IGitHubCommentsService private readonly githubCommentsService: IGitHubCommentsService,
 	) {
 		super();
 
@@ -37,6 +41,12 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		}));
 
 		this._register(this.orchestratorService.onDidChangeActiveWorktree(() => {
+			this._onlineThreads = [];
+			this.githubCommentsService.refresh();
+			this._onNeedRefresh.fire();
+		}));
+
+		this._register(this.githubCommentsService.onDidChangeComments(() => {
 			this._onNeedRefresh.fire();
 		}));
 	}
@@ -51,7 +61,13 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		}
 
 		if (element.handle === HANDLE_ONLINE) {
-			return this._getOnlinePlaceholder();
+			return this._getOnlineThreads();
+		}
+
+		// Thread children: online/thread/<threadId>
+		if (element.handle.startsWith('online/thread/')) {
+			const threadId = element.handle.substring('online/thread/'.length);
+			return this._getThreadComments(threadId);
 		}
 
 		return [];
@@ -65,6 +81,10 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			offlineCount = comments.length;
 		}
 
+		// Fetch online threads for count
+		const onlineThreads = await this._fetchOnlineThreads();
+		const unresolvedCount = onlineThreads.filter(t => !t.isResolved).length;
+
 		return [
 			{
 				handle: HANDLE_OFFLINE,
@@ -76,6 +96,11 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			{
 				handle: HANDLE_ONLINE,
 				label: { label: localize('comments.online', "Online") },
+				description: onlineThreads.length > 0
+					? unresolvedCount > 0
+						? `(${unresolvedCount} unresolved)`
+						: `(${onlineThreads.length})`
+					: undefined,
 				collapsibleState: TreeItemCollapsibleState.Collapsed,
 				themeIcon: Codicon.commentDiscussion,
 			},
@@ -111,12 +136,102 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		});
 	}
 
-	private _getOnlinePlaceholder(): ITreeItem[] {
-		return [{
-			handle: HANDLE_ONLINE_PLACEHOLDER,
-			label: { label: localize('comments.online.placeholder', "Coming soon...") },
-			collapsibleState: TreeItemCollapsibleState.None,
-		}];
+	private async _getOnlineThreads(): Promise<ITreeItem[]> {
+		// Check authentication first
+		const isAuthed = await this.githubCommentsService.isAuthenticated();
+		if (!isAuthed) {
+			return [{
+				handle: 'online/sign-in',
+				label: { label: localize('comments.online.signIn', "Sign in to GitHub") },
+				description: localize('comments.online.signIn.desc', "to view PR review comments"),
+				collapsibleState: TreeItemCollapsibleState.None,
+				themeIcon: Codicon.logIn,
+				command: {
+					id: 'workstreamComments.signInToGitHub',
+					title: localize('comments.online.signIn', "Sign in to GitHub"),
+				},
+			}];
+		}
+
+		const threads = await this._fetchOnlineThreads();
+		if (threads.length === 0) {
+			return [{
+				handle: 'online/empty',
+				label: { label: localize('comments.online.noPR', "No PR found for this branch") },
+				collapsibleState: TreeItemCollapsibleState.None,
+			}];
+		}
+
+		return threads.map(thread => {
+			const commentCount = thread.comments.length;
+			const firstComment = thread.comments[0];
+			const preview = firstComment
+				? firstComment.body.length > 50 ? firstComment.body.substring(0, 50) + '...' : firstComment.body
+				: '';
+			const resolvedPrefix = thread.isResolved
+				? localize('comments.online.resolved', "[resolved] ")
+				: '';
+			const lineLabel = thread.line !== undefined ? `:${thread.line}` : '';
+
+			return {
+				handle: `online/thread/${thread.id}`,
+				label: { label: `${resolvedPrefix}${thread.path}${lineLabel}` },
+				description: commentCount > 1
+					? localize('comments.online.threadCount', "{0} comments", commentCount)
+					: preview,
+				tooltip: `${thread.path}${lineLabel}\n${firstComment?.body ?? ''}`,
+				collapsibleState: commentCount > 1
+					? TreeItemCollapsibleState.Collapsed
+					: TreeItemCollapsibleState.None,
+				themeIcon: thread.isResolved ? Codicon.check : Codicon.commentDiscussion,
+				contextValue: 'github-review-thread',
+			};
+		});
+	}
+
+	private _getThreadComments(threadId: string): ITreeItem[] {
+		const thread = this._onlineThreads.find(t => t.id === threadId);
+		if (!thread) {
+			return [];
+		}
+
+		return thread.comments.map(c => {
+			const truncatedBody = c.body.length > 80 ? c.body.substring(0, 80) + '...' : c.body;
+
+			return {
+				handle: `online/comment/${c.id}`,
+				label: { label: `@${c.author.login}` },
+				description: truncatedBody,
+				tooltip: `@${c.author.login} (${new Date(c.createdAt).toLocaleString()})\n\n${c.body}`,
+				collapsibleState: TreeItemCollapsibleState.None,
+				themeIcon: Codicon.comment,
+				contextValue: 'github-review-comment',
+			};
+		});
+	}
+
+	private async _fetchOnlineThreads(): Promise<IGitHubPRReviewThread[]> {
+		if (this._onlineThreads.length > 0) {
+			return this._onlineThreads;
+		}
+
+		const worktree = this.orchestratorService.activeWorktree;
+		if (!worktree) {
+			return [];
+		}
+
+		const repos = this.orchestratorService.repositories;
+		if (repos.length === 0) {
+			return [];
+		}
+
+		const ctx = await this.githubCommentsService.resolveContext(repos[0].path, worktree.branch);
+		if (!ctx) {
+			return [];
+		}
+
+		this._onlineThreads = await this.githubCommentsService.getReviewThreads(ctx);
+		return this._onlineThreads;
 	}
 }
 
