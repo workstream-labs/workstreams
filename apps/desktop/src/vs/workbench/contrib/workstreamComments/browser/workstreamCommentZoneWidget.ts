@@ -209,16 +209,17 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		if (this._savedComment) {
 			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
-			this._savedComment = { ...this._savedComment, text };
+			// Close — onDidChangeComments will recreate with updated text
+			this._close();
 		} else {
-			this._savedComment = await this._workstreamCommentService.addComment(
+			await this._workstreamCommentService.addComment(
 				worktree.name, relativePath, this._lineNumber, text, this._side
 			);
+			// Close this widget — the onDidChangeComments listener in the
+			// controller will recreate it from saved data via _showSavedComments.
+			// If we stay open, we'd be a duplicate of the recreated widget.
+			this._close();
 		}
-
-		// Switch to display mode
-		this._renderDisplayMode();
-		this.show({ lineNumber: this._lineNumber, column: 1 }, 7);
 	}
 
 	private async _delete(): Promise<void> {
