@@ -11,6 +11,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `extensions/` changes: `npm run gulp compile-extensions`
 - `build/` changes: `cd build && npm run typecheck`
 - Layering violations: `npm run valid-layers-check`
+- Cyclic imports: `npm run check-cyclic-dependencies`
+- Class field init order: `npm run define-class-fields-check`
+- Monaco API surface: `npm run monaco-compile-check`
+- TS security compliance: `npm run tsec-compile-check`
+- vscode.d.ts / proposed APIs: `npm run vscode-dts-compile-check`
+
+### Linting
+- `npm run eslint` — TypeScript ESLint (flat config in `eslint.config.js`)
+- `npm run stylelint` — CSS linting
+- `npm run hygiene` — formatting and code quality checks
+- `npm run precommit` — full pre-commit validation suite
 
 ### Running VS Code from source
 - `./scripts/code.sh` (macOS/Linux) or `scripts\code.bat` (Windows) — launches Electron with the dev build
@@ -48,7 +59,7 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 ### Key patterns
 - **Dependency injection**: Services are injected via constructor parameters (decorated with `@I*Service`). Non-service parameters must come after service parameters.
 - **Contribution model**: Features register via `registerWorkbenchContribution2()` and contribute to extension points. Each contribution in `workbench/contrib/` is a self-contained feature module.
-- **Platform targets**: Code is organized by runtime environment (`common/` = all, `browser/` = web, `node/` = Node.js, `electron-browser/` = Electron renderer, `electron-main/` = Electron main).
+- **Platform targets**: Code is organized by runtime environment (`common/` = all, `browser/` = web, `node/` = Node.js, `electron-browser/` = Electron renderer, `electron-main/` = Electron main, `electron-utility/` = Electron utility process).
 - **Disposables**: All event listeners and resources must be disposed. Use `DisposableStore`, `MutableDisposable`, or `DisposableMap`. Never register disposables to a class from a repeatedly-called method; return `IDisposable` instead.
 - **Events vs method calls**: Events are for broadcasting state changes. Use direct method calls or service interactions for control flow between components.
 
@@ -74,7 +85,13 @@ VS Code uses a strict **layered architecture**: `base` → `platform` → `edito
 - UI labels use title-style capitalization (prepositions of 4 or fewer letters are lowercase unless first/last)
 
 ### Code quality rules
-- All files must include the Microsoft copyright header
+- All files must include the Microsoft copyright header:
+  ```
+  /*---------------------------------------------------------------------------------------------
+   *  Copyright (c) Microsoft Corporation. All rights reserved.
+   *  Licensed under the MIT License. See License.txt in the project root for license information.
+   *--------------------------------------------------------------------------------------------*/
+  ```
 - Prefer `async`/`await` over `.then()` chains
 - Do not use `any` or `unknown` without strong justification — define proper types
 - Do not export types/functions unless shared across components
@@ -148,6 +165,56 @@ The app tracks Claude Code lifecycle events in each worktree via a hook-based no
 
 ### Environment variable
 Terminals created in worktrees get `WORKSTREAMS_WORKTREE_PATH` injected so hook scripts can identify which worktree a Claude session belongs to.
+
+## Workstream Review Comments
+
+Inline review comments on diff editors that can be sent to Claude for automated fixes. Comments are scoped per worktree and stored in CLI-compatible JSON.
+
+### Key files
+- **Service interface**: `src/vs/workbench/services/workstreamComments/common/workstreamCommentService.ts` — `IWorkstreamCommentService`, `IWorkstreamComment`, `IWorkstreamCommentThread`
+- **Service implementation**: `src/vs/workbench/services/workstreamComments/browser/workstreamCommentServiceImpl.ts` — persistence to `.workstreams/comments/{workstream}.json`
+- **Comment controller**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamCommentController.ts` — implements `ICommentController`, registers the "+" glyph on diff editors
+- **Zone widget**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamCommentZoneWidget.ts` — inline comment UI (edit/display modes)
+- **Contribution + send action**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamComments.contribution.ts` — startup registration and "Send Review Comments to Claude" command
+
+### How commenting works
+1. User opens a diff editor (must be split-side mode — inline diff not supported)
+2. Clicking the "+" gutter glyph calls `CommentController.createCommentThreadTemplate()`
+3. A `WorkstreamCommentZoneWidget` opens in edit mode with a textarea
+4. On submit (Ctrl+Enter or click Comment), the service writes the comment to disk at `{repoPath}/.workstreams/comments/{worktreeName}.json`
+5. Widget switches to display mode showing the saved comment with Edit/Delete buttons
+
+### How sending comments to Claude works
+Command: **"Workstream: Send Review Comments to Claude"** (Command Palette, id: `workstreamComments.sendToClaude`)
+
+1. Fetches all comments for the active worktree via `commentService.getComments(worktree.name)`
+2. Opens a QuickPick listing each comment with file:line, side (original/modified), and preview — all pre-selected
+3. User can deselect individual comments or click "Send All"
+4. Creates a new terminal, runs `claude`, waits 2 seconds for initialization
+5. Sends a formatted markdown prompt listing each comment with file path, line number, side, and text
+6. Deletes all sent comments from disk and memory
+7. Shows notification: "Sent N comment(s) to Claude and cleared them"
+
+### Comment data model
+```typescript
+type CommentSide = 'old' | 'new';
+type DiffLineType = 'add' | 'remove' | 'context';
+
+IWorkstreamComment {
+  id: string;              // UUID
+  filePath: string;        // relative path within worktree
+  line: number;
+  side: CommentSide;
+  lineType?: DiffLineType;
+  lineContent?: string;
+  text: string;
+  createdAt: string;       // ISO 8601
+  resolved: boolean;
+}
+```
+
+### Storage
+Comments persist to `{repoPath}/.workstreams/comments/{worktreeName}.json` in CLI-compatible format. The base path is set from the first orchestrator repository and updates on worktree/repo changes.
 
 ## Sessions Layer (Agent Window)
 

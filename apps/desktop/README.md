@@ -52,6 +52,32 @@ See our [wiki](https://github.com/microsoft/vscode/wiki/Feedback-Channels) for a
 
 Many of the core components and extensions to VS Code live in their own repositories on GitHub. For example, the [node debug adapter](https://github.com/microsoft/vscode-node-debug) and the [mono debug adapter](https://github.com/microsoft/vscode-mono-debug) repositories are separate from each other. For a complete list, please visit the [Related Projects](https://github.com/microsoft/vscode/wiki/Related-Projects) page on our [wiki](https://github.com/microsoft/vscode/wiki).
 
+## Workstream Review Comments
+
+This fork adds inline review comments on diff editors that can be sent directly to Claude for automated fixes.
+
+### Adding comments
+
+1. Open a diff editor for any worktree file (the editor must be in **split-side** mode — inline diff is not supported)
+2. Hover over a line in the diff gutter and click the **"+"** button that appears
+3. Type your comment in the textarea that opens inline
+4. Press **Ctrl+Enter** (or click **Comment**) to save
+
+Saved comments appear inline with **Edit** and **Delete** buttons. Comments are scoped to the active worktree and persist across editor restarts.
+
+### Sending comments to Claude
+
+1. Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
+2. Run **"Workstream: Send Review Comments to Claude"**
+3. A picker shows all comments for the active worktree, pre-selected — deselect any you want to keep, or click **Send All**
+4. A new terminal opens, launches `claude`, and sends a formatted prompt with each comment's file path, line number, side (original/modified), and text
+5. Claude processes the comments and applies fixes in the worktree
+6. Sent comments are automatically deleted after transmission
+
+### Where comments are stored
+
+Comments persist as JSON at `{repoPath}/.workstreams/comments/{worktreeName}.json`, compatible with the CLI's comment format.
+
 ## Bundled Extensions
 
 VS Code includes a set of built-in extensions located in the [extensions](extensions) folder, including grammars and snippets for many languages. Extensions that provide rich language support (inline suggestions, Go to Definition) for a language have the suffix `language-features`. For example, the `json` extension provides coloring for `JSON` and the `json-language-features` extension provides rich language support for `JSON`.

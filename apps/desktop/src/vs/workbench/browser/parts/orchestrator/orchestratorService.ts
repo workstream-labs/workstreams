@@ -21,6 +21,7 @@ import { IEditorGroupsService, IEditorWorkingSet } from '../../../services/edito
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 
 interface IPersistedRepositoryState {
 	readonly path: string;
@@ -84,6 +85,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		@ILogService private readonly logService: ILogService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IProgressService private readonly progressService: IProgressService,
 	) {
 		super();
 		this._part = this._register(instantiationService.createInstance(OrchestratorPart));
@@ -301,25 +303,44 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			}
 
 			/**
-			 * Step 3: Restore editor state for target worktree (or clean slate).
+			 * Step 3: Clear editors to a blank slate. Don't restore the
+			 * target working set yet — diff editors would fail because the
+			 * git extension still has the old worktree's repo.
+			 */
+			await this.editorGroupsService.applyWorkingSet('empty');
+
+			/**
+			 * Steps 4-5: Swap workspace folder and restore editors.
+			 * Wrapped in a progress indicator so the user sees a loading
+			 * state instead of a blank editor area.
 			 */
 			const savedSet = this._workingSetMap.get(worktree.path);
-			await this.editorGroupsService.applyWorkingSet(savedSet ?? 'empty');
+			await this.progressService.withProgress(
+				{
+					location: ProgressLocation.Window,
+					title: localize('switchingWorktree', "Switching to {0}...", worktree.name),
+				},
+				async () => {
+					// Step 4: Swap workspace folder — ext host restarts
+					const folderData = { uri: URI.file(worktree.path) };
+					const currentFolders = this.workspaceContextService.getWorkspace().folders;
+					if (currentFolders.length === 0) {
+						await this.workspaceEditingService.addFolders([folderData], true);
+					} else {
+						await this.workspaceEditingService.updateFolders(0, currentFolders.length, [folderData], true);
+					}
+
+					// Step 5: Wait for ext host to settle, then restore editors
+					if (savedSet) {
+						await new Promise(resolve => setTimeout(resolve, 1500));
+						await this.editorGroupsService.applyWorkingSet(savedSet);
+					}
+				},
+			);
 
 			/**
-			 * Step 4: Swap workspace folder.
-			 */
-			const folderData = { uri: URI.file(worktree.path) };
-			const currentFolders = this.workspaceContextService.getWorkspace().folders;
-			if (currentFolders.length === 0) {
-				await this.workspaceEditingService.addFolders([folderData], true);
-			} else {
-				await this.workspaceEditingService.updateFolders(0, currentFolders.length, [folderData], true);
-			}
-
-			/**
-			 * Step 5: Fire after working set + folder swap — listeners show
-			 * terminals for the new worktree. No race with save/apply possible.
+			 * Step 6: Fire after folder swap — listeners show terminals for
+			 * the new worktree.
 			 */
 			this._onDidApplyWorktreeEditorState.fire(worktree);
 		} else {
