@@ -21,7 +21,8 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { localize, localize2 } from '../../../../nls.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IWorkstreamComment } from '../../../services/workstreamComments/common/workstreamCommentService.js';
-import { IGitHubCommentsService } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { IGitHubCommentsService, ResolveContextStatus } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { IGitWorktreeService } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { basename } from '../../../../base/common/path.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
@@ -139,8 +140,18 @@ registerAction2(class extends Action2 {
 		// Fetch both offline and online comments
 		const offlineComments = await commentService.getComments(worktree.name);
 
+		// Find the repo that owns this worktree
 		const repos = orchestratorService.repositories;
-		const repoPath = repos.length > 0 ? repos[0].path : undefined;
+		let repoPath: string | undefined;
+		for (const repo of repos) {
+			if (repo.worktrees.some(wt => wt.path === worktree.path)) {
+				repoPath = repo.path;
+				break;
+			}
+		}
+		if (!repoPath && repos.length === 1) {
+			repoPath = repos[0].path;
+		}
 
 		interface OnlineComment {
 			filePath: string;
@@ -153,9 +164,9 @@ registerAction2(class extends Action2 {
 
 		let onlineComments: OnlineComment[] = [];
 		if (repoPath) {
-			const ctx = await githubCommentsService.resolveContext(repoPath, worktree.branch);
-			if (ctx) {
-				const threads = await githubCommentsService.getReviewThreads(ctx);
+			const result = await githubCommentsService.resolveContext(repoPath, worktree.branch);
+			if (result.status === ResolveContextStatus.Found) {
+				const threads = await githubCommentsService.getReviewThreads(result.context);
 				for (const thread of threads) {
 					for (const c of thread.comments) {
 						onlineComments.push({
@@ -323,9 +334,28 @@ registerAction2(class extends Action2 {
 
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const githubCommentsService = accessor.get(IGitHubCommentsService);
+		const orchestratorService = accessor.get(IOrchestratorService);
+		const gitWorktreeService = accessor.get(IGitWorktreeService);
 		const notificationService = accessor.get(INotificationService);
 
-		const success = await githubCommentsService.signIn();
+		// Determine the current repo so the new session gets linked to it
+		let owner: string | undefined;
+		let repo: string | undefined;
+		const worktree = orchestratorService.activeWorktree;
+		if (worktree) {
+			const repos = orchestratorService.repositories;
+			const matchedRepo = repos.find(r => r.worktrees.some(wt => wt.path === worktree.path)) ?? (repos.length === 1 ? repos[0] : undefined);
+			if (matchedRepo) {
+				const remoteUrl = await gitWorktreeService.getRemoteUrl(matchedRepo.path);
+				const match = remoteUrl?.match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?$/i);
+				if (match) {
+					owner = match[1];
+					repo = match[2];
+				}
+			}
+		}
+
+		const success = await githubCommentsService.signIn(owner, repo);
 		if (success) {
 			notificationService.info(localize("signIn.success", "Signed in to GitHub. Fetching PR review comments..."));
 		} else {

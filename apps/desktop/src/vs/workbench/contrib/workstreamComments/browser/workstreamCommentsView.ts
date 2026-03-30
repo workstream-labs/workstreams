@@ -13,8 +13,9 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { TreeView, TreeViewPane } from '../../../browser/parts/views/treeView.js';
 import { Extensions, ITreeItem, ITreeViewDataProvider, ITreeViewDescriptor, IViewsRegistry, TreeItemCollapsibleState, ViewContainer } from '../../../common/views.js';
 import { IWorkstreamCommentService } from '../../../services/workstreamComments/common/workstreamCommentService.js';
-import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
-import { IGitHubCommentsService, IGitHubPRReviewThread } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { IOrchestratorService, IRepositoryEntry } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IGitHubCommentsService, IGitHubPRReviewThread, ResolveContextStatus } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { basename } from '../../../../base/common/path.js';
 
 export const WORKSTREAM_COMMENTS_VIEW_ID = 'workbench.scm.workstreamComments';
@@ -30,11 +31,16 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 	/** Cached online threads for child lookups. */
 	private _onlineThreads: IGitHubPRReviewThread[] = [];
 	private _onlineFetchState: 'idle' | 'loading' | 'done' | 'error' = 'idle';
+	private _onlineResolveStatus: ResolveContextStatus | undefined;
+
+	/** Guard to prevent concurrent fetches. */
+	private _pendingFetch: Promise<void> | undefined;
 
 	constructor(
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
 		@IGitHubCommentsService private readonly githubCommentsService: IGitHubCommentsService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -42,18 +48,32 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			this._onNeedRefresh.fire();
 		}));
 
+		// Worktree switch: reset and refetch.
+		// Note: refresh() fires onDidChangeComments, so we suppress the
+		// listener below to avoid a double-reset by tracking a flag.
+		let suppressGitHubChange = false;
 		this._register(this.orchestratorService.onDidChangeActiveWorktree(() => {
-			this._onlineThreads = [];
-			this._onlineFetchState = 'idle';
+			this._resetOnlineState();
+			suppressGitHubChange = true;
 			this.githubCommentsService.refresh();
+			suppressGitHubChange = false;
 			this._onNeedRefresh.fire();
 		}));
 
 		this._register(this.githubCommentsService.onDidChangeComments(() => {
-			this._onlineThreads = [];
-			this._onlineFetchState = 'idle';
+			if (suppressGitHubChange) {
+				return;
+			}
+			this._resetOnlineState();
 			this._onNeedRefresh.fire();
 		}));
+	}
+
+	private _resetOnlineState(): void {
+		this._onlineThreads = [];
+		this._onlineFetchState = 'idle';
+		this._onlineResolveStatus = undefined;
+		this._pendingFetch = undefined;
 	}
 
 	async getChildren(element?: ITreeItem): Promise<ITreeItem[]> {
@@ -84,6 +104,12 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		if (worktree) {
 			const comments = await this.workstreamCommentService.getComments(worktree.name);
 			offlineCount = comments.length;
+		}
+
+		// Kick off background fetch as soon as the view renders
+		if (this._onlineFetchState === 'idle' && await this.githubCommentsService.isAuthenticated()) {
+			this._onlineFetchState = 'loading';
+			this._fetchOnlineThreadsAsync();
 		}
 
 		// Use cached threads for the count — don't block on fetch here
@@ -194,13 +220,50 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			}];
 		}
 
+		// Fetch failed
+		if (this._onlineFetchState === 'error') {
+			return [{
+				handle: 'online/error',
+				label: { label: localize('comments.online.error', "Failed to fetch PR comments") },
+				description: localize('comments.online.error.retry', "click refresh to retry"),
+				collapsibleState: TreeItemCollapsibleState.None,
+				themeIcon: Codicon.error,
+			}];
+		}
+
 		// Done but no threads
 		if (this._onlineThreads.length === 0) {
-			return [{
-				handle: 'online/empty',
-				label: { label: localize('comments.online.noPR', "No PR found for this branch") },
-				collapsibleState: TreeItemCollapsibleState.None,
-			}];
+			switch (this._onlineResolveStatus) {
+				case ResolveContextStatus.Found:
+					return [{
+						handle: 'online/empty',
+						label: { label: localize('comments.online.noComments', "No comments on this PR") },
+						collapsibleState: TreeItemCollapsibleState.None,
+					}];
+				case ResolveContextStatus.NoAccess:
+					return [{
+						handle: 'online/no-access',
+						label: { label: localize('comments.online.noAccess', "Add a GitHub account with access to this repo") },
+						collapsibleState: TreeItemCollapsibleState.None,
+						themeIcon: Codicon.logIn,
+						command: {
+							id: 'workstreamComments.signInToGitHub',
+							title: localize('comments.online.signIn', "Sign in to GitHub"),
+						},
+					}];
+				case ResolveContextStatus.NotGitHub:
+					return [{
+						handle: 'online/empty',
+						label: { label: localize('comments.online.notGitHub', "Not a GitHub repository") },
+						collapsibleState: TreeItemCollapsibleState.None,
+					}];
+				default:
+					return [{
+						handle: 'online/empty',
+						label: { label: localize('comments.online.noPR', "No PR found for this branch") },
+						collapsibleState: TreeItemCollapsibleState.None,
+					}];
+			}
 		}
 
 		// Unresolved first, then resolved
@@ -213,20 +276,15 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 
 		return sorted.map(thread => {
 			const commentCount = thread.comments.length;
-			const firstComment = thread.comments[0];
 			const fileName = basename(thread.path);
 			const lineLabel = thread.line !== undefined ? `:${thread.line}` : '';
-			const firstBody = firstComment?.body ?? '';
-			const preview = firstBody.length > 50 ? firstBody.substring(0, 50) + '...' : firstBody;
 
 			return {
 				handle: `online/thread/${thread.id}`,
 				label: { label: `${fileName}${lineLabel}` },
-				description: preview,
-				tooltip: `${thread.path}${lineLabel}${thread.isResolved ? ' (resolved)' : ''}\n\n${firstBody}`,
-				collapsibleState: commentCount > 1
-					? TreeItemCollapsibleState.Collapsed
-					: TreeItemCollapsibleState.None,
+				description: `${commentCount} \u25AC`,
+				tooltip: thread.path + lineLabel,
+				collapsibleState: TreeItemCollapsibleState.Collapsed,
 				themeIcon: thread.isResolved ? Codicon.check : Codicon.commentDiscussion,
 				contextValue: 'github-review-thread',
 			};
@@ -239,19 +297,28 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			return [];
 		}
 
-		return thread.comments.map(c => {
-			const truncatedBody = c.body.length > 60 ? c.body.substring(0, 60) + '...' : c.body;
-
-			return {
-				handle: `online/comment/${c.id}`,
+		const items: ITreeItem[] = [];
+		for (const c of thread.comments) {
+			// Author + date header
+			items.push({
+				handle: `online/comment/${c.id}/header`,
 				label: { label: `@${c.author.login}` },
-				description: truncatedBody,
-				tooltip: `@${c.author.login}\n${new Date(c.createdAt).toLocaleString()}\n\n${c.body}`,
+				description: new Date(c.createdAt).toLocaleString(),
 				collapsibleState: TreeItemCollapsibleState.None,
 				themeIcon: Codicon.account,
 				contextValue: 'github-review-comment',
-			};
-		});
+			});
+			// Body lines — each line as its own tree item so full text is visible
+			const lines = c.body.split('\n').filter(l => l.trim().length > 0);
+			for (let i = 0; i < lines.length; i++) {
+				items.push({
+					handle: `online/comment/${c.id}/line/${i}`,
+					label: { label: lines[i] },
+					collapsibleState: TreeItemCollapsibleState.None,
+				});
+			}
+		}
+		return items;
 	}
 
 	/**
@@ -259,12 +326,36 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 	 * the next getChildren() re-fetches from GitHub.
 	 */
 	resetOnlineCache(): void {
-		this._onlineThreads = [];
-		this._onlineFetchState = 'idle';
+		this._resetOnlineState();
 		this.githubCommentsService.clearCaches();
 	}
 
+	private _findRepoForWorktree(worktreePath: string): IRepositoryEntry | undefined {
+		const repos = this.orchestratorService.repositories;
+		// Find the repo whose worktrees include the active worktree
+		for (const repo of repos) {
+			if (repo.worktrees.some(wt => wt.path === worktreePath)) {
+				return repo;
+			}
+		}
+		// Fallback: if only one repo, use it
+		if (repos.length === 1) {
+			return repos[0];
+		}
+		return undefined;
+	}
+
 	private _fetchOnlineThreadsAsync(): void {
+		// Deduplicate: if a fetch is already in progress, skip
+		if (this._pendingFetch) {
+			return;
+		}
+		this._pendingFetch = this._doFetchOnlineThreads().finally(() => {
+			this._pendingFetch = undefined;
+		});
+	}
+
+	private async _doFetchOnlineThreads(): Promise<void> {
 		const worktree = this.orchestratorService.activeWorktree;
 		if (!worktree) {
 			this._onlineFetchState = 'done';
@@ -272,28 +363,37 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			return;
 		}
 
-		const repos = this.orchestratorService.repositories;
-		if (repos.length === 0) {
+		const repo = this._findRepoForWorktree(worktree.path);
+		if (!repo) {
+			this.logService.warn('[WorkstreamComments]', `No repo found for worktree "${worktree.name}" (path: ${worktree.path})`);
 			this._onlineFetchState = 'done';
 			this._onNeedRefresh.fire();
 			return;
 		}
 
-		this.githubCommentsService.resolveContext(repos[0].path, worktree.branch).then(ctx => {
-			if (!ctx) {
+		this.logService.info('[WorkstreamComments]', `Resolving PR context for repo="${repo.name}" (${repo.path}), branch="${worktree.branch}"`);
+
+		try {
+			const result = await this.githubCommentsService.resolveContext(repo.path, worktree.branch);
+			this._onlineResolveStatus = result.status;
+			if (result.status !== ResolveContextStatus.Found) {
+				this.logService.info('[WorkstreamComments]', `resolveContext returned ${result.status} for branch "${worktree.branch}" in ${repo.name}`);
 				this._onlineFetchState = 'done';
 				this._onNeedRefresh.fire();
 				return;
 			}
-			return this.githubCommentsService.getReviewThreads(ctx).then(threads => {
-				this._onlineThreads = threads;
-				this._onlineFetchState = 'done';
-				this._onNeedRefresh.fire();
-			});
-		}).catch(() => {
+			const ctx = result.context;
+			this.logService.info('[WorkstreamComments]', `Found PR #${ctx.prNumber} for ${ctx.owner}/${ctx.repo}`);
+			const threads = await this.githubCommentsService.getReviewThreads(ctx);
+			this.logService.info('[WorkstreamComments]', `Fetched ${threads.length} review thread(s) for PR #${ctx.prNumber}`);
+			this._onlineThreads = threads;
+			this._onlineFetchState = 'done';
+			this._onNeedRefresh.fire();
+		} catch (err) {
+			this.logService.warn('[WorkstreamComments]', `Failed to fetch online comments:`, err);
 			this._onlineFetchState = 'error';
 			this._onNeedRefresh.fire();
-		});
+		}
 	}
 }
 

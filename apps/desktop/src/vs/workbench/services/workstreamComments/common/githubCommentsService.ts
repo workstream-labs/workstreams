@@ -39,6 +39,21 @@ export interface IGitHubPRContext {
 	readonly prNumber: number;
 }
 
+export const enum ResolveContextStatus {
+	/** An open PR was found for this branch. */
+	Found = 'found',
+	/** No open PR exists for this branch. */
+	NoPR = 'noPR',
+	/** No valid GitHub session for this repository. */
+	NoAccess = 'noAccess',
+	/** The remote URL is not a GitHub URL. */
+	NotGitHub = 'notGitHub',
+}
+
+export type IResolveContextResult =
+	| { readonly status: ResolveContextStatus.Found; readonly context: IGitHubPRContext }
+	| { readonly status: ResolveContextStatus.NoPR | ResolveContextStatus.NoAccess | ResolveContextStatus.NotGitHub };
+
 //#endregion
 
 export const IGitHubCommentsService = createDecorator<IGitHubCommentsService>('githubCommentsService');
@@ -54,15 +69,17 @@ export interface IGitHubCommentsService {
 	isAuthenticated(): Promise<boolean>;
 
 	/**
-	 * Trigger the GitHub OAuth sign-in flow. Returns true if successful.
+	 * Trigger the GitHub OAuth sign-in flow (always opens browser,
+	 * even if sessions already exist). If owner/repo are provided,
+	 * the new session is tested and linked to that repo.
 	 */
-	signIn(): Promise<boolean>;
+	signIn(owner?: string, repo?: string): Promise<boolean>;
 
 	/**
 	 * Resolve the GitHub PR context (owner/repo/prNumber) for a given
-	 * repository path and branch name. Returns undefined if no PR is found.
+	 * repository path and branch name.
 	 */
-	resolveContext(repoPath: string, branch: string): Promise<IGitHubPRContext | undefined>;
+	resolveContext(repoPath: string, branch: string): Promise<IResolveContextResult>;
 
 	/**
 	 * Fetch review threads for the given PR context.
