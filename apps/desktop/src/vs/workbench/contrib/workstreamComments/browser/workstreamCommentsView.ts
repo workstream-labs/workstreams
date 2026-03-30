@@ -203,7 +203,15 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			}];
 		}
 
-		return this._onlineThreads.map(thread => {
+		// Unresolved first, then resolved
+		const sorted = [...this._onlineThreads].sort((a, b) => {
+			if (a.isResolved !== b.isResolved) {
+				return a.isResolved ? 1 : -1;
+			}
+			return 0;
+		});
+
+		return sorted.map(thread => {
 			const commentCount = thread.comments.length;
 			const firstComment = thread.comments[0];
 			const fileName = basename(thread.path);

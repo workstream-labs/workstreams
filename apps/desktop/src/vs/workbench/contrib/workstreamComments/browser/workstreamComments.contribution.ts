@@ -141,26 +141,39 @@ registerAction2(class extends Action2 {
 
 		const repos = orchestratorService.repositories;
 		const repoPath = repos.length > 0 ? repos[0].path : undefined;
-		let onlineComments: Array<{ filePath: string; line: number; author: string; text: string }> = [];
+
+		interface OnlineComment {
+			filePath: string;
+			line: number;
+			author: string;
+			text: string;
+			resolved: boolean;
+			createdAt: string;
+		}
+
+		let onlineComments: OnlineComment[] = [];
 		if (repoPath) {
 			const ctx = await githubCommentsService.resolveContext(repoPath, worktree.branch);
 			if (ctx) {
 				const threads = await githubCommentsService.getReviewThreads(ctx);
 				for (const thread of threads) {
-					if (thread.isResolved) {
-						continue;
-					}
 					for (const c of thread.comments) {
 						onlineComments.push({
 							filePath: c.path ?? thread.path,
 							line: c.line ?? thread.line ?? 0,
 							author: c.author.login,
 							text: c.body,
+							resolved: thread.isResolved,
+							createdAt: c.createdAt,
 						});
 					}
 				}
 			}
 		}
+
+		// Sort online: unresolved first, then resolved; within each group by creation time
+		const unresolvedOnline = onlineComments.filter(c => !c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+		const resolvedOnline = onlineComments.filter(c => c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
 		const totalCount = offlineComments.length + onlineComments.length;
 		if (totalCount === 0) {
@@ -168,45 +181,63 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		// Build unified picker items
+		// Build unified picker items: offline → online unresolved → online resolved
 		type PickSource = 'offline' | 'online';
 		interface CommentPickItem extends IQuickPickItem {
 			source: PickSource;
 			offlineComment?: IWorkstreamComment;
-			onlineComment?: { filePath: string; line: number; author: string; text: string };
+			onlineComment?: OnlineComment;
 		}
 
 		const items: CommentPickItem[] = [];
+		const selectedItems: CommentPickItem[] = [];
 
 		for (const c of offlineComments) {
 			const fileName = basename(c.filePath);
 			const sideLabel = c.side === 'old' ? 'original' : 'modified';
-			items.push({
+			const item: CommentPickItem = {
 				label: `$(comment) ${fileName}:${c.line}`,
 				description: `offline \u00B7 ${sideLabel}`,
 				detail: `    ${c.text}`,
 				picked: true,
 				source: 'offline',
 				offlineComment: c,
-			});
+			};
+			items.push(item);
+			selectedItems.push(item);
 		}
 
-		for (const c of onlineComments) {
+		for (const c of unresolvedOnline) {
 			const fileName = basename(c.filePath);
-			items.push({
+			const item: CommentPickItem = {
 				label: `$(comment-discussion) ${fileName}:${c.line}`,
 				description: `online \u00B7 @${c.author}`,
 				detail: `    ${c.text}`,
 				picked: true,
 				source: 'online',
 				onlineComment: c,
-			});
+			};
+			items.push(item);
+			selectedItems.push(item);
+		}
+
+		for (const c of resolvedOnline) {
+			const fileName = basename(c.filePath);
+			const item: CommentPickItem = {
+				label: `$(check) ${fileName}:${c.line}`,
+				description: `online \u00B7 @${c.author} \u00B7 resolved`,
+				detail: `    ${c.text}`,
+				picked: false,
+				source: 'online',
+				onlineComment: c,
+			};
+			items.push(item);
 		}
 
 		const picked = await new Promise<CommentPickItem[] | undefined>(resolve => {
 			const picker = quickInputService.createQuickPick<CommentPickItem>();
 			picker.items = items;
-			picker.selectedItems = items;
+			picker.selectedItems = selectedItems;
 			picker.canSelectMany = true;
 			picker.title = localize("sendComments.title", "Send Review Comments to Claude ({0} total)", totalCount);
 			picker.placeholder = localize("sendComments.placeholder", "Uncheck comments you don't want to send");

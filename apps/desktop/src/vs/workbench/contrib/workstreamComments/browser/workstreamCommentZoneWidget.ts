@@ -39,6 +39,9 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private _savedComment: IWorkstreamComment | undefined;
 	private _closed = false;
 
+	/** Whether this widget was created for an existing saved comment (vs a new unsaved one). */
+	get hasSavedComment(): boolean { return !!this._savedComment; }
+
 	private readonly _onDidClose = new Emitter<void>();
 	readonly onDidClose = this._onDidClose.event;
 
