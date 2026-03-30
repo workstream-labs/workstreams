@@ -71,3 +71,4 @@ import './contrib/floatingMenu/browser/floatingMenu.contribution.js';
 import './common/standaloneStrings.js';
 
 import '../base/browser/ui/codicons/codiconStyles.js'; // The codicons are defined here and must be loaded
+import '../base/browser/fonts/fontStyles.js'; // Bundled Lilex (editor) and IBM Plex Sans (UI) fonts
