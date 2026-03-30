@@ -70,7 +70,12 @@ export interface IGitHubCommentsService {
 	getReviewThreads(ctx: IGitHubPRContext): Promise<IGitHubPRReviewThread[]>;
 
 	/**
-	 * Force refresh cached data.
+	 * Clear cached data without firing events.
+	 */
+	clearCaches(): void;
+
+	/**
+	 * Clear cached data and fire change event.
 	 */
 	refresh(): Promise<void>;
 }

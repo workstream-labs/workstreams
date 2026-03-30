@@ -100,6 +100,14 @@ function encodeURIPath(s: string): string {
 	return encodeURIComponent(s);
 }
 
+/** 1 hour TTL for cached GitHub data. */
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
+interface ICacheEntry<T> {
+	readonly data: T;
+	readonly fetchedAt: number;
+}
+
 export class GitHubCommentsServiceImpl extends Disposable implements IGitHubCommentsService {
 
 	declare readonly _serviceBrand: undefined;
@@ -107,11 +115,11 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 	private readonly _onDidChangeComments = this._register(new Emitter<void>());
 	readonly onDidChangeComments = this._onDidChangeComments.event;
 
-	/** Cache: "owner/repo:branch" → context */
-	private readonly _contextCache = new Map<string, IGitHubPRContext | null>();
+	/** Cache: "repoPath:branch" → context (with TTL) */
+	private readonly _contextCache = new Map<string, ICacheEntry<IGitHubPRContext | null>>();
 
-	/** Cache: "owner/repo#prNumber" → threads */
-	private readonly _threadsCache = new Map<string, IGitHubPRReviewThread[]>();
+	/** Cache: "owner/repo#prNumber" → threads (with TTL) */
+	private readonly _threadsCache = new Map<string, ICacheEntry<IGitHubPRReviewThread[]>>();
 
 	constructor(
 		@IRequestService private readonly requestService: IRequestService,
@@ -156,20 +164,20 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 	async resolveContext(repoPath: string, branch: string): Promise<IGitHubPRContext | undefined> {
 		const cacheKey = `${repoPath}:${branch}`;
 		const cached = this._contextCache.get(cacheKey);
-		if (cached !== undefined) {
-			return cached ?? undefined;
+		if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
+			return cached.data ?? undefined;
 		}
 
 		try {
 			const remoteUrl = await this.gitWorktreeService.getRemoteUrl(repoPath);
 			if (!remoteUrl) {
-				this._contextCache.set(cacheKey, null);
+				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 				return undefined;
 			}
 
 			const match = GITHUB_REMOTE_RE.exec(remoteUrl);
 			if (!match) {
-				this._contextCache.set(cacheKey, null);
+				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 				return undefined;
 			}
 
@@ -179,7 +187,7 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 			// Find open PR for this branch
 			const token = await this._getAuthToken();
 			if (!token) {
-				this._contextCache.set(cacheKey, null);
+				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 				return undefined;
 			}
 
@@ -197,22 +205,22 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 
 			if (response.res.statusCode !== 200) {
 				this.logService.warn(LOG_PREFIX, `Failed to list PRs: ${response.res.statusCode}`);
-				this._contextCache.set(cacheKey, null);
+				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 				return undefined;
 			}
 
 			const pulls = await asJson<IGitHubPullsListItem[]>(response);
 			if (!pulls || pulls.length === 0) {
-				this._contextCache.set(cacheKey, null);
+				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 				return undefined;
 			}
 
 			const ctx: IGitHubPRContext = { owner, repo, prNumber: pulls[0].number };
-			this._contextCache.set(cacheKey, ctx);
+			this._contextCache.set(cacheKey, { data: ctx, fetchedAt: Date.now() });
 			return ctx;
 		} catch (err) {
 			this.logService.warn(LOG_PREFIX, 'Failed to resolve PR context:', err);
-			this._contextCache.set(cacheKey, null);
+			this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
 			return undefined;
 		}
 	}
@@ -220,8 +228,8 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 	async getReviewThreads(ctx: IGitHubPRContext): Promise<IGitHubPRReviewThread[]> {
 		const cacheKey = `${ctx.owner}/${ctx.repo}#${ctx.prNumber}`;
 		const cached = this._threadsCache.get(cacheKey);
-		if (cached) {
-			return cached;
+		if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
+			return cached.data;
 		}
 
 		try {
@@ -258,7 +266,7 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 			}
 
 			const threads = threadNodes.map(mapReviewThread);
-			this._threadsCache.set(cacheKey, threads);
+			this._threadsCache.set(cacheKey, { data: threads, fetchedAt: Date.now() });
 			return threads;
 		} catch (err) {
 			this.logService.warn(LOG_PREFIX, 'Failed to fetch review threads:', err);
@@ -266,9 +274,13 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 		}
 	}
 
-	async refresh(): Promise<void> {
+	clearCaches(): void {
 		this._contextCache.clear();
 		this._threadsCache.clear();
+	}
+
+	async refresh(): Promise<void> {
+		this.clearCaches();
 		this._onDidChangeComments.fire();
 	}
 

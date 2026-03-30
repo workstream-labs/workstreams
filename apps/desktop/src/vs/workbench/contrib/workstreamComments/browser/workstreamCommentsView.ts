@@ -15,6 +15,7 @@ import { Extensions, ITreeItem, ITreeViewDataProvider, ITreeViewDescriptor, IVie
 import { IWorkstreamCommentService } from '../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IGitHubCommentsService, IGitHubPRReviewThread } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { basename } from '../../../../base/common/path.js';
 
 export const WORKSTREAM_COMMENTS_VIEW_ID = 'workbench.scm.workstreamComments';
 
@@ -28,6 +29,7 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 
 	/** Cached online threads for child lookups. */
 	private _onlineThreads: IGitHubPRReviewThread[] = [];
+	private _onlineFetchState: 'idle' | 'loading' | 'done' | 'error' = 'idle';
 
 	constructor(
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
@@ -42,11 +44,14 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 
 		this._register(this.orchestratorService.onDidChangeActiveWorktree(() => {
 			this._onlineThreads = [];
+			this._onlineFetchState = 'idle';
 			this.githubCommentsService.refresh();
 			this._onNeedRefresh.fire();
 		}));
 
 		this._register(this.githubCommentsService.onDidChangeComments(() => {
+			this._onlineThreads = [];
+			this._onlineFetchState = 'idle';
 			this._onNeedRefresh.fire();
 		}));
 	}
@@ -81,26 +86,38 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			offlineCount = comments.length;
 		}
 
-		// Fetch online threads for count
-		const onlineThreads = await this._fetchOnlineThreads();
-		const unresolvedCount = onlineThreads.filter(t => !t.isResolved).length;
+		// Use cached threads for the count — don't block on fetch here
+		const resolvedCount = this._onlineThreads.filter(t => t.isResolved).length;
+		const unresolvedCount = this._onlineThreads.filter(t => !t.isResolved).length;
+		let onlineDescription: string | undefined;
+		if (this._onlineFetchState === 'loading') {
+			onlineDescription = localize('comments.online.loading', "fetching...");
+		} else if (this._onlineThreads.length > 0) {
+			const parts: string[] = [];
+			if (resolvedCount > 0) {
+				parts.push(`${resolvedCount} \u2713`);
+			}
+			if (unresolvedCount > 0) {
+				parts.push(`${unresolvedCount} \u25CB`);
+			}
+			onlineDescription = parts.join('  ');
+		}
+
+		// Offline: N ○ (pending)
+		const offlineDescription = offlineCount > 0 ? `${offlineCount} \u25CB` : undefined;
 
 		return [
 			{
 				handle: HANDLE_OFFLINE,
 				label: { label: localize('comments.offline', "Offline") },
-				description: offlineCount > 0 ? `(${offlineCount})` : undefined,
+				description: offlineDescription,
 				collapsibleState: TreeItemCollapsibleState.Collapsed,
 				themeIcon: Codicon.comment,
 			},
 			{
 				handle: HANDLE_ONLINE,
 				label: { label: localize('comments.online', "Online") },
-				description: onlineThreads.length > 0
-					? unresolvedCount > 0
-						? `(${unresolvedCount} unresolved)`
-						: `(${onlineThreads.length})`
-					: undefined,
+				description: onlineDescription,
 				collapsibleState: TreeItemCollapsibleState.Collapsed,
 				themeIcon: Codicon.commentDiscussion,
 			},
@@ -119,16 +136,17 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		}
 
 		return comments.map(c => {
+			const fileName = basename(c.filePath);
 			const sideLabel = c.side === 'old'
 				? localize('comments.side.original', "original")
 				: localize('comments.side.modified', "modified");
-			const truncatedText = c.text.length > 60 ? c.text.substring(0, 60) + '...' : c.text;
+			const truncatedText = c.text.length > 50 ? c.text.substring(0, 50) + '...' : c.text;
 
 			return {
 				handle: `${HANDLE_OFFLINE}/${c.id}`,
-				label: { label: `${c.filePath}:${c.line}` },
+				label: { label: `${fileName}:${c.line}` },
 				description: truncatedText,
-				tooltip: `${c.filePath}:${c.line} (${sideLabel})\n${c.text}`,
+				tooltip: `${c.filePath}:${c.line} (${sideLabel})\n\n${c.text}`,
 				collapsibleState: TreeItemCollapsibleState.None,
 				themeIcon: Codicon.comment,
 				contextValue: 'workstream-comment',
@@ -153,8 +171,31 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			}];
 		}
 
-		const threads = await this._fetchOnlineThreads();
-		if (threads.length === 0) {
+		// If we haven't started fetching yet, kick off background fetch and show loading
+		if (this._onlineFetchState === 'idle') {
+			this._onlineFetchState = 'loading';
+			this._onNeedRefresh.fire(); // refresh root to show "fetching..." description
+			this._fetchOnlineThreadsAsync();
+			return [{
+				handle: 'online/loading',
+				label: { label: localize('comments.online.fetching', "Fetching PR review comments...") },
+				collapsibleState: TreeItemCollapsibleState.None,
+				themeIcon: Codicon.loading,
+			}];
+		}
+
+		// Still loading
+		if (this._onlineFetchState === 'loading') {
+			return [{
+				handle: 'online/loading',
+				label: { label: localize('comments.online.fetching', "Fetching PR review comments...") },
+				collapsibleState: TreeItemCollapsibleState.None,
+				themeIcon: Codicon.loading,
+			}];
+		}
+
+		// Done but no threads
+		if (this._onlineThreads.length === 0) {
 			return [{
 				handle: 'online/empty',
 				label: { label: localize('comments.online.noPR', "No PR found for this branch") },
@@ -162,24 +203,19 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			}];
 		}
 
-		return threads.map(thread => {
+		return this._onlineThreads.map(thread => {
 			const commentCount = thread.comments.length;
 			const firstComment = thread.comments[0];
-			const preview = firstComment
-				? firstComment.body.length > 50 ? firstComment.body.substring(0, 50) + '...' : firstComment.body
-				: '';
-			const resolvedPrefix = thread.isResolved
-				? localize('comments.online.resolved', "[resolved] ")
-				: '';
+			const fileName = basename(thread.path);
 			const lineLabel = thread.line !== undefined ? `:${thread.line}` : '';
+			const firstBody = firstComment?.body ?? '';
+			const preview = firstBody.length > 50 ? firstBody.substring(0, 50) + '...' : firstBody;
 
 			return {
 				handle: `online/thread/${thread.id}`,
-				label: { label: `${resolvedPrefix}${thread.path}${lineLabel}` },
-				description: commentCount > 1
-					? localize('comments.online.threadCount', "{0} comments", commentCount)
-					: preview,
-				tooltip: `${thread.path}${lineLabel}\n${firstComment?.body ?? ''}`,
+				label: { label: `${fileName}${lineLabel}` },
+				description: preview,
+				tooltip: `${thread.path}${lineLabel}${thread.isResolved ? ' (resolved)' : ''}\n\n${firstBody}`,
 				collapsibleState: commentCount > 1
 					? TreeItemCollapsibleState.Collapsed
 					: TreeItemCollapsibleState.None,
@@ -196,42 +232,60 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		}
 
 		return thread.comments.map(c => {
-			const truncatedBody = c.body.length > 80 ? c.body.substring(0, 80) + '...' : c.body;
+			const truncatedBody = c.body.length > 60 ? c.body.substring(0, 60) + '...' : c.body;
 
 			return {
 				handle: `online/comment/${c.id}`,
 				label: { label: `@${c.author.login}` },
 				description: truncatedBody,
-				tooltip: `@${c.author.login} (${new Date(c.createdAt).toLocaleString()})\n\n${c.body}`,
+				tooltip: `@${c.author.login}\n${new Date(c.createdAt).toLocaleString()}\n\n${c.body}`,
 				collapsibleState: TreeItemCollapsibleState.None,
-				themeIcon: Codicon.comment,
+				themeIcon: Codicon.account,
 				contextValue: 'github-review-comment',
 			};
 		});
 	}
 
-	private async _fetchOnlineThreads(): Promise<IGitHubPRReviewThread[]> {
-		if (this._onlineThreads.length > 0) {
-			return this._onlineThreads;
-		}
+	/**
+	 * Called by the Refresh button to clear local + service caches so
+	 * the next getChildren() re-fetches from GitHub.
+	 */
+	resetOnlineCache(): void {
+		this._onlineThreads = [];
+		this._onlineFetchState = 'idle';
+		this.githubCommentsService.clearCaches();
+	}
 
+	private _fetchOnlineThreadsAsync(): void {
 		const worktree = this.orchestratorService.activeWorktree;
 		if (!worktree) {
-			return [];
+			this._onlineFetchState = 'done';
+			this._onNeedRefresh.fire();
+			return;
 		}
 
 		const repos = this.orchestratorService.repositories;
 		if (repos.length === 0) {
-			return [];
+			this._onlineFetchState = 'done';
+			this._onNeedRefresh.fire();
+			return;
 		}
 
-		const ctx = await this.githubCommentsService.resolveContext(repos[0].path, worktree.branch);
-		if (!ctx) {
-			return [];
-		}
-
-		this._onlineThreads = await this.githubCommentsService.getReviewThreads(ctx);
-		return this._onlineThreads;
+		this.githubCommentsService.resolveContext(repos[0].path, worktree.branch).then(ctx => {
+			if (!ctx) {
+				this._onlineFetchState = 'done';
+				this._onNeedRefresh.fire();
+				return;
+			}
+			return this.githubCommentsService.getReviewThreads(ctx).then(threads => {
+				this._onlineThreads = threads;
+				this._onlineFetchState = 'done';
+				this._onNeedRefresh.fire();
+			});
+		}).catch(() => {
+			this._onlineFetchState = 'error';
+			this._onNeedRefresh.fire();
+		});
 	}
 }
 
@@ -257,7 +311,19 @@ export class WorkstreamCommentsViewRegistration extends Disposable {
 		treeView.dataProvider = dataProvider;
 		this._register(dataProvider);
 
-		this._register(dataProvider.onNeedRefresh(() => treeView.refresh()));
+		// Save original refresh before overriding
+		const originalRefresh = treeView.refresh.bind(treeView);
+
+		// Internal refreshes (from data provider) bypass cache reset
+		this._register(dataProvider.onNeedRefresh(() => originalRefresh()));
+
+		// Override: only the Refresh button (which calls treeView.refresh directly) clears caches
+		treeView.refresh = function (elements?: readonly ITreeItem[]) {
+			if (!elements) {
+				dataProvider.resetOnlineCache();
+			}
+			return originalRefresh(elements);
+		};
 
 		const viewsRegistry = Registry.as<IViewsRegistry>(Extensions.ViewsRegistry);
 		// eslint-disable-next-line local/code-no-dangerous-type-assertions
