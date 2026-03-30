@@ -251,8 +251,14 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 				return;
 			}
 
-			// Always clear old widgets on this editor first — the file may have changed
-			this._disposeWidgetsForEditor(editor);
+			// Only dispose widgets that show saved comments — preserve unsaved edit-mode widgets
+			const prefix = editor.getId() + ':';
+			for (const [key, widget] of this._activeWidgets) {
+				if (key.startsWith(prefix) && widget.hasSavedComment) {
+					widget.dispose();
+					this._activeWidgets.delete(key);
+				}
+			}
 
 			const isOriginal = this._isOriginalSideOfDiff(editor);
 			const editorSide: CommentSide = isOriginal ? 'old' : 'new';

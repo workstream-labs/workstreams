@@ -44,6 +44,26 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		}
 	}
 
+	async getRemoteUrl(repoPath: string): Promise<string | undefined> {
+		try {
+			const { stdout } = await execFile('git', ['remote', 'get-url', 'origin'], { cwd: repoPath });
+			return stdout.trim() || undefined;
+		} catch {
+			// No 'origin' remote — try first available remote
+			try {
+				const { stdout: remotes } = await execFile('git', ['remote'], { cwd: repoPath });
+				const firstRemote = remotes.trim().split('\n')[0];
+				if (firstRemote) {
+					const { stdout } = await execFile('git', ['remote', 'get-url', firstRemote], { cwd: repoPath });
+					return stdout.trim() || undefined;
+				}
+			} catch {
+				// No remotes at all
+			}
+			return undefined;
+		}
+	}
+
 	async listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]> {
 		try {
 			const { stdout } = await execFile('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });

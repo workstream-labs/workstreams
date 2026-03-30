@@ -17,13 +17,20 @@ import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { WorkstreamCommentController } from './workstreamCommentController.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IWorkstreamComment } from '../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IGitHubCommentsService } from '../../../services/workstreamComments/common/githubCommentsService.js';
+import { basename } from '../../../../base/common/path.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
+import { VIEWLET_ID } from '../../scm/common/scm.js';
+import { WorkstreamCommentsViewRegistration } from './workstreamCommentsView.js';
 
-// Ensure the service singleton is registered (side-effect import)
+// Ensure the service singletons are registered (side-effect imports)
 import '../../../services/workstreamComments/browser/workstreamCommentServiceImpl.js';
+import '../../../services/workstreamComments/browser/githubCommentsServiceImpl.js';
 
 class WorkstreamCommentsContribution extends Disposable {
 
@@ -39,6 +46,7 @@ class WorkstreamCommentsContribution extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INotificationService _notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
 
@@ -69,6 +77,22 @@ class WorkstreamCommentsContribution extends Disposable {
 		this._register(this.orchestratorService.onDidChangeRepositories(() => {
 			this._updateBasePath();
 		}));
+
+		// Register the Comments tree view in the SCM sidebar
+		this._initializeView();
+	}
+
+	private _initializeView(): void {
+		const scmContainer = Registry.as<IViewContainersRegistry>(
+			ViewContainerExtensions.ViewContainersRegistry
+		).get(VIEWLET_ID);
+
+		if (scmContainer) {
+			this._register(this.instantiationService.createInstance(
+				WorkstreamCommentsViewRegistration,
+				scmContainer,
+			));
+		}
 	}
 
 	private _updateBasePath(): void {
@@ -101,6 +125,7 @@ registerAction2(class extends Action2 {
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const orchestratorService = accessor.get(IOrchestratorService);
 		const commentService = accessor.get(IWorkstreamCommentService);
+		const githubCommentsService = accessor.get(IGitHubCommentsService);
 		const terminalService = accessor.get(ITerminalService);
 		const notificationService = accessor.get(INotificationService);
 		const quickInputService = accessor.get(IQuickInputService);
@@ -111,36 +136,110 @@ registerAction2(class extends Action2 {
 			return;
 		}
 
-		const comments = await commentService.getComments(worktree.name);
-		if (comments.length === 0) {
+		// Fetch both offline and online comments
+		const offlineComments = await commentService.getComments(worktree.name);
+
+		const repos = orchestratorService.repositories;
+		const repoPath = repos.length > 0 ? repos[0].path : undefined;
+
+		interface OnlineComment {
+			filePath: string;
+			line: number;
+			author: string;
+			text: string;
+			resolved: boolean;
+			createdAt: string;
+		}
+
+		let onlineComments: OnlineComment[] = [];
+		if (repoPath) {
+			const ctx = await githubCommentsService.resolveContext(repoPath, worktree.branch);
+			if (ctx) {
+				const threads = await githubCommentsService.getReviewThreads(ctx);
+				for (const thread of threads) {
+					for (const c of thread.comments) {
+						onlineComments.push({
+							filePath: c.path ?? thread.path,
+							line: c.line ?? thread.line ?? 0,
+							author: c.author.login,
+							text: c.body,
+							resolved: thread.isResolved,
+							createdAt: c.createdAt,
+						});
+					}
+				}
+			}
+		}
+
+		// Sort online: unresolved first, then resolved; within each group by creation time
+		const unresolvedOnline = onlineComments.filter(c => !c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+		const resolvedOnline = onlineComments.filter(c => c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+		const totalCount = offlineComments.length + onlineComments.length;
+		if (totalCount === 0) {
 			notificationService.info(localize("sendComments.noComments", "No review comments to send"));
 			return;
 		}
 
-		// Show picker with all comments, pre-selected
+		// Build unified picker items: offline → online unresolved → online resolved
+		type PickSource = 'offline' | 'online';
 		interface CommentPickItem extends IQuickPickItem {
-			comment: IWorkstreamComment;
+			source: PickSource;
+			offlineComment?: IWorkstreamComment;
+			onlineComment?: OnlineComment;
 		}
 
-		const items: CommentPickItem[] = comments.map((c, i) => {
-			const sideLabel = c.side === 'old'
-				? localize("sendComments.side.original", "original")
-				: localize("sendComments.side.modified", "modified");
-			return {
-				label: `${i + 1}. ${c.filePath}:${c.line} (${sideLabel})`,
-				description: c.text.length > 80 ? c.text.substring(0, 80) + '...' : c.text,
-				detail: c.text.length > 80 ? c.text : undefined,
+		const items: CommentPickItem[] = [];
+		const selectedItems: CommentPickItem[] = [];
+
+		for (const c of offlineComments) {
+			const fileName = basename(c.filePath);
+			const sideLabel = c.side === 'old' ? 'original' : 'modified';
+			const item: CommentPickItem = {
+				label: `$(comment) ${fileName}:${c.line}`,
+				description: `offline \u00B7 ${sideLabel}`,
+				detail: `    ${c.text}`,
 				picked: true,
-				comment: c,
+				source: 'offline',
+				offlineComment: c,
 			};
-		});
+			items.push(item);
+			selectedItems.push(item);
+		}
+
+		for (const c of unresolvedOnline) {
+			const fileName = basename(c.filePath);
+			const item: CommentPickItem = {
+				label: `$(comment-discussion) ${fileName}:${c.line}`,
+				description: `online \u00B7 @${c.author}`,
+				detail: `    ${c.text}`,
+				picked: true,
+				source: 'online',
+				onlineComment: c,
+			};
+			items.push(item);
+			selectedItems.push(item);
+		}
+
+		for (const c of resolvedOnline) {
+			const fileName = basename(c.filePath);
+			const item: CommentPickItem = {
+				label: `$(comment-discussion) ${fileName}:${c.line}`,
+				description: `online \u00B7 @${c.author} \u00B7 resolved`,
+				detail: `    ${c.text}`,
+				picked: false,
+				source: 'online',
+				onlineComment: c,
+			};
+			items.push(item);
+		}
 
 		const picked = await new Promise<CommentPickItem[] | undefined>(resolve => {
 			const picker = quickInputService.createQuickPick<CommentPickItem>();
 			picker.items = items;
-			picker.selectedItems = items;
+			picker.selectedItems = selectedItems;
 			picker.canSelectMany = true;
-			picker.title = localize("sendComments.title", "Send Review Comments to Claude ({0} total)", comments.length);
+			picker.title = localize("sendComments.title", "Send Review Comments to Claude ({0} total)", totalCount);
 			picker.placeholder = localize("sendComments.placeholder", "Uncheck comments you don't want to send");
 			picker.ok = true;
 			picker.customButton = true;
@@ -179,23 +278,58 @@ registerAction2(class extends Action2 {
 			localize("sendComments.prompt.header", "I have the following review comments on the changes in this worktree. Please address each one:") + '\n',
 		];
 		for (let i = 0; i < picked.length; i++) {
-			const c = picked[i].comment;
-			const sideLabel = c.side === 'old' ? 'original' : 'modified';
-			lines.push(`${i + 1}. **${c.filePath}:${c.line}** (${sideLabel})`);
-			lines.push(`   ${c.text}\n`);
+			const item = picked[i];
+			if (item.source === 'offline' && item.offlineComment) {
+				const c = item.offlineComment;
+				const sideLabel = c.side === 'old' ? 'original' : 'modified';
+				lines.push(`${i + 1}. **${c.filePath}:${c.line}** (${sideLabel})`);
+				lines.push(`   ${c.text}\n`);
+			} else if (item.source === 'online' && item.onlineComment) {
+				const c = item.onlineComment;
+				lines.push(`${i + 1}. **${c.filePath}:${c.line}** (GitHub PR, @${c.author})`);
+				lines.push(`   ${c.text}\n`);
+			}
 		}
 		lines.push(localize("sendComments.prompt.footer", "Fix each issue in the current working tree. Use the file paths and line numbers to locate the code."));
 
 		terminal.sendText(lines.join('\n'), true);
 
-		// Delete sent comments
+		// Delete only offline comments (online comments stay on GitHub)
 		for (const item of picked) {
-			await commentService.deleteComment(worktree.name, item.comment.id);
+			if (item.source === 'offline' && item.offlineComment) {
+				await commentService.deleteComment(worktree.name, item.offlineComment.id);
+			}
 		}
 
 		// Focus the terminal so user sees Claude acting on the comments
 		await terminalService.revealActiveTerminal();
 
-		notificationService.info(localize("sendComments.sent", "Sent {0} comment(s) to Claude and cleared them", picked.length));
+		const offlineSent = picked.filter(i => i.source === 'offline').length;
+		const onlineSent = picked.filter(i => i.source === 'online').length;
+		notificationService.info(localize("sendComments.sent.combined", "Sent {0} comment(s) to Claude ({1} offline, {2} from GitHub PR)", picked.length, offlineSent, onlineSent));
+	}
+});
+
+// --- "Sign in to GitHub" action ---
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workstreamComments.signInToGitHub',
+			title: localize2("signInToGitHub", "Workstream: Sign in to GitHub"),
+			f1: true,
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const githubCommentsService = accessor.get(IGitHubCommentsService);
+		const notificationService = accessor.get(INotificationService);
+
+		const success = await githubCommentsService.signIn();
+		if (success) {
+			notificationService.info(localize("signIn.success", "Signed in to GitHub. Fetching PR review comments..."));
+		} else {
+			notificationService.warn(localize("signIn.failed", "GitHub sign-in was cancelled or failed"));
+		}
 	}
 });

@@ -19,6 +19,7 @@ export interface IGitWorktreeService {
 	isGitRepository(repoPath: string): Promise<boolean>;
 	initRepository(repoPath: string): Promise<void>;
 	getCurrentBranch(repoPath: string): Promise<string>;
+	getRemoteUrl(repoPath: string): Promise<string | undefined>;
 	listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]>;
 	addWorktree(repoPath: string, name: string): Promise<string>;
 	removeWorktree(repoPath: string, worktreePath: string, branchName?: string): Promise<void>;
