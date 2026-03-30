@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { IRange } from '../../../../editor/common/core/range.js';
-import { ICodeEditor, isCodeEditor } from '../../../../editor/browser/editorBrowser.js';
+import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import * as languages from '../../../../editor/common/languages.js';
@@ -16,7 +16,7 @@ import { IWorkstreamCommentService } from '../../../services/workstreamComments/
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { WorkstreamCommentZoneWidget } from './workstreamCommentZoneWidget.js';
 
 const OWNER_ID = 'workstreamComments';
@@ -36,42 +36,54 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	/** Track active zone widgets by editor+line to avoid duplicates */
 	private readonly _activeWidgets = new Map<string, WorkstreamCommentZoneWidget>();
 
-	/** Track whether we've shown the unified-mode notification for a given editor */
-	private readonly _unifiedNotified = new Set<string>();
 
 	constructor(
 		private readonly commentService: ICommentService,
 		private readonly workstreamCommentService: IWorkstreamCommentService,
 		private readonly orchestratorService: IOrchestratorService,
 		private readonly codeEditorService: ICodeEditorService,
-		private readonly dialogService: IDialogService,
+		_dialogService: IDialogService,
 		private readonly configurationService: IConfigurationService,
-		private readonly notificationService: INotificationService,
+		_notificationService: INotificationService,
 	) {
 		super();
+
+		// Force split diff mode — inline diff is not supported for comments
+		this.configurationService.updateValue('diffEditor.renderSideBySide', true);
 
 		// Register with VS Code's comment system (provides "+" hover glyph)
 		this.commentService.registerCommentController(OWNER_ID, this);
 		this._register({ dispose: () => this.commentService.unregisterCommentController(OWNER_ID) });
 
-		// Tell the comment system we provide commenting ranges for file:// URIs
-		this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file'] });
+		// Tell the comment system we provide commenting ranges for file:// and git:// URIs
+		this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file', 'git'] });
 
-		// When a new editor appears, listen for its model to be set
+		// When a new editor appears, listen for model changes
 		this._register(this.codeEditorService.onCodeEditorAdd(editor => {
-			const listener = editor.onDidChangeModel(() => {
+			this._register(editor.onDidChangeModel(() => {
+				// Dispose any zone widgets on this editor — the file changed
+				this._disposeWidgetsForEditor(editor);
 				this._onEditorReady(editor);
-			});
-			this._register(listener);
+			}));
+		}));
+
+		// Prevent inline diff mode — force back to split if user toggles it
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('diffEditor.renderSideBySide')) {
+				if (!this.configurationService.getValue<boolean>('diffEditor.renderSideBySide')) {
+					this.configurationService.updateValue('diffEditor.renderSideBySide', true);
+				}
+			}
 		}));
 
 		// Refresh when comment data changes
 		this._register(this.workstreamCommentService.onDidChangeComments(() => {
-			this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file'] });
+			this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file', 'git'] });
 		}));
 
-		// When worktree changes, show comments for all open editors
+		// When worktree changes, dispose old widgets first, then show new ones
 		this._register(this.orchestratorService.onDidChangeActiveWorktree(() => {
+			this._disposeAllWidgets();
 			this._showSavedCommentsOnAllEditors();
 		}));
 
@@ -85,8 +97,22 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		const worktree = this.orchestratorService.activeWorktree;
 		console.log(`[WSComments] getDocumentComments called for ${resource.scheme}://${resource.fsPath}, worktree=${worktree?.name ?? 'NONE'}`);
 
-		// Only handle file:// URIs — skip git://, inmemory://, etc.
-		if (resource.scheme !== 'file') {
+		// Only enable commenting in diff editors, not regular file editors.
+		// git:// URIs are always the left side of a diff.
+		// file:// URIs need a check: only if they're inside a diff editor.
+		if (resource.scheme === 'git') {
+			// Left side of diff — always a diff context, proceed
+		} else if (resource.scheme === 'file') {
+			// Check if this file is shown inside a diff editor
+			const isInDiff = this.codeEditorService.listDiffEditors().some(diff => {
+				const modified = diff.getModifiedEditor().getModel()?.uri;
+				const original = diff.getOriginalEditor().getModel()?.uri;
+				return modified?.toString() === resource.toString() || original?.toString() === resource.toString();
+			});
+			if (!isInDiff) {
+				return this._emptyCommentInfo(resource);
+			}
+		} else {
 			console.log(`[WSComments] → scheme ${resource.scheme}, returning empty`);
 			return this._emptyCommentInfo(resource);
 		}
@@ -103,6 +129,16 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 
 		console.log('[WSComments] → returning commenting ranges for all lines');
+
+		// Show saved comments on editors displaying this file.
+		// This is the reliable trigger — onCodeEditorAdd/onDidChangeModel miss
+		// diff sub-editors whose models are set inside batchEventsGlobally.
+		for (const editor of this.codeEditorService.listCodeEditors()) {
+			if (editor.getModel()?.uri.toString() === resource.toString()) {
+				this._showSavedComments(editor);
+			}
+		}
+
 		// All lines commentable — the decorator clips to the actual line count
 		return {
 			uniqueOwner: OWNER_ID,
@@ -129,31 +165,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		// Find the editor that triggered this
 		const editor = this._findEditor(URI.revive(resource), editorId);
 		if (!editor) {
-			return;
-		}
-
-		// Check if we're in unified (inline) diff mode
-		if (this._isInUnifiedDiffMode(editor)) {
-			const confirmed = await this.dialogService.confirm({
-				message: "Comments are only available in split view",
-				detail: "Would you like to switch to split view to add your comment?",
-				primaryButton: "Switch to Split View",
-			});
-
-			if (!confirmed.confirmed) {
-				return;
-			}
-
-			// Switch to side-by-side mode
-			await this.configurationService.updateValue('diffEditor.renderSideBySide', true);
-
-			// Wait for layout to settle, then open widget on modified editor
-			setTimeout(() => {
-				const modifiedEditor = this._findModifiedEditorAfterSwitch(editor);
-				if (modifiedEditor) {
-					this._openWidget(modifiedEditor, range.startLineNumber);
-				}
-			}, 150);
 			return;
 		}
 
@@ -192,6 +203,23 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		setTimeout(() => this._refreshCommentingRanges(), 5000);
 	}
 
+	private _disposeAllWidgets(): void {
+		for (const [key, widget] of this._activeWidgets) {
+			widget.dispose();
+			this._activeWidgets.delete(key);
+		}
+	}
+
+	private _disposeWidgetsForEditor(editor: ICodeEditor): void {
+		const editorId = editor.getId();
+		for (const [key, widget] of this._activeWidgets) {
+			if (key.startsWith(editorId + ':')) {
+				widget.dispose();
+				this._activeWidgets.delete(key);
+			}
+		}
+	}
+
 	private _refreshCommentingRanges(): void {
 		console.log('[WSComments] refreshCommentingRanges (re-register)');
 		// Unregister and re-register to force VS Code's CommentsController
@@ -200,7 +228,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		// lost when the Extension Host restarts during worktree switches.
 		this.commentService.unregisterCommentController(OWNER_ID);
 		this.commentService.registerCommentController(OWNER_ID, this);
-		this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file'] });
+		this.commentService.updateCommentingRanges(OWNER_ID, { schemes: ['file', 'git'] });
 	}
 
 	private async _showSavedCommentsOnAllEditors(): Promise<void> {
@@ -233,12 +261,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 				return;
 			}
 
-			// In unified mode, don't show zone widgets — show a one-time notification instead
-			if (this._isInUnifiedDiffMode(editor)) {
-				console.log('[WSComments] _showSavedComments: unified mode, skip');
-				this._notifyCommentsInUnifiedMode(editor, worktree.name, fileFsPath);
-				return;
-			}
+			// Always clear old widgets on this editor first — the file may have changed
+			this._disposeWidgetsForEditor(editor);
 
 			// Determine which side this editor represents
 			const isOriginal = this._isOriginalSideOfDiff(editor);
@@ -281,38 +305,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 	}
 
-	private async _notifyCommentsInUnifiedMode(editor: ICodeEditor, workstreamName: string, fileFsPath: string): Promise<void> {
-		const notifyKey = `${editor.getId()}:${fileFsPath}`;
-		if (this._unifiedNotified.has(notifyKey)) {
-			return;
-		}
-
-		const worktree = this.orchestratorService.activeWorktree;
-		if (!worktree) {
-			return;
-		}
-
-		const relativePath = fileFsPath.substring(worktree.path.length + 1);
-		const comments = await this.workstreamCommentService.getComments(workstreamName, relativePath);
-		if (comments.length === 0) {
-			return;
-		}
-
-		this._unifiedNotified.add(notifyKey);
-
-		this.notificationService.prompt(
-			Severity.Info,
-			`This file has ${comments.length} review comment${comments.length > 1 ? 's' : ''}. Switch to split view to see and edit them.`,
-			[{
-				label: 'Switch to Split View',
-				run: () => {
-					this._unifiedNotified.delete(notifyKey);
-					this.configurationService.updateValue('diffEditor.renderSideBySide', true);
-				}
-			}]
-		);
-	}
-
 	private _openWidget(editor: ICodeEditor, lineNumber: number, side: 'old' | 'new' = 'new'): void {
 		const widgetKey = `${editor.getId()}:${lineNumber}`;
 
@@ -337,13 +329,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		widget.display();
 	}
 
-	private _isInUnifiedDiffMode(editor: ICodeEditor): boolean {
-		if (!editor.getOption(EditorOption.inDiffEditor)) {
-			return false;
-		}
-		return !this.configurationService.getValue<boolean>('diffEditor.renderSideBySide');
-	}
-
 	private _isOriginalSideOfDiff(editor: ICodeEditor): boolean {
 		if (!editor.getOption(EditorOption.inDiffEditor)) {
 			return false;
@@ -354,17 +339,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}
 		}
 		return false;
-	}
-
-	private _findModifiedEditorAfterSwitch(originalEditor: ICodeEditor): ICodeEditor | undefined {
-		for (const diffEditor of this.codeEditorService.listDiffEditors()) {
-			const modified = diffEditor.getModifiedEditor();
-			const original = diffEditor.getOriginalEditor();
-			if (original === originalEditor || modified === originalEditor) {
-				return isCodeEditor(modified) ? modified : undefined;
-			}
-		}
-		return undefined;
 	}
 
 	private _findEditor(resource: URI, editorId?: string): ICodeEditor | undefined {
