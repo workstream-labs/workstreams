@@ -153,40 +153,38 @@ registerAction2(class extends Action2 {
 			repoPath = repos[0].path;
 		}
 
-		interface OnlineComment {
+		interface OnlineThread {
 			filePath: string;
 			line: number;
-			author: string;
-			text: string;
 			resolved: boolean;
+			comments: { author: string; text: string }[];
 			createdAt: string;
 		}
 
-		let onlineComments: OnlineComment[] = [];
+		let onlineThreads: OnlineThread[] = [];
 		if (repoPath) {
 			const result = await githubCommentsService.resolveContext(repoPath, worktree.branch);
 			if (result.status === ResolveContextStatus.Found) {
 				const threads = await githubCommentsService.getReviewThreads(result.context);
 				for (const thread of threads) {
-					for (const c of thread.comments) {
-						onlineComments.push({
-							filePath: c.path ?? thread.path,
-							line: c.line ?? thread.line ?? 0,
-							author: c.author.login,
-							text: c.body,
-							resolved: thread.isResolved,
-							createdAt: c.createdAt,
-						});
+					if (thread.comments.length === 0) {
+						continue;
 					}
+					onlineThreads.push({
+						filePath: thread.path,
+						line: thread.line ?? 0,
+						resolved: thread.isResolved,
+						comments: thread.comments.map(c => ({ author: c.author.login, text: c.body })),
+						createdAt: thread.comments[0].createdAt,
+					});
 				}
 			}
 		}
 
-		// Sort online: unresolved first, then resolved; within each group by creation time
-		const unresolvedOnline = onlineComments.filter(c => !c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-		const resolvedOnline = onlineComments.filter(c => c.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+		const unresolvedOnline = onlineThreads.filter(t => !t.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+		const resolvedOnline = onlineThreads.filter(t => t.resolved).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-		const totalCount = offlineComments.length + onlineComments.length;
+		const totalCount = offlineComments.length + onlineThreads.length;
 		if (totalCount === 0) {
 			notificationService.info(localize("sendComments.noComments", "No review comments to send"));
 			return;
@@ -197,7 +195,7 @@ registerAction2(class extends Action2 {
 		interface CommentPickItem extends IQuickPickItem {
 			source: PickSource;
 			offlineComment?: IWorkstreamComment;
-			onlineComment?: OnlineComment;
+			onlineThread?: OnlineThread;
 		}
 
 		const items: CommentPickItem[] = [];
@@ -218,29 +216,33 @@ registerAction2(class extends Action2 {
 			selectedItems.push(item);
 		}
 
-		for (const c of unresolvedOnline) {
-			const fileName = basename(c.filePath);
+		for (const t of unresolvedOnline) {
+			const fileName = basename(t.filePath);
+			const firstAuthor = t.comments[0].author;
+			const preview = t.comments.map(c => `@${c.author}: ${c.text}`).join(' → ');
 			const item: CommentPickItem = {
-				label: `$(comment-discussion) ${fileName}:${c.line}`,
-				description: `online \u00B7 @${c.author}`,
-				detail: `    ${c.text}`,
+				label: `$(comment-discussion) ${fileName}:${t.line}`,
+				description: `online \u00B7 @${firstAuthor}${t.comments.length > 1 ? ` +${t.comments.length - 1}` : ''}`,
+				detail: `    ${preview}`,
 				picked: true,
 				source: 'online',
-				onlineComment: c,
+				onlineThread: t,
 			};
 			items.push(item);
 			selectedItems.push(item);
 		}
 
-		for (const c of resolvedOnline) {
-			const fileName = basename(c.filePath);
+		for (const t of resolvedOnline) {
+			const fileName = basename(t.filePath);
+			const firstAuthor = t.comments[0].author;
+			const preview = t.comments.map(c => `@${c.author}: ${c.text}`).join(' → ');
 			const item: CommentPickItem = {
-				label: `$(comment-discussion) ${fileName}:${c.line}`,
-				description: `online \u00B7 @${c.author} \u00B7 resolved`,
-				detail: `    ${c.text}`,
+				label: `$(comment-discussion) ${fileName}:${t.line}`,
+				description: `online \u00B7 @${firstAuthor}${t.comments.length > 1 ? ` +${t.comments.length - 1}` : ''} \u00B7 resolved`,
+				detail: `    ${preview}`,
 				picked: false,
 				source: 'online',
-				onlineComment: c,
+				onlineThread: t,
 			};
 			items.push(item);
 		}
@@ -295,10 +297,13 @@ registerAction2(class extends Action2 {
 				const sideLabel = c.side === 'old' ? 'original' : 'modified';
 				lines.push(`${i + 1}. **${c.filePath}:${c.line}** (${sideLabel})`);
 				lines.push(`   ${c.text}\n`);
-			} else if (item.source === 'online' && item.onlineComment) {
-				const c = item.onlineComment;
-				lines.push(`${i + 1}. **${c.filePath}:${c.line}** (GitHub PR, @${c.author})`);
-				lines.push(`   ${c.text}\n`);
+			} else if (item.source === 'online' && item.onlineThread) {
+				const t = item.onlineThread;
+				lines.push(`${i + 1}. **${t.filePath}:${t.line}** (GitHub PR)`);
+				for (const c of t.comments) {
+					lines.push(`   @${c.author}: ${c.text}`);
+				}
+				lines.push('');
 			}
 		}
 		lines.push(localize("sendComments.prompt.footer", "Fix each issue in the current working tree. Use the file paths and line numbers to locate the code."));

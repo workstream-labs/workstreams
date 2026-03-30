@@ -64,11 +64,6 @@ export interface IGitHubCommentsService {
 	readonly onDidChangeComments: Event<void>;
 
 	/**
-	 * Check whether a GitHub authentication session exists (without prompting).
-	 */
-	isAuthenticated(): Promise<boolean>;
-
-	/**
 	 * Trigger the GitHub OAuth sign-in flow (always opens browser,
 	 * even if sessions already exist). If owner/repo are provided,
 	 * the new session is tested and linked to that repo.

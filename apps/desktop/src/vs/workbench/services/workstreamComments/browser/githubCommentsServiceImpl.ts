@@ -13,6 +13,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IGitHubCommentsService, IGitHubPRContext, IGitHubPRComment, IGitHubPRReviewThread, IGitHubUser, IResolveContextResult, ResolveContextStatus } from '../common/githubCommentsService.js';
 import { IGitWorktreeService } from '../../orchestrator/common/gitWorktreeService.js';
+import { isCancellationError } from '../../../../base/common/errors.js';
 
 const LOG_PREFIX = '[GitHubComments]';
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -134,25 +135,9 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 	) {
 		super();
 		this._restoreRepoTokenCache();
-
-		// Auto-refresh when GitHub sessions change (sign-in, sign-out, token refresh)
-		this._register(this.authenticationService.onDidChangeSessions(e => {
-			if (e.providerId === 'github') {
-				this.refresh();
-			}
-		}));
 	}
 
 	//#region Public API
-
-	async isAuthenticated(): Promise<boolean> {
-		try {
-			const sessions = await this.authenticationService.getSessions('github', ['repo']);
-			return sessions.length > 0;
-		} catch {
-			return false;
-		}
-	}
 
 	async signIn(owner?: string, repo?: string): Promise<boolean> {
 		try {
@@ -212,6 +197,9 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 			this.logService.info(LOG_PREFIX, `No session for ${repoSlug}, sign-in required`);
 			return this._cacheResult(cacheKey, { status: ResolveContextStatus.NoAccess });
 		} catch (err) {
+			if (isCancellationError(err)) {
+				throw err; // Let caller handle — don't cache canceled requests
+			}
 			this.logService.warn(LOG_PREFIX, 'Failed to resolve PR context:', err);
 			return this._cacheResult(cacheKey, { status: ResolveContextStatus.NoPR });
 		}
@@ -261,6 +249,9 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 			this._threadsCache.set(cacheKey, { data: threads, fetchedAt: Date.now() });
 			return threads;
 		} catch (err) {
+			if (isCancellationError(err)) {
+				throw err;
+			}
 			this.logService.warn(LOG_PREFIX, 'Failed to fetch review threads:', err);
 			return [];
 		}
