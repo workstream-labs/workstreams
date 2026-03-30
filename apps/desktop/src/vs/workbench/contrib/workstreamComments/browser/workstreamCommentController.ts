@@ -14,37 +14,47 @@ import * as languages from '../../../../editor/common/languages.js';
 import { ICommentController, ICommentInfo, ICommentService, INotebookCommentInfo } from '../../comments/browser/commentService.js';
 import { IWorkstreamCommentService } from '../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
-import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { WorkstreamCommentZoneWidget } from './workstreamCommentZoneWidget.js';
+import { localize } from '../../../../nls.js';
+
+// --- Constants ---------------------------------------------------------------
 
 const OWNER_ID = 'workstreamComments';
+const TAG = '[WSComments]';
+
+/** Maximum line number for commenting ranges (covers any file). */
+const MAX_LINE_NUMBER = 0x7FFFFFFF;
+
+/** Delay before initial comment restore on startup (ms). */
+const INITIAL_RESTORE_DELAY_MS = 500;
+
+/** Staggered retry delays for re-registering commenting ranges after ext host restart (ms). */
+const RANGE_RETRY_DELAYS_MS = [500, 2000, 5000];
 
 export class WorkstreamCommentController extends Disposable implements ICommentController {
 
 	readonly id = OWNER_ID;
-	readonly label = 'Workstream Review';
+	readonly label = localize("worktreeReview.label", "Workstream Review");
 	readonly owner = OWNER_ID;
 	readonly features = {};
 	readonly options: languages.CommentOptions = {
-		prompt: "Add a review comment...",
-		placeHolder: "Leave a comment"
+		prompt: localize("worktreeReview.prompt", "Add a review comment..."),
+		placeHolder: localize("worktreeReview.placeholder", "Leave a comment"),
 	};
 	activeComment: { thread: languages.CommentThread; comment?: languages.Comment } | undefined;
 
-	/** Track active zone widgets by editor+line to avoid duplicates */
+	/** Track active zone widgets by editor+line to avoid duplicates. */
 	private readonly _activeWidgets = new Map<string, WorkstreamCommentZoneWidget>();
-
 
 	constructor(
 		private readonly commentService: ICommentService,
 		private readonly workstreamCommentService: IWorkstreamCommentService,
 		private readonly orchestratorService: IOrchestratorService,
 		private readonly codeEditorService: ICodeEditorService,
-		_dialogService: IDialogService,
 		private readonly configurationService: IConfigurationService,
-		_notificationService: INotificationService,
+		private readonly logService: ILogService,
 	) {
 		super();
 
@@ -61,7 +71,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		// When a new editor appears, listen for model changes
 		this._register(this.codeEditorService.onCodeEditorAdd(editor => {
 			this._register(editor.onDidChangeModel(() => {
-				// Dispose any zone widgets on this editor — the file changed
 				this._disposeWidgetsForEditor(editor);
 				this._onEditorReady(editor);
 			}));
@@ -88,14 +97,13 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}));
 
 		// Show comments on already-open editors (delayed to let orchestrator settle)
-		setTimeout(() => this._showSavedCommentsOnAllEditors(), 500);
+		setTimeout(() => this._showSavedCommentsOnAllEditors(), INITIAL_RESTORE_DELAY_MS);
 	}
 
 	// --- ICommentController implementation ---
 
 	async getDocumentComments(resource: URI, _token: CancellationToken): Promise<ICommentInfo<IRange>> {
 		const worktree = this.orchestratorService.activeWorktree;
-		console.log(`[WSComments] getDocumentComments called for ${resource.scheme}://${resource.fsPath}, worktree=${worktree?.name ?? 'NONE'}`);
 
 		// Only enable commenting in diff editors, not regular file editors.
 		// git:// URIs are always the left side of a diff.
@@ -103,7 +111,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		if (resource.scheme === 'git') {
 			// Left side of diff — always a diff context, proceed
 		} else if (resource.scheme === 'file') {
-			// Check if this file is shown inside a diff editor
 			const isInDiff = this.codeEditorService.listDiffEditors().some(diff => {
 				const modified = diff.getModifiedEditor().getModel()?.uri;
 				const original = diff.getOriginalEditor().getModel()?.uri;
@@ -113,23 +120,17 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 				return this._emptyCommentInfo(resource);
 			}
 		} else {
-			console.log(`[WSComments] → scheme ${resource.scheme}, returning empty`);
 			return this._emptyCommentInfo(resource);
 		}
 
 		if (!worktree) {
-			console.log('[WSComments] → no worktree, returning empty');
 			return this._emptyCommentInfo(resource);
 		}
 
-		const fileFsPath = resource.fsPath;
-		const worktreePrefix = worktree.path.endsWith('/') ? worktree.path : worktree.path + '/';
-		if (!fileFsPath.startsWith(worktreePrefix)) {
-			console.log(`[WSComments] → file not in worktree (${worktree.path}), returning empty`);
+		const worktreePrefix = this._normalizePrefix(worktree.path);
+		if (!resource.fsPath.startsWith(worktreePrefix)) {
 			return this._emptyCommentInfo(resource);
 		}
-
-		console.log('[WSComments] → returning commenting ranges for all lines');
 
 		// Show saved comments on editors displaying this file.
 		// This is the reliable trigger — onCodeEditorAdd/onDidChangeModel miss
@@ -140,14 +141,13 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}
 		}
 
-		// All lines commentable — the decorator clips to the actual line count
 		return {
 			uniqueOwner: OWNER_ID,
 			label: this.label,
 			threads: [],
 			commentingRanges: {
 				resource,
-				ranges: [{ startLineNumber: 1, startColumn: 1, endLineNumber: 0x7FFFFFFF, endColumn: 1 }],
+				ranges: [{ startLineNumber: 1, startColumn: 1, endLineNumber: MAX_LINE_NUMBER, endColumn: 1 }],
 				fileComments: false,
 			},
 		};
@@ -158,18 +158,15 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	}
 
 	async createCommentThreadTemplate(resource: UriComponents, range: IRange | undefined, editorId?: string): Promise<void> {
-		console.log(`[WSComments] createCommentThreadTemplate called, range=${range?.startLineNumber}, editorId=${editorId}`);
 		if (!range) {
 			return;
 		}
 
-		// Find the editor that triggered this
 		const editor = this._findEditor(URI.revive(resource), editorId);
 		if (!editor) {
 			return;
 		}
 
-		// Determine which side of the diff the comment is on
 		const side = this._isOriginalSideOfDiff(editor) ? 'old' : 'new';
 		this._openWidget(editor, range.startLineNumber, side);
 	}
@@ -193,15 +190,11 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	// --- Helpers ---
 
 	private async _onEditorReady(editor: ICodeEditor): Promise<void> {
-		const uri = editor.getModel()?.uri.fsPath ?? 'no-model';
-		console.log(`[WSComments] _onEditorReady: ${uri}`);
 		await this._showSavedComments(editor);
-		// Staggered retries — Extension Host restarts during worktree switches
-		// mean CommentsController instances may not exist yet
 		this._refreshCommentingRanges();
-		setTimeout(() => this._refreshCommentingRanges(), 500);
-		setTimeout(() => this._refreshCommentingRanges(), 2000);
-		setTimeout(() => this._refreshCommentingRanges(), 5000);
+		for (const delay of RANGE_RETRY_DELAYS_MS) {
+			setTimeout(() => this._refreshCommentingRanges(), delay);
+		}
 	}
 
 	private _disposeAllWidgets(): void {
@@ -212,9 +205,9 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	}
 
 	private _disposeWidgetsForEditor(editor: ICodeEditor): void {
-		const editorId = editor.getId();
+		const prefix = editor.getId() + ':';
 		for (const [key, widget] of this._activeWidgets) {
-			if (key.startsWith(editorId + ':')) {
+			if (key.startsWith(prefix)) {
 				widget.dispose();
 				this._activeWidgets.delete(key);
 			}
@@ -222,7 +215,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	}
 
 	private _refreshCommentingRanges(): void {
-		console.log('[WSComments] refreshCommentingRanges (re-register)');
 		// Unregister and re-register to force VS Code's CommentsController
 		// instances to re-query getDocumentComments from scratch.
 		// updateCommentingRanges alone is not strong enough — the event gets
@@ -237,45 +229,38 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			await this._showSavedComments(editor);
 		}
 		this._refreshCommentingRanges();
-		setTimeout(() => this._refreshCommentingRanges(), 500);
-		setTimeout(() => this._refreshCommentingRanges(), 2000);
-		setTimeout(() => this._refreshCommentingRanges(), 5000);
+		for (const delay of RANGE_RETRY_DELAYS_MS) {
+			setTimeout(() => this._refreshCommentingRanges(), delay);
+		}
 	}
 
 	private async _showSavedComments(editor: ICodeEditor): Promise<void> {
 		try {
 			const model = editor.getModel();
 			if (!model) {
-				console.log('[WSComments] _showSavedComments: no model, skip');
 				return;
 			}
 
 			const worktree = this.orchestratorService.activeWorktree;
 			if (!worktree) {
-				console.log('[WSComments] _showSavedComments: no worktree, skip');
 				return;
 			}
 
-			const fileFsPath = model.uri.fsPath;
-			const worktreePrefix = worktree.path.endsWith('/') ? worktree.path : worktree.path + '/';
-			if (!fileFsPath.startsWith(worktreePrefix)) {
-				console.log(`[WSComments] _showSavedComments: file ${fileFsPath} not in worktree ${worktree.path}, skip`);
+			const worktreePrefix = this._normalizePrefix(worktree.path);
+			if (!model.uri.fsPath.startsWith(worktreePrefix)) {
 				return;
 			}
 
 			// Always clear old widgets on this editor first — the file may have changed
 			this._disposeWidgetsForEditor(editor);
 
-			// Determine which side this editor represents
 			const isOriginal = this._isOriginalSideOfDiff(editor);
 			const editorSide: 'old' | 'new' = isOriginal ? 'old' : 'new';
-			console.log(`[WSComments] _showSavedComments: ${fileFsPath}, side=${editorSide}, editorId=${editor.getId()}`);
 
-			const relativePath = fileFsPath.substring(worktreePrefix.length);
+			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
 			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
 
 			for (const comment of comments) {
-				// Only show comments that belong to this side
 				if (comment.side !== editorSide) {
 					continue;
 				}
@@ -302,8 +287,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 
 				widget.display();
 			}
-		} catch {
-			// Silently ignore — don't break the controller
+		} catch (err) {
+			this.logService.warn(TAG, 'Failed to show saved comments:', err);
 		}
 	}
 
@@ -349,6 +334,11 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			return editors.find(e => e.getId() === editorId);
 		}
 		return editors.find(e => e.getModel()?.uri.toString() === resource.toString());
+	}
+
+	/** Normalize a worktree path to always end with '/' for safe prefix matching. */
+	private _normalizePrefix(path: string): string {
+		return path.endsWith('/') ? path : path + '/';
 	}
 
 	private _emptyCommentInfo(resource: URI): ICommentInfo<IRange> {

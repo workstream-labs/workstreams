@@ -12,14 +12,32 @@ import { IOrchestratorService } from '../../../services/orchestrator/common/orch
 import { Color, RGBA } from '../../../../base/common/color.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Emitter } from '../../../../base/common/event.js';
+import { localize } from '../../../../nls.js';
+
+// --- Constants ---------------------------------------------------------------
 
 const FRAME_COLOR = new Color(new RGBA(0, 122, 204, 0.5));
 const SAVED_FRAME_COLOR = new Color(new RGBA(0, 122, 204, 0.3));
+
+/** Height in editor lines for the edit mode zone widget. */
+const EDIT_MODE_HEIGHT = 10;
+
+/** Minimum height in editor lines for the display mode zone widget. */
+const MIN_DISPLAY_HEIGHT = 5;
+
+/** Lines reserved for header, padding, actions row, frame, and breathing room in display mode. */
+const DISPLAY_PADDING_LINES = 6;
+
+/** Estimated characters per visual line for word-wrap height calculation. */
+const ESTIMATED_CHARS_PER_LINE = 60;
+
+// --- Widget ------------------------------------------------------------------
 
 export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 	private _root!: HTMLElement;
 	private _savedComment: IWorkstreamComment | undefined;
+	private _closed = false;
 
 	private readonly _onDidClose = new Emitter<void>();
 	readonly onDidClose = this._onDidClose.event;
@@ -62,10 +80,13 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private _renderDisplayMode(): void {
 		clearNode(this._root);
 
+		const sideLabel = this._side === 'old'
+			? localize("comment.side.original", "original")
+			: localize("comment.side.modified", "modified");
+
 		const header = document.createElement('div');
 		header.className = 'ws-comment-header';
-		const sideLabel = this._side === 'old' ? 'original' : 'modified';
-		header.textContent = `Comment on line ${this._lineNumber} (${sideLabel})`;
+		header.textContent = localize("comment.header.display", "Comment on line {0} ({1})", this._lineNumber, sideLabel);
 		this._root.appendChild(header);
 
 		const body = document.createElement('div');
@@ -78,13 +99,13 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		const editBtn = document.createElement('button');
 		editBtn.className = 'ws-comment-btn ws-comment-btn-cancel';
-		editBtn.textContent = 'Edit';
+		editBtn.textContent = localize("comment.action.edit", "Edit");
 		editBtn.addEventListener('click', () => this._switchToEditMode());
 		actions.appendChild(editBtn);
 
 		const deleteBtn = document.createElement('button');
 		deleteBtn.className = 'ws-comment-btn ws-comment-btn-delete';
-		deleteBtn.textContent = 'Delete';
+		deleteBtn.textContent = localize("comment.action.delete", "Delete");
 		deleteBtn.addEventListener('click', () => this._delete());
 		actions.appendChild(deleteBtn);
 
@@ -96,17 +117,20 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private _renderEditMode(): void {
 		clearNode(this._root);
 
+		const sideLabel = this._side === 'old'
+			? localize("comment.side.original", "original")
+			: localize("comment.side.modified", "modified");
+
 		const header = document.createElement('div');
 		header.className = 'ws-comment-header';
-		const sideLabel = this._side === 'old' ? 'original' : 'modified';
 		header.textContent = this._savedComment
-			? `Edit comment on line ${this._lineNumber} (${sideLabel})`
-			: `Add a comment on line ${this._lineNumber} (${sideLabel})`;
+			? localize("comment.header.edit", "Edit comment on line {0} ({1})", this._lineNumber, sideLabel)
+			: localize("comment.header.add", "Add a comment on line {0} ({1})", this._lineNumber, sideLabel);
 		this._root.appendChild(header);
 
 		const textarea = document.createElement('textarea');
 		textarea.className = 'ws-comment-textarea';
-		textarea.placeholder = 'Leave a comment';
+		textarea.placeholder = localize("comment.placeholder", "Leave a comment");
 		textarea.rows = 4;
 		if (this._savedComment) {
 			textarea.value = this._savedComment.text;
@@ -114,7 +138,9 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		const submitBtn = document.createElement('button');
 		submitBtn.className = 'ws-comment-btn ws-comment-btn-submit';
-		submitBtn.textContent = this._savedComment ? 'Update' : 'Comment';
+		submitBtn.textContent = this._savedComment
+			? localize("comment.action.update", "Update")
+			: localize("comment.action.comment", "Comment");
 		submitBtn.disabled = !this._savedComment;
 
 		textarea.addEventListener('input', () => {
@@ -144,7 +170,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		const cancelBtn = document.createElement('button');
 		cancelBtn.className = 'ws-comment-btn ws-comment-btn-cancel';
-		cancelBtn.textContent = 'Cancel';
+		cancelBtn.textContent = localize("comment.action.cancel", "Cancel");
 		cancelBtn.addEventListener('click', () => {
 			if (this._savedComment) {
 				this._renderDisplayMode();
@@ -156,7 +182,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		const deleteBtn = document.createElement('button');
 		deleteBtn.className = 'ws-comment-btn ws-comment-btn-delete';
-		deleteBtn.textContent = 'Delete';
+		deleteBtn.textContent = localize("comment.action.delete", "Delete");
 		deleteBtn.disabled = !this._savedComment;
 		deleteBtn.addEventListener('click', () => this._delete());
 		actions.appendChild(deleteBtn);
@@ -169,19 +195,26 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 	private _switchToEditMode(): void {
 		this._renderEditMode();
-		// Re-show to ensure zone height is correct
-		this.show({ lineNumber: this._lineNumber, column: 1 }, 10);
+		this.show({ lineNumber: this._lineNumber, column: 1 }, EDIT_MODE_HEIGHT);
 	}
 
 	public display(): void {
-		const heightInLines = this._savedComment ? 7 : 10;
+		const heightInLines = this._savedComment
+			? this._estimateDisplayHeight(this._savedComment.text)
+			: EDIT_MODE_HEIGHT;
 		this.show({ lineNumber: this._lineNumber, column: 1 }, heightInLines);
 
 		if (!this._savedComment) {
-			// Focus textarea for new comments
 			const textarea = this._root.querySelector('.ws-comment-textarea') as HTMLTextAreaElement | null;
 			setTimeout(() => textarea?.focus(), 0);
 		}
+	}
+
+	private _estimateDisplayHeight(text: string): number {
+		const wrappedLines = text.split('\n').reduce(
+			(sum, line) => sum + Math.max(1, Math.ceil(line.length / ESTIMATED_CHARS_PER_LINE)), 0
+		);
+		return Math.max(MIN_DISPLAY_HEIGHT, wrappedLines + DISPLAY_PADDING_LINES);
 	}
 
 	// --- Actions ---
@@ -209,17 +242,13 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 		if (this._savedComment) {
 			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
-			// Close — onDidChangeComments will recreate with updated text
-			this._close();
 		} else {
 			await this._workstreamCommentService.addComment(
 				worktree.name, relativePath, this._lineNumber, text, this._side
 			);
-			// Close this widget — the onDidChangeComments listener in the
-			// controller will recreate it from saved data via _showSavedComments.
-			// If we stay open, we'd be a duplicate of the recreated widget.
-			this._close();
 		}
+		// Close — onDidChangeComments will recreate from saved data
+		this._close();
 	}
 
 	private async _delete(): Promise<void> {
@@ -235,8 +264,6 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		await this._workstreamCommentService.deleteComment(worktree.name, this._savedComment.id);
 		this._close();
 	}
-
-	private _closed = false;
 
 	private _close(): void {
 		if (this._closed) {
