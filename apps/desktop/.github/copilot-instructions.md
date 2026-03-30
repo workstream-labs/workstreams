@@ -149,6 +149,53 @@ The app tracks Claude Code lifecycle events in each worktree via a hook-based no
 ### Environment variable
 Terminals created in worktrees get `WORKSTREAMS_WORKTREE_PATH` injected so hook scripts can identify which worktree a Claude session belongs to.
 
+## Workstream Review Comments
+
+Inline review comments on diff editors that can be sent to Claude for automated fixes. Comments are scoped per worktree and stored in CLI-compatible JSON.
+
+### Key files
+- **Service interface**: `src/vs/workbench/services/workstreamComments/common/workstreamCommentService.ts` — `IWorkstreamCommentService`, `IWorkstreamComment`, `IWorkstreamCommentThread`
+- **Service implementation**: `src/vs/workbench/services/workstreamComments/browser/workstreamCommentServiceImpl.ts` — persistence to `.workstreams/comments/{workstream}.json`
+- **Comment controller**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamCommentController.ts` — implements `ICommentController`, registers the "+" glyph on diff editors
+- **Zone widget**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamCommentZoneWidget.ts` — inline comment UI (edit/display modes)
+- **Contribution + send action**: `src/vs/workbench/contrib/workstreamComments/browser/workstreamComments.contribution.ts` — startup registration and "Send Review Comments to Claude" command
+
+### How commenting works
+1. User opens a diff editor (must be split-side mode — inline diff not supported)
+2. Clicking the "+" gutter glyph calls `CommentController.createCommentThreadTemplate()`
+3. A `WorkstreamCommentZoneWidget` opens in edit mode with a textarea
+4. On submit (Ctrl+Enter or click Comment), the service writes the comment to disk at `{repoPath}/.workstreams/comments/{worktreeName}.json`
+5. Widget switches to display mode showing the saved comment with Edit/Delete buttons
+
+### How sending comments to Claude works
+Command: **"Workstream: Send Review Comments to Claude"** (Command Palette, id: `workstreamComments.sendToClaude`)
+
+1. Fetches all comments for the active worktree via `commentService.getComments(worktree.name)`
+2. Opens a QuickPick listing each comment with file:line, side (original/modified), and preview — all pre-selected
+3. User can deselect individual comments or click "Send All"
+4. Creates a new terminal, runs `claude`, waits 2 seconds for initialization
+5. Sends a formatted markdown prompt listing each comment with file path, line number, side, and text
+6. Deletes all sent comments from disk and memory
+7. Shows notification: "Sent N comment(s) to Claude and cleared them"
+
+### Comment data model
+```typescript
+IWorkstreamComment {
+  id: string;           // UUID
+  filePath: string;     // relative path within worktree
+  line: number;
+  side: 'old' | 'new';
+  lineType?: 'add' | 'remove' | 'context';
+  lineContent?: string;
+  text: string;
+  createdAt: string;
+  resolved: boolean;
+}
+```
+
+### Storage
+Comments persist to `{repoPath}/.workstreams/comments/{worktreeName}.json` in CLI-compatible format. The base path is set from the first orchestrator repository and updates on worktree/repo changes.
+
 ## Sessions Layer (Agent Window)
 
 `src/vs/sessions/` is a complete, independent workbench implementation optimized for agent session workflows. It is **not** an extension of the standard workbench — it's a parallel window type with its own layout, parts, and contributions.
