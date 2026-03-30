@@ -123,7 +123,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 
 		const fileFsPath = resource.fsPath;
-		if (!fileFsPath.startsWith(worktree.path)) {
+		const worktreePrefix = worktree.path.endsWith('/') ? worktree.path : worktree.path + '/';
+		if (!fileFsPath.startsWith(worktreePrefix)) {
 			console.log(`[WSComments] → file not in worktree (${worktree.path}), returning empty`);
 			return this._emptyCommentInfo(resource);
 		}
@@ -256,7 +257,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}
 
 			const fileFsPath = model.uri.fsPath;
-			if (!fileFsPath.startsWith(worktree.path)) {
+			const worktreePrefix = worktree.path.endsWith('/') ? worktree.path : worktree.path + '/';
+			if (!fileFsPath.startsWith(worktreePrefix)) {
 				console.log(`[WSComments] _showSavedComments: file ${fileFsPath} not in worktree ${worktree.path}, skip`);
 				return;
 			}
@@ -269,7 +271,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			const editorSide: 'old' | 'new' = isOriginal ? 'old' : 'new';
 			console.log(`[WSComments] _showSavedComments: ${fileFsPath}, side=${editorSide}, editorId=${editor.getId()}`);
 
-			const relativePath = fileFsPath.substring(worktree.path.length + 1);
+			const relativePath = fileFsPath.substring(worktreePrefix.length);
 			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
 
 			for (const comment of comments) {

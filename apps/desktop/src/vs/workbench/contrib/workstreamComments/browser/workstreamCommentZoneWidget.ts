@@ -236,7 +236,13 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		this._close();
 	}
 
+	private _closed = false;
+
 	private _close(): void {
+		if (this._closed) {
+			return;
+		}
+		this._closed = true;
 		this.hide();
 		this._onDidClose.fire();
 		this.dispose();
@@ -244,10 +250,11 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 
 	private _getRelativePath(resource: URI, worktreePath: string): string | undefined {
 		const fsPath = resource.fsPath;
-		if (!fsPath.startsWith(worktreePath)) {
+		const prefix = worktreePath.endsWith('/') ? worktreePath : worktreePath + '/';
+		if (!fsPath.startsWith(prefix)) {
 			return undefined;
 		}
-		return fsPath.substring(worktreePath.length + 1);
+		return fsPath.substring(prefix.length);
 	}
 
 	override dispose(): void {
