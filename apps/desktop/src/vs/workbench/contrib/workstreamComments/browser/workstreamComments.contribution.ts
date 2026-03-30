@@ -17,10 +17,14 @@ import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { WorkstreamCommentController } from './workstreamCommentController.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { IWorkstreamComment } from '../../../services/workstreamComments/common/workstreamCommentService.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
+import { VIEWLET_ID } from '../../scm/common/scm.js';
+import { WorkstreamCommentsViewRegistration } from './workstreamCommentsView.js';
 
 // Ensure the service singleton is registered (side-effect import)
 import '../../../services/workstreamComments/browser/workstreamCommentServiceImpl.js';
@@ -39,6 +43,7 @@ class WorkstreamCommentsContribution extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INotificationService _notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
 
@@ -69,6 +74,22 @@ class WorkstreamCommentsContribution extends Disposable {
 		this._register(this.orchestratorService.onDidChangeRepositories(() => {
 			this._updateBasePath();
 		}));
+
+		// Register the Comments tree view in the SCM sidebar
+		this._initializeView();
+	}
+
+	private _initializeView(): void {
+		const scmContainer = Registry.as<IViewContainersRegistry>(
+			ViewContainerExtensions.ViewContainersRegistry
+		).get(VIEWLET_ID);
+
+		if (scmContainer) {
+			this._register(this.instantiationService.createInstance(
+				WorkstreamCommentsViewRegistration,
+				scmContainer,
+			));
+		}
 	}
 
 	private _updateBasePath(): void {
