@@ -456,8 +456,9 @@ const viewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewCo
 	ctorDescriptor: new SyncDescriptor(DebugViewPaneContainer),
 	icon: icons.runViewIcon,
 	alwaysUseContainerInfo: true,
+	hideIfEmpty: true,
 	order: 3,
-}, ViewContainerLocation.Sidebar, { isDefault: false });
+}, ViewContainerLocation.Panel, { isDefault: false });
 
 // Register default debug views
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
