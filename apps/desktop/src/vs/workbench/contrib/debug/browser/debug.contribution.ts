@@ -453,17 +453,11 @@ Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([{
 const viewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
 	id: VIEWLET_ID,
 	title: nls.localize2('run and debug', "Run and Debug"),
-	openCommandActionDescriptor: {
-		id: VIEWLET_ID,
-		mnemonicTitle: nls.localize({ key: 'miViewRun', comment: ['&& denotes a mnemonic'] }, "&&Run"),
-		keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD },
-		order: 3
-	},
 	ctorDescriptor: new SyncDescriptor(DebugViewPaneContainer),
 	icon: icons.runViewIcon,
 	alwaysUseContainerInfo: true,
 	order: 3,
-}, ViewContainerLocation.Sidebar);
+}, ViewContainerLocation.Sidebar, { isDefault: false });
 
 // Register default debug views
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);

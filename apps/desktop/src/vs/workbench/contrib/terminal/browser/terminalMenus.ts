@@ -46,7 +46,7 @@ export function setupTerminalMenus(): void {
 			title: localize('terminalEditorTitle', "New Terminal in Editor"),
 			icon: Codicon.terminal,
 		},
-		order: 2
+		order: 0
 	});
 
 	MenuRegistry.appendMenuItems(

@@ -12,7 +12,7 @@ import { Categories } from '../../../../platform/action/common/actionCommonCateg
 import { alert } from '../../../../base/browser/ui/aria/aria.js';
 import { AuxiliaryBarMaximizedContext, AuxiliaryBarVisibleContext } from '../../../common/contextkeys.js';
 import { ViewContainerLocation, ViewContainerLocationToString } from '../../../common/views.js';
-import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../services/panecomposite/browser/panecomposite.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -78,16 +78,6 @@ export class ToggleAuxiliaryBarAction extends Action2 {
 
 registerAction2(ToggleAuxiliaryBarAction);
 
-MenuRegistry.appendMenuItem(MenuId.AuxiliaryBarTitle, {
-	command: {
-		id: ToggleAuxiliaryBarAction.ID,
-		title: localize('closeSecondarySideBar', 'Hide Secondary Side Bar'),
-		icon: closeIcon
-	},
-	group: 'navigation',
-	order: 2,
-	when: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT)
-});
 
 registerAction2(class extends Action2 {
 	constructor() {
@@ -238,11 +228,6 @@ class ToggleMaximizedAuxiliaryBar extends Action2 {
 			toggled: {
 				condition: AuxiliaryBarMaximizedContext,
 				tooltip: localize('restoreAuxiliaryBar', 'Restore Secondary Side Bar'),
-			},
-			menu: {
-				id: MenuId.AuxiliaryBarTitle,
-				group: 'navigation',
-				order: 1,
 			}
 		});
 	}

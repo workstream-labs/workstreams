@@ -268,7 +268,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 	private titleBarPartView!: ISerializableView;
 	private bannerPartView!: ISerializableView;
-	private orchestratorPartView!: ISerializableView;
 	private activityBarPartView!: ISerializableView;
 	private sideBarPartView!: ISerializableView;
 	private panelPartView!: ISerializableView;
@@ -1339,8 +1338,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				return !this.stateModel.getRuntimeValue(LayoutStateKeys.ACTIVITYBAR_HIDDEN);
 			case Parts.EDITOR_PART:
 				return !this.stateModel.getRuntimeValue(LayoutStateKeys.EDITOR_HIDDEN);
-			case Parts.ORCHESTRATOR_PART:
-				return true; // orchestrator is always visible
 			case Parts.BANNER_PART:
 				return this.initialized ? this.workbenchGrid.isViewVisible(this.bannerPartView) : false;
 			default:
@@ -1601,7 +1598,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	protected createWorkbenchLayout(): void {
 		const titleBar = this.getPart(Parts.TITLEBAR_PART);
 		const bannerPart = this.getPart(Parts.BANNER_PART);
-		const orchestratorPart = this.getPart(Parts.ORCHESTRATOR_PART);
 		const editorPart = this.getPart(Parts.EDITOR_PART);
 		const activityBar = this.getPart(Parts.ACTIVITYBAR_PART);
 		const panelPart = this.getPart(Parts.PANEL_PART);
@@ -1612,7 +1608,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// View references for all parts
 		this.titleBarPartView = titleBar;
 		this.bannerPartView = bannerPart;
-		this.orchestratorPartView = orchestratorPart;
 		this.sideBarPartView = sideBar;
 		this.activityBarPartView = activityBar;
 		this.editorPartView = editorPart;
@@ -1621,7 +1616,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.statusBarPartView = statusBar;
 
 		const viewMap: Record<string, ISerializableView> = {
-			[Parts.ORCHESTRATOR_PART]: this.orchestratorPartView,
 			[Parts.ACTIVITYBAR_PART]: this.activityBarPartView,
 			[Parts.BANNER_PART]: this.bannerPartView,
 			[Parts.TITLEBAR_PART]: this.titleBarPartView,
@@ -1644,7 +1638,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.workbenchGrid = workbenchGrid;
 		this.workbenchGrid.edgeSnapping = this.state.runtime.mainWindowFullscreen;
 
-		for (const part of [titleBar, editorPart, activityBar, panelPart, sideBar, statusBar, auxiliaryBarPart, bannerPart, orchestratorPart]) {
+		for (const part of [titleBar, editorPart, activityBar, panelPart, sideBar, statusBar, auxiliaryBarPart, bannerPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
 				if (!this.inMaximizedAuxiliaryBarTransition) {
 
@@ -2225,9 +2219,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	}
 
 	private setAuxiliaryBarHidden(hidden: boolean, skipLayout?: boolean): void {
-		// Force auxiliary bar (chat) to always stay hidden
-		hidden = true;
-
 		if (hidden && this.setAuxiliaryBarMaximized(false) && !this.isVisible(Parts.AUXILIARYBAR_PART)) {
 			return; // return: leaving maximised auxiliary bar made this part hidden
 		}
@@ -2279,7 +2270,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			case Parts.BANNER_PART:
 				return this.setBannerHidden(hidden);
 			case Parts.AUXILIARYBAR_PART:
-				return this.setAuxiliaryBarHidden(true); // Always keep auxiliary bar (chat) hidden
+				return this.setAuxiliaryBarHidden(hidden);
 			case Parts.PANEL_PART:
 				return this.setPanelHidden(hidden);
 		}
@@ -2514,8 +2505,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		};
 	}
 
-	private arrangeMiddleSectionNodes(nodes: { editor: ISerializedNode; panel: ISerializedNode; activityBar: ISerializedNode; sideBar: ISerializedNode; auxiliaryBar: ISerializedNode; orchestrator: ISerializedNode }, availableWidth: number, availableHeight: number): ISerializedNode[] {
-		const orchestratorSize = nodes.orchestrator.size;
+	private arrangeMiddleSectionNodes(nodes: { editor: ISerializedNode; panel: ISerializedNode; activityBar: ISerializedNode; sideBar: ISerializedNode; auxiliaryBar: ISerializedNode }, availableWidth: number, availableHeight: number): ISerializedNode[] {
 		const activityBarSize = this.stateModel.getRuntimeValue(LayoutStateKeys.ACTIVITYBAR_HIDDEN) ? 0 : nodes.activityBar.size;
 		const sideBarSize = this.stateModel.getRuntimeValue(LayoutStateKeys.SIDEBAR_HIDDEN) ? 0 : nodes.sideBar.size;
 		const auxiliaryBarSize = this.stateModel.getRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN) ? 0 : nodes.auxiliaryBar.size;
@@ -2527,7 +2517,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		const result = [] as ISerializedNode[];
 		if (!isHorizontal(panelPostion)) {
 			result.push(nodes.editor);
-			nodes.editor.size = availableWidth - orchestratorSize - activityBarSize - sideBarSize - panelSize - auxiliaryBarSize;
+			nodes.editor.size = availableWidth - activityBarSize - sideBarSize - panelSize - auxiliaryBarSize;
 			if (panelPostion === Position.RIGHT) {
 				result.push(nodes.panel);
 			} else {
@@ -2548,7 +2538,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			const sideBarNextToEditor = !(panelAlignment === 'center' || (sideBarPosition === Position.LEFT && panelAlignment === 'right') || (sideBarPosition === Position.RIGHT && panelAlignment === 'left'));
 			const auxiliaryBarNextToEditor = !(panelAlignment === 'center' || (sideBarPosition === Position.RIGHT && panelAlignment === 'right') || (sideBarPosition === Position.LEFT && panelAlignment === 'left'));
 
-			const editorSectionWidth = availableWidth - orchestratorSize - activityBarSize - (sideBarNextToEditor ? 0 : sideBarSize) - (auxiliaryBarNextToEditor ? 0 : auxiliaryBarSize);
+			const editorSectionWidth = availableWidth - activityBarSize - (sideBarNextToEditor ? 0 : sideBarSize) - (auxiliaryBarNextToEditor ? 0 : auxiliaryBarSize);
 
 			const editorNodes = this.arrangeEditorNodes({
 				editor: nodes.editor,
@@ -2587,9 +2577,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			}
 		}
 
-		// Orchestrator is always far-left
-		result.splice(0, 0, nodes.orchestrator);
-
 		return result;
 	}
 
@@ -2602,7 +2589,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		const titleBarHeight = this.titleBarPartView.minimumHeight;
 		const bannerHeight = this.bannerPartView.minimumHeight;
 		const statusBarHeight = this.statusBarPartView.minimumHeight;
-		const orchestratorWidth = this.orchestratorPartView.minimumWidth;
 		const activityBarWidth = this.activityBarPartView.minimumWidth;
 		const middleSectionHeight = height - titleBarHeight - statusBarHeight;
 
@@ -2620,13 +2606,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				visible: false
 			}
 		];
-
-		const orchestratorNode: ISerializedLeafNode = {
-			type: 'leaf',
-			data: { type: Parts.ORCHESTRATOR_PART },
-			size: orchestratorWidth,
-			visible: true
-		};
 
 		const activityBarNode: ISerializedLeafNode = {
 			type: 'leaf',
@@ -2664,7 +2643,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		};
 
 		const middleSection: ISerializedNode[] = this.arrangeMiddleSectionNodes({
-			orchestrator: orchestratorNode,
 			activityBar: activityBarNode,
 			auxiliaryBar: auxiliaryBarNode,
 			editor: editorNode,
@@ -2840,7 +2818,7 @@ const LayoutStateKeys = {
 	SIDEBAR_HIDDEN: new RuntimeStateKey<boolean>('sideBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	EDITOR_HIDDEN: new RuntimeStateKey<boolean>('editor.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	PANEL_HIDDEN: new RuntimeStateKey<boolean>('panel.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
-	AUXILIARYBAR_HIDDEN: new RuntimeStateKey<boolean>('auxiliaryBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
+	AUXILIARYBAR_HIDDEN: new RuntimeStateKey<boolean>('auxiliaryBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	STATUSBAR_HIDDEN: new RuntimeStateKey<boolean>('statusBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false, true)
 
 } as const;

@@ -57,6 +57,7 @@ export interface IOrchestratorService {
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): void;
 	pickAndAddRepository(): Promise<void>;
+	pickAndAddWorktree(repoPath: string): Promise<void>;
 	addRepository(path: string): Promise<void>;
 	removeRepository(repoPath: string): Promise<void>;
 	toggleRepositoryCollapsed(repoPath: string): void;

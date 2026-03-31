@@ -312,6 +312,7 @@ import './contrib/terminal/terminal.all.js';
 
 // Orchestrator terminal isolation
 import './contrib/orchestrator/browser/orchestratorTerminalContribution.js';
+import './contrib/orchestrator/browser/orchestratorViewPane.js';
 
 // External terminal
 import './contrib/externalTerminal/browser/externalTerminal.contribution.js';

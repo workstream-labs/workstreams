@@ -363,7 +363,7 @@ MenuRegistry.appendMenuItems([
 					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both')),
 				ContextKeyExpr.equals('config.workbench.sideBar.location', 'left')
 			),
-			order: 0
+			order: 2
 		}
 	}, {
 		id: MenuId.LayoutControlMenu,
@@ -383,6 +383,46 @@ MenuRegistry.appendMenuItems([
 				ContextKeyExpr.equals('config.workbench.sideBar.location', 'right')
 			),
 			order: 2
+		}
+	}, {
+		// Auxiliary bar toggle — aux bar is on the RIGHT when sidebar is on LEFT
+		id: MenuId.LayoutControlMenu,
+		item: {
+			group: '2_pane_toggles',
+			command: {
+				id: ToggleAuxiliaryBarAction.ID,
+				title: localize('toggleAuxiliaryBar', "Toggle Secondary Side Bar"),
+				icon: panelRightOffIcon,
+				toggled: { condition: AuxiliaryBarVisibleContext, icon: panelRightIcon }
+			},
+			when: ContextKeyExpr.and(
+				IsAuxiliaryWindowContext.negate(),
+				ContextKeyExpr.or(
+					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'toggles'),
+					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both')),
+				ContextKeyExpr.equals('config.workbench.sideBar.location', 'left')
+			),
+			order: 1
+		}
+	}, {
+		// Auxiliary bar toggle — aux bar is on the LEFT when sidebar is on RIGHT
+		id: MenuId.LayoutControlMenu,
+		item: {
+			group: '2_pane_toggles',
+			command: {
+				id: ToggleAuxiliaryBarAction.ID,
+				title: localize('toggleAuxiliaryBar', "Toggle Secondary Side Bar"),
+				icon: panelLeftOffIcon,
+				toggled: { condition: AuxiliaryBarVisibleContext, icon: panelLeftIcon }
+			},
+			when: ContextKeyExpr.and(
+				IsAuxiliaryWindowContext.negate(),
+				ContextKeyExpr.or(
+					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'toggles'),
+					ContextKeyExpr.equals('config.workbench.layoutControl.type', 'both')),
+				ContextKeyExpr.equals('config.workbench.sideBar.location', 'right')
+			),
+			order: 1
 		}
 	}
 ]);

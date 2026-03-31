@@ -8,7 +8,6 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IStringDictionary } from '../../../../base/common/collections.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { Event } from '../../../../base/common/event.js';
-import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { mnemonicButtonLabel } from '../../../../base/common/labels.js';
 import { Disposable, DisposableStore, IDisposable, isDisposable } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
@@ -116,12 +115,6 @@ export const VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainer
 	{
 		id: VIEWLET_ID,
 		title: localize2('extensions', "Extensions"),
-		openCommandActionDescriptor: {
-			id: VIEWLET_ID,
-			mnemonicTitle: localize({ key: 'miViewExtensions', comment: ['&& denotes a mnemonic'] }, "E&&xtensions"),
-			keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyX },
-			order: 4,
-		},
 		ctorDescriptor: new SyncDescriptor(ExtensionsViewPaneContainer),
 		icon: extensionsViewIcon,
 		order: 4,

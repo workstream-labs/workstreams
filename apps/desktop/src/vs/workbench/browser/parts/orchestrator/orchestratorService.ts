@@ -6,9 +6,7 @@
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
-import { OrchestratorPart } from './orchestratorPart.js';
 import { basename } from '../../../../base/common/path.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
@@ -57,7 +55,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	private readonly _onDidChangeSessionState = this._register(new Emitter<{ worktreePath: string; state: WorktreeSessionState }>());
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
-	private readonly _part: OrchestratorPart;
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
 
 	/**
@@ -68,14 +65,10 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	pendingTerminalRestore: Promise<void> = Promise.resolve();
 
-	/** @internal Exposed only for layout system registration */
-	get part(): OrchestratorPart { return this._part; }
-
 	get repositories(): readonly IRepositoryEntry[] { return this._repositories; }
 	get activeWorktree(): IWorktreeEntry | undefined { return this._activeWorktree; }
 
 	constructor(
-		@IInstantiationService instantiationService: IInstantiationService,
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IGitWorktreeService private readonly gitService: IGitWorktreeService,
@@ -88,20 +81,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		@IProgressService private readonly progressService: IProgressService,
 	) {
 		super();
-		this._part = this._register(instantiationService.createInstance(OrchestratorPart));
-		this.wirePartEvents();
 		this.whenReady = this.restoreState();
-	}
-
-	private wirePartEvents(): void {
-		this._register(this._part.onDidRequestAddRepository(() => this.pickAndAddRepository()));
-		this._register(this._part.onDidRequestRemoveRepository(repo => this.removeRepository(repo.path)));
-		this._register(this._part.onDidToggleCollapse(repo => this.toggleRepositoryCollapsed(repo.path)));
-		this._register(this._part.onDidRequestAddWorktree(repo => this.pickAndAddWorktree(repo.path)));
-		this._register(this._part.onDidRequestDeleteWorktree(({ repo, worktree }) => this.removeWorktree(repo.path, worktree.branch)));
-		this._register(this._part.onDidSelectWorktree(worktree => this.switchTo(worktree)));
-
-		this._register(this.onDidChangeRepositories(() => this._part.setRepositories([...this._repositories])));
 	}
 
 	async pickAndAddRepository(): Promise<void> {
@@ -117,7 +97,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 	}
 
-	private async pickAndAddWorktree(repoPath: string): Promise<void> {
+	async pickAndAddWorktree(repoPath: string): Promise<void> {
 		const name = await this.quickInputService.input({
 			title: localize('worktreeName', "New Worktree"),
 			placeHolder: localize('worktreeNamePlaceholder', "Worktree name (becomes branch name)"),

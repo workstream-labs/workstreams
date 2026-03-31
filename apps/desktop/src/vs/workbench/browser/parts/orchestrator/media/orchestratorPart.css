@@ -3,20 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* -- Container -- */
+/* -- ViewPane body container -- */
 
-.monaco-workbench .part.orchestrator {
+.monaco-workbench .pane-body.orchestrator-content {
 	display: flex;
 	flex-direction: column;
-	height: 100%;
-	background-color: var(--vscode-sideBar-background);
-	border-right: 1px solid var(--vscode-panel-border, var(--vscode-sideBar-border, transparent));
+	height: 100% !important;
+	overflow: hidden;
 	user-select: none;
 }
 
-/* -- Content -- */
+/* -- Repo list (scrollable) -- */
 
-.monaco-workbench .part.orchestrator .orchestrator-content {
+.monaco-workbench .orchestrator-content .repo-list {
 	flex: 1;
 	overflow-y: auto;
 	padding: 4px 0;
@@ -24,18 +23,18 @@
 
 /* -- Repository Section -- */
 
-.monaco-workbench .part.orchestrator .repo-section {
+.monaco-workbench .orchestrator-content .repo-section {
 	margin-bottom: 0;
 	border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.06));
 }
 
-.monaco-workbench .part.orchestrator .repo-section:last-child {
+.monaco-workbench .orchestrator-content .repo-section:last-child {
 	border-bottom: none;
 }
 
 /* -- Repository Header -- */
 
-.monaco-workbench .part.orchestrator .repo-header {
+.monaco-workbench .orchestrator-content .repo-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -45,11 +44,11 @@
 	transition: background-color 0.1s ease;
 }
 
-.monaco-workbench .part.orchestrator .repo-header:hover {
+.monaco-workbench .orchestrator-content .repo-header:hover {
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.monaco-workbench .part.orchestrator .repo-header-left {
+.monaco-workbench .orchestrator-content .repo-header-left {
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -57,13 +56,13 @@
 	flex: 1;
 }
 
-.monaco-workbench .part.orchestrator .repo-chevron {
+.monaco-workbench .orchestrator-content .repo-chevron {
 	font-size: 12px;
 	flex-shrink: 0;
 	opacity: 0.8;
 }
 
-.monaco-workbench .part.orchestrator .repo-avatar {
+.monaco-workbench .orchestrator-content .repo-avatar {
 	width: 22px;
 	height: 22px;
 	border-radius: 4px;
@@ -78,7 +77,7 @@
 	text-transform: uppercase;
 }
 
-.monaco-workbench .part.orchestrator .repo-name {
+.monaco-workbench .orchestrator-content .repo-name {
 	font-size: 12px;
 	font-weight: 600;
 	white-space: nowrap;
@@ -86,26 +85,26 @@
 	text-overflow: ellipsis;
 }
 
-.monaco-workbench .part.orchestrator .repo-count {
+.monaco-workbench .orchestrator-content .repo-count {
 	font-size: 11px;
 	opacity: 0.5;
 	flex-shrink: 0;
 }
 
-/* -- Repository Header Actions -- */
+/* -- Repository Header Actions (hover-reveal) -- */
 
-.monaco-workbench .part.orchestrator .repo-header-actions {
+.monaco-workbench .orchestrator-content .repo-header-actions {
 	display: none;
 	align-items: center;
 	gap: 2px;
 	flex-shrink: 0;
 }
 
-.monaco-workbench .part.orchestrator .repo-header:hover .repo-header-actions {
+.monaco-workbench .orchestrator-content .repo-header:hover .repo-header-actions {
 	display: flex;
 }
 
-.monaco-workbench .part.orchestrator .repo-action {
+.monaco-workbench .orchestrator-content .repo-action {
 	width: 22px;
 	height: 22px;
 	display: flex;
@@ -117,19 +116,19 @@
 	opacity: 0.6;
 }
 
-.monaco-workbench .part.orchestrator .repo-action:hover {
+.monaco-workbench .orchestrator-content .repo-action:hover {
 	opacity: 1;
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 /* -- Worktree List -- */
 
-.monaco-workbench .part.orchestrator .worktree-list {
+.monaco-workbench .orchestrator-content .worktree-list {
 	padding: 0 0 6px 0;
 	margin-left: 22px;
 }
 
-.monaco-workbench .part.orchestrator .worktree-item {
+.monaco-workbench .orchestrator-content .worktree-item {
 	display: flex;
 	align-items: center;
 	padding: 5px 8px 5px 0;
@@ -139,15 +138,14 @@
 	position: relative;
 }
 
-.monaco-workbench .part.orchestrator .worktree-connector {
+.monaco-workbench .orchestrator-content .worktree-connector {
 	width: 16px;
 	flex-shrink: 0;
 	align-self: stretch;
 	position: relative;
 }
 
-/* Vertical line + horizontal branch (├-- style) */
-.monaco-workbench .part.orchestrator .worktree-connector::before {
+.monaco-workbench .orchestrator-content .worktree-connector::before {
 	content: '';
 	position: absolute;
 	top: 0;
@@ -159,8 +157,7 @@
 	border-bottom-left-radius: 4px;
 }
 
-/* Vertical line continues down for non-last items (├--) */
-.monaco-workbench .part.orchestrator .worktree-item:not(:last-child) .worktree-connector::after {
+.monaco-workbench .orchestrator-content .worktree-item:not(:last-child) .worktree-connector::after {
 	content: '';
 	position: absolute;
 	top: 50%;
@@ -170,16 +167,16 @@
 	border-left: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
 }
 
-.monaco-workbench .part.orchestrator .worktree-item:hover {
+.monaco-workbench .orchestrator-content .worktree-item:hover {
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.monaco-workbench .part.orchestrator .worktree-item.active {
+.monaco-workbench .orchestrator-content .worktree-item.active {
 	background-color: rgba(255, 255, 255, 0.04);
 	position: relative;
 }
 
-.monaco-workbench .part.orchestrator .worktree-item.active::after {
+.monaco-workbench .orchestrator-content .worktree-item.active::after {
 	content: '';
 	position: absolute;
 	left: 0;
@@ -190,19 +187,17 @@
 	background-color: var(--vscode-focusBorder);
 }
 
-.monaco-workbench .part.orchestrator .worktree-icon {
+.monaco-workbench .orchestrator-content .worktree-icon {
 	font-size: 14px;
 	flex-shrink: 0;
 	opacity: 0.7;
 }
 
-.monaco-workbench .part.orchestrator .worktree-item.active .worktree-icon {
+.monaco-workbench .orchestrator-content .worktree-item.active .worktree-icon {
 	opacity: 1;
 }
 
-/* Session state icon colors */
-
-.monaco-workbench .part.orchestrator .worktree-icon.braille-spinner {
+.monaco-workbench .orchestrator-content .worktree-icon.braille-spinner {
 	font-family: monospace;
 	font-size: 14px;
 	width: 14px;
@@ -211,7 +206,7 @@
 	opacity: 0.9;
 }
 
-.monaco-workbench .part.orchestrator .worktree-icon.state-waiting.codicon {
+.monaco-workbench .orchestrator-content .worktree-icon.state-waiting.codicon {
 	background-color: var(--vscode-editorWarning-foreground);
 	color: var(--vscode-editor-background);
 	border-radius: 3px;
@@ -224,22 +219,22 @@
 	opacity: 1;
 }
 
-.monaco-workbench .part.orchestrator .worktree-icon.state-done {
+.monaco-workbench .orchestrator-content .worktree-icon.state-done {
 	color: var(--vscode-testing-iconPassed);
 	opacity: 1;
 }
 
-.monaco-workbench .part.orchestrator .worktree-icon.state-error {
+.monaco-workbench .orchestrator-content .worktree-icon.state-error {
 	color: var(--vscode-errorForeground);
 	opacity: 1;
 }
 
-.monaco-workbench .part.orchestrator .worktree-info {
+.monaco-workbench .orchestrator-content .worktree-info {
 	flex: 1;
 	min-width: 0;
 }
 
-.monaco-workbench .part.orchestrator .worktree-name {
+.monaco-workbench .orchestrator-content .worktree-name {
 	font-size: 12px;
 	font-weight: 500;
 	white-space: nowrap;
@@ -248,7 +243,7 @@
 	line-height: 1.4;
 }
 
-.monaco-workbench .part.orchestrator .worktree-branch {
+.monaco-workbench .orchestrator-content .worktree-branch {
 	font-size: 10px;
 	opacity: 0.6;
 	white-space: nowrap;
@@ -259,9 +254,9 @@
 	line-height: 1.3;
 }
 
-/* -- Worktree Delete Button -- */
+/* -- Worktree Delete Button (hover-reveal) -- */
 
-.monaco-workbench .part.orchestrator .worktree-delete {
+.monaco-workbench .orchestrator-content .worktree-delete {
 	flex-shrink: 0;
 	display: none;
 	align-items: center;
@@ -274,24 +269,24 @@
 	opacity: 0.5;
 }
 
-.monaco-workbench .part.orchestrator .worktree-item:hover .worktree-delete {
+.monaco-workbench .orchestrator-content .worktree-item:hover .worktree-delete {
 	display: flex;
 }
 
-.monaco-workbench .part.orchestrator .worktree-delete:hover {
+.monaco-workbench .orchestrator-content .worktree-delete:hover {
 	opacity: 1;
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 /* -- Footer -- */
 
-.monaco-workbench .part.orchestrator .orchestrator-footer {
-	margin-top: auto;
+.monaco-workbench .orchestrator-content .orchestrator-footer {
 	padding: 8px;
 	border-top: 1px solid var(--vscode-panel-border, var(--vscode-sideBar-border, transparent));
+	flex-shrink: 0;
 }
 
-.monaco-workbench .part.orchestrator .add-repo-button {
+.monaco-workbench .orchestrator-content .add-repo-button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -307,7 +302,7 @@
 	transition: background-color 0.1s ease, border-color 0.15s ease;
 }
 
-.monaco-workbench .part.orchestrator .add-repo-button:hover {
+.monaco-workbench .orchestrator-content .add-repo-button:hover {
 	background-color: var(--vscode-list-hoverBackground);
 	border-color: var(--vscode-descriptionForeground);
 }
