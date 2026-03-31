@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Prerequisites
+
+- **Node.js 22.x** (see `.nvmrc` — currently 22.22.1)
+
 ## Build and Development Commands
 
 **NEVER use `npm run compile` to compile TypeScript files.**
@@ -250,6 +254,34 @@ Root (HORIZONTAL)
 - **accountMenu/** — sign in/out, settings, updates (sidebar footer)
 - **changes/** — file changes visualization (auxiliary bar)
 - **welcome/** — onboarding flow
+- **agentFeedback/** — feedback collection for agent sessions
+- **aiCustomizationTreeView/** + **aiCustomizationManagement/** — UI for managing AI customizations (agents, skills, prompts, hooks)
+- **applyCommitsToParentRepo/** — applies worktree commits back to parent repository
+- **codeReview/** — code review management
+- **github/** — GitHub integration (fetchers, models)
+- **terminal/** — terminal integration in sessions
+- **fileTreeView/** — file tree view in sessions sidebar
+
+### Design documentation
+The sessions layer has detailed specs — read these before making architectural changes:
+- `src/vs/sessions/README.md` — layer rules, allowed dependencies, folder structure
+- `src/vs/sessions/LAYOUT.md` — complete layout spec with API reference and lifecycle
+- `src/vs/sessions/AI_CUSTOMIZATIONS.md` — AI customization harness design
+
+## Agent Host Platform Module
+
+`src/vs/platform/agentHost/` defines the agent-agnostic protocol layer that the Sessions workbench uses to communicate with AI agents. It sits in the `platform` layer so both `workbench` and `sessions` can use it.
+
+### Key design decisions
+- **Agent-agnostic protocol** — abstracts over different AI providers (Claude, etc.) via `IAgent` interface
+- **State-based rendering** — agent state is serialized; the renderer reacts to state changes rather than imperative commands
+- **Write-ahead reconciliation** — optimistic UI updates reconciled with server state
+
+### Design documentation
+Read these before modifying the agent communication layer:
+- `src/vs/platform/agentHost/common/state/design.md` — architecture decisions
+- `src/vs/platform/agentHost/common/state/protocol.md` — sessions process protocol spec (URI subscriptions, state model, actions, versioning)
+- `src/vs/platform/agentHost/common/state/sessions.md` — three-layer session architecture (extension point → platform → agent-host)
 
 ## Workbench UI Customizations
 
