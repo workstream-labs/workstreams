@@ -9,9 +9,11 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IRequestService, asJson } from '../../../../platform/request/common/request.js';
 import { IAuthenticationService } from '../../../services/authentication/common/authentication.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IGitHubCommentsService, IGitHubPRContext, IGitHubPRComment, IGitHubPRReviewThread, IGitHubUser } from '../common/githubCommentsService.js';
+import { IGitHubCommentsService, IGitHubPRContext, IGitHubPRComment, IGitHubPRReviewThread, IGitHubUser, IResolveContextResult, ResolveContextStatus } from '../common/githubCommentsService.js';
 import { IGitWorktreeService } from '../../orchestrator/common/gitWorktreeService.js';
+import { isCancellationError } from '../../../../base/common/errors.js';
 
 const LOG_PREFIX = '[GitHubComments]';
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -100,8 +102,11 @@ function encodeURIPath(s: string): string {
 	return encodeURIComponent(s);
 }
 
-/** 1 hour TTL for cached GitHub data. */
+/** 1 hour TTL for cached PR lookups (not token TTL — VS Code manages that). */
 const CACHE_TTL_MS = 60 * 60 * 1000;
+
+/** Storage key for the persistent repo→account mapping. */
+const REPO_TOKEN_MAP_KEY = 'githubComments.repoAccountMap';
 
 interface ICacheEntry<T> {
 	readonly data: T;
@@ -115,113 +120,88 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 	private readonly _onDidChangeComments = this._register(new Emitter<void>());
 	readonly onDidChangeComments = this._onDidChangeComments.event;
 
-	/** Cache: "repoPath:branch" → context (with TTL) */
-	private readonly _contextCache = new Map<string, ICacheEntry<IGitHubPRContext | null>>();
-
-	/** Cache: "owner/repo#prNumber" → threads (with TTL) */
+	private readonly _contextCache = new Map<string, ICacheEntry<IResolveContextResult>>();
 	private readonly _threadsCache = new Map<string, ICacheEntry<IGitHubPRReviewThread[]>>();
+
+	/** Persistent: "owner/repo" → session account id. Survives restarts. */
+	private readonly _repoTokenCache = new Map<string, string>();
 
 	constructor(
 		@IRequestService private readonly requestService: IRequestService,
 		@IAuthenticationService private readonly authenticationService: IAuthenticationService,
 		@IGitWorktreeService private readonly gitWorktreeService: IGitWorktreeService,
+		@IStorageService private readonly storageService: IStorageService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
+		this._restoreRepoTokenCache();
 	}
 
-	async isAuthenticated(): Promise<boolean> {
-		try {
-			const sessions = await this.authenticationService.getSessions('github');
-			return sessions.length > 0;
-		} catch {
-			return false;
-		}
-	}
+	//#region Public API
 
-	async signIn(): Promise<boolean> {
+	async signIn(owner?: string, repo?: string): Promise<boolean> {
 		try {
-			// Check if already authenticated
-			const existing = await this.authenticationService.getSessions('github');
-			if (existing.length > 0) {
-				await this.refresh();
-				return true;
-			}
-
-			// Trigger the OAuth flow
 			const session = await this.authenticationService.createSession('github', ['repo']);
-			if (session) {
-				await this.refresh();
-				return true;
+			if (!session) {
+				return false;
 			}
-			return false;
+			if (owner && repo) {
+				await this._testAndLinkSession(session.accessToken, session.account.id, session.account.label, owner, repo);
+			}
+			await this.refresh();
+			return true;
 		} catch (err) {
 			this.logService.warn(LOG_PREFIX, 'GitHub sign-in failed:', err);
 			return false;
 		}
 	}
 
-	async resolveContext(repoPath: string, branch: string): Promise<IGitHubPRContext | undefined> {
+	async resolveContext(repoPath: string, branch: string): Promise<IResolveContextResult> {
 		const cacheKey = `${repoPath}:${branch}`;
 		const cached = this._contextCache.get(cacheKey);
 		if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
-			return cached.data ?? undefined;
+			return cached.data;
 		}
 
 		try {
 			const remoteUrl = await this.gitWorktreeService.getRemoteUrl(repoPath);
 			if (!remoteUrl) {
-				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-				return undefined;
+				return this._cacheResult(cacheKey, { status: ResolveContextStatus.NotGitHub });
 			}
 
 			const match = GITHUB_REMOTE_RE.exec(remoteUrl);
 			if (!match) {
-				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-				return undefined;
+				this.logService.warn(LOG_PREFIX, `Remote URL does not match GitHub pattern: ${remoteUrl}`);
+				return this._cacheResult(cacheKey, { status: ResolveContextStatus.NotGitHub });
 			}
 
 			const owner = match[1];
 			const repo = match[2];
-
-			// Find open PR for this branch
-			const token = await this._getAuthToken();
-			if (!token) {
-				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-				return undefined;
-			}
-
+			const repoSlug = `${owner}/${repo}`;
 			const pullsUrl = `${GITHUB_API_BASE}/repos/${encodeURIPath(owner)}/${encodeURIPath(repo)}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=open&per_page=1`;
-			const response = await this.requestService.request({
-				type: 'GET',
-				url: pullsUrl,
-				headers: {
-					'Authorization': `token ${token}`,
-					'Accept': 'application/vnd.github.v3+json',
-					'User-Agent': 'VSCode-Workstream-Comments',
-				},
-				callSite: 'githubComments.resolveContext',
-			}, CancellationToken.None);
 
-			if (response.res.statusCode !== 200) {
-				this.logService.warn(LOG_PREFIX, `Failed to list PRs: ${response.res.statusCode}`);
-				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-				return undefined;
+			// Try stored session for this repo
+			const storedToken = await this._getTokenForRepo(owner, repo);
+			if (storedToken) {
+				const result = await this._queryPRs(storedToken, pullsUrl, owner, repo, branch, cacheKey);
+				if (result) {
+					return result;
+				}
+				// Token expired/revoked — VS Code removed the session. Clear mapping.
+				this.logService.info(LOG_PREFIX, `Stored session for ${repoSlug} expired, clearing mapping`);
+				this._repoTokenCache.delete(repoSlug);
+				this._persistRepoTokenCache();
 			}
 
-			const pulls = await asJson<IGitHubPullsListItem[]>(response);
-			if (!pulls || pulls.length === 0) {
-				this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-				return undefined;
-			}
-
-			const ctx: IGitHubPRContext = { owner, repo, prNumber: pulls[0].number };
-			this._contextCache.set(cacheKey, { data: ctx, fetchedAt: Date.now() });
-			return ctx;
+			// No valid session — don't prompt, let the view show a sign-in action
+			this.logService.info(LOG_PREFIX, `No session for ${repoSlug}, sign-in required`);
+			return this._cacheResult(cacheKey, { status: ResolveContextStatus.NoAccess });
 		} catch (err) {
+			if (isCancellationError(err)) {
+				throw err; // Let caller handle — don't cache canceled requests
+			}
 			this.logService.warn(LOG_PREFIX, 'Failed to resolve PR context:', err);
-			this._contextCache.set(cacheKey, { data: null, fetchedAt: Date.now() });
-			return undefined;
+			return this._cacheResult(cacheKey, { status: ResolveContextStatus.NoPR });
 		}
 	}
 
@@ -233,7 +213,7 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 		}
 
 		try {
-			const token = await this._getAuthToken();
+			const token = await this._getTokenForRepo(ctx.owner, ctx.repo);
 			if (!token) {
 				return [];
 			}
@@ -269,6 +249,9 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 			this._threadsCache.set(cacheKey, { data: threads, fetchedAt: Date.now() });
 			return threads;
 		} catch (err) {
+			if (isCancellationError(err)) {
+				throw err;
+			}
 			this.logService.warn(LOG_PREFIX, 'Failed to fetch review threads:', err);
 			return [];
 		}
@@ -284,17 +267,113 @@ export class GitHubCommentsServiceImpl extends Disposable implements IGitHubComm
 		this._onDidChangeComments.fire();
 	}
 
-	private async _getAuthToken(): Promise<string | undefined> {
-		try {
-			const sessions = await this.authenticationService.getSessions('github');
-			if (sessions.length === 0) {
-				return undefined;
-			}
-			return sessions[0].accessToken ?? undefined;
-		} catch {
+	//#endregion
+
+	//#region Private helpers
+
+	/**
+	 * Query GitHub for open PRs. Returns a cached result on success (200),
+	 * or undefined if the token lacks access (so caller can handle it).
+	 */
+	private async _queryPRs(token: string, pullsUrl: string, owner: string, repo: string, branch: string, cacheKey: string): Promise<IResolveContextResult | undefined> {
+		const response = await this.requestService.request({
+			type: 'GET',
+			url: pullsUrl,
+			headers: {
+				'Authorization': `token ${token}`,
+				'Accept': 'application/vnd.github.v3+json',
+				'User-Agent': 'VSCode-Workstream-Comments',
+			},
+			callSite: 'githubComments.resolveContext',
+		}, CancellationToken.None);
+
+		if (response.res.statusCode !== 200) {
 			return undefined;
 		}
+
+		const pulls = await asJson<IGitHubPullsListItem[]>(response);
+		if (!pulls || pulls.length === 0) {
+			this.logService.info(LOG_PREFIX, `No open PRs for ${owner}/${repo} branch=${branch}`);
+			return this._cacheResult(cacheKey, { status: ResolveContextStatus.NoPR });
+		}
+
+		this.logService.info(LOG_PREFIX, `Resolved PR #${pulls[0].number} for ${owner}/${repo} branch=${branch}`);
+		return this._cacheResult(cacheKey, {
+			status: ResolveContextStatus.Found,
+			context: { owner, repo, prNumber: pulls[0].number },
+		});
 	}
+
+	private _cacheResult(cacheKey: string, result: IResolveContextResult): IResolveContextResult {
+		this._contextCache.set(cacheKey, { data: result, fetchedAt: Date.now() });
+		return result;
+	}
+
+	/**
+	 * Test a token against a repo and persist the mapping if it works.
+	 */
+	private async _testAndLinkSession(token: string, accountId: string, accountLabel: string, owner: string, repo: string): Promise<void> {
+		const repoSlug = `${owner}/${repo}`;
+		try {
+			const response = await this.requestService.request({
+				type: 'GET',
+				url: `${GITHUB_API_BASE}/repos/${encodeURIPath(owner)}/${encodeURIPath(repo)}`,
+				headers: {
+					'Authorization': `token ${token}`,
+					'Accept': 'application/vnd.github.v3+json',
+					'User-Agent': 'VSCode-Workstream-Comments',
+				},
+				callSite: 'githubComments.testAndLink',
+			}, CancellationToken.None);
+			if (response.res.statusCode === 200) {
+				this._repoTokenCache.set(repoSlug, accountId);
+				this._persistRepoTokenCache();
+				this.logService.info(LOG_PREFIX, `Linked session "${accountLabel}" to ${repoSlug}`);
+			}
+		} catch {
+			// Test failed — don't link, but don't error either
+		}
+	}
+
+	/**
+	 * Get the stored token for a specific repo. Returns undefined if
+	 * no mapping exists or the session has been removed by VS Code
+	 * (e.g. token expired/revoked).
+	 */
+	private async _getTokenForRepo(owner: string, repo: string): Promise<string | undefined> {
+		const cachedAccountId = this._repoTokenCache.get(`${owner}/${repo}`);
+		if (!cachedAccountId) {
+			return undefined;
+		}
+		const sessions = await this.authenticationService.getSessions('github', ['repo']);
+		const match = sessions.find(s => s.account.id === cachedAccountId);
+		return match?.accessToken;
+	}
+
+	private _restoreRepoTokenCache(): void {
+		try {
+			const raw = this.storageService.get(REPO_TOKEN_MAP_KEY, StorageScope.APPLICATION);
+			if (raw) {
+				const map: Record<string, string> = JSON.parse(raw);
+				for (const [repoSlug, accountId] of Object.entries(map)) {
+					this._repoTokenCache.set(repoSlug, accountId);
+				}
+				this.logService.info(LOG_PREFIX, `Restored ${this._repoTokenCache.size} repo→account mapping(s)`);
+			}
+		} catch {
+			// Corrupted data — ignore
+		}
+	}
+
+	private _persistRepoTokenCache(): void {
+		const obj: Record<string, string> = {};
+		for (const [repoSlug, accountId] of this._repoTokenCache) {
+			obj[repoSlug] = accountId;
+		}
+		this.storageService.store(REPO_TOKEN_MAP_KEY, JSON.stringify(obj), StorageScope.APPLICATION, StorageTarget.MACHINE);
+	}
+
+	//#endregion
 }
 
 //#region Mapping helpers
