@@ -27,6 +27,18 @@
 	background: var(--vscode-sideBar-background);
 }
 
+.monaco-workbench .orchestrator-content .orchestrator-header-left {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.monaco-workbench .orchestrator-content .orchestrator-header-icon {
+	font-size: 14px;
+	color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
+	opacity: 0.7;
+}
+
 .monaco-workbench .orchestrator-content .orchestrator-header-title {
 	font-size: 11px;
 	font-weight: 600;
@@ -93,25 +105,10 @@
 	flex: 1;
 }
 
-.monaco-workbench .orchestrator-content .repo-chevron {
-	font-size: 12px;
+.monaco-workbench .orchestrator-content .repo-folder-icon {
+	font-size: 16px;
 	flex-shrink: 0;
 	opacity: 0.8;
-}
-
-.monaco-workbench .orchestrator-content .repo-avatar {
-	width: 22px;
-	height: 22px;
-	border-radius: 4px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 11px;
-	font-weight: 700;
-	flex-shrink: 0;
-	background-color: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-	text-transform: uppercase;
 }
 
 .monaco-workbench .orchestrator-content .repo-name {
@@ -122,11 +119,6 @@
 	text-overflow: ellipsis;
 }
 
-.monaco-workbench .orchestrator-content .repo-count {
-	font-size: 11px;
-	opacity: 0.5;
-	flex-shrink: 0;
-}
 
 /* -- Repository Header Actions (hover-reveal) -- */
 
@@ -244,16 +236,8 @@
 }
 
 .monaco-workbench .orchestrator-content .worktree-icon.state-waiting.codicon {
-	background-color: var(--vscode-editorWarning-foreground);
-	color: var(--vscode-editor-background);
-	border-radius: 3px;
-	font: normal normal normal 10px/1 codicon;
-	width: 14px;
-	height: 14px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	opacity: 1;
+	color: var(--vscode-editorWarning-foreground);
+	opacity: 0.7;
 }
 
 .monaco-workbench .orchestrator-content .worktree-icon.state-done {
@@ -271,6 +255,14 @@
 	min-width: 0;
 }
 
+.monaco-workbench .orchestrator-content .worktree-name-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+	justify-content: space-between;
+}
+
 .monaco-workbench .orchestrator-content .worktree-name {
 	font-size: 12px;
 	font-weight: 500;
@@ -278,6 +270,24 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	line-height: 1.4;
+	min-width: 0;
+}
+
+.monaco-workbench .orchestrator-content .worktree-diff-stats {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+	font-size: 10px;
+	font-family: var(--monaco-monospace-font);
+	line-height: 1.4;
+}
+
+.monaco-workbench .orchestrator-content .diff-stat-add {
+	color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+.monaco-workbench .orchestrator-content .diff-stat-del {
+	color: var(--vscode-errorForeground, #f85149);
 }
 
 .monaco-workbench .orchestrator-content .worktree-branch {

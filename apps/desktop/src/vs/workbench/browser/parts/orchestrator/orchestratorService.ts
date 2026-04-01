@@ -5,12 +5,13 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { basename } from '../../../../base/common/path.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { IGitWorktreeService } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { IGitWorktreeService, IDiffStats } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
@@ -20,6 +21,10 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
+import { IHostService } from '../../../services/host/browser/host.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+
+const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 
 interface IPersistedRepositoryState {
 	readonly path: string;
@@ -56,6 +61,9 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
+	private readonly _statsRefreshScheduler: RunOnceScheduler;
+	private _statsRefreshInFlight = false;
+	private _worktreeUris: URI[] = [];
 
 	/**
 	 * Resolves when the initial restore from persisted state is complete.
@@ -79,8 +87,40 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		@INotificationService private readonly notificationService: INotificationService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IProgressService private readonly progressService: IProgressService,
+		@IHostService private readonly hostService: IHostService,
+		@IFileService private readonly fileService: IFileService,
 	) {
 		super();
+
+		this._statsRefreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshDiffStats(), OrchestratorServiceImpl.STATS_DEBOUNCE_MS));
+
+		// Keep URI cache in sync so onDidFilesChange doesn't allocate on every event
+		this._register(this.onDidChangeRepositories(() => this._rebuildWorktreeUriCache()));
+
+		// File added/deleted/edited on disk inside any known worktree
+		this._register(this.fileService.onDidFilesChange(e => {
+			for (const uri of this._worktreeUris) {
+				if (e.affects(uri)) {
+					this.scheduleDiffStatsRefresh();
+					return;
+				}
+			}
+		}));
+
+		// Agent finishes work in any worktree (including background ones not watched by VS Code)
+		this._register(this.onDidChangeSessionState(({ state }) => {
+			if (state === WorktreeSessionState.Idle || state === WorktreeSessionState.Review) {
+				this.scheduleDiffStatsRefresh();
+			}
+		}));
+
+		// Window regains focus — catch external changes (git CLI, manual edits)
+		this._register(this.hostService.onDidChangeFocus(focused => {
+			if (focused) {
+				this.scheduleDiffStatsRefresh();
+			}
+		}));
+
 		this.whenReady = this.restoreState();
 	}
 
@@ -128,14 +168,13 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		const gitWorktrees = await this.gitService.listWorktrees(path);
 
 		// Build worktree entries from discovered worktrees
-		const worktrees: IWorktreeEntry[] = gitWorktrees
-			.filter(wt => !wt.isBare)
-			.map(wt => ({
-				name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-				path: wt.path,
-				branch: wt.branch,
-				isActive: false,
-			}));
+		const nonBare = gitWorktrees.filter(w => !w.isBare);
+		const worktrees: IWorktreeEntry[] = nonBare.map(wt => ({
+			name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+			path: wt.path,
+			branch: wt.branch,
+			isActive: false,
+		}));
 
 		// If no worktrees found (fresh init), add the main worktree
 		if (worktrees.length === 0) {
@@ -145,6 +184,13 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				branch: currentBranch,
 				isActive: false,
 			});
+		}
+
+		// Populate diff stats in parallel
+		const statsMap = await this.fetchStatsForRepo(path, worktrees);
+		for (let i = 0; i < worktrees.length; i++) {
+			const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
+			worktrees[i] = { ...worktrees[i], ...s };
 		}
 
 		const entry: IRepositoryEntry = {
@@ -326,6 +372,8 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		} else {
 			this._onDidChangeActiveWorktree.fire(worktree);
 		}
+
+		this.scheduleDiffStatsRefresh();
 	}
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): void {
@@ -338,6 +386,68 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this._onDidChangeRepositories.fire();
 		this._onDidChangeSessionState.fire({ worktreePath, state });
 	}
+
+	//#region Diff stats
+
+	private _rebuildWorktreeUriCache(): void {
+		this._worktreeUris = [];
+		for (const repo of this._repositories) {
+			for (const wt of repo.worktrees) {
+				if (wt.path !== repo.path) {
+					this._worktreeUris.push(URI.file(wt.path));
+				}
+			}
+		}
+	}
+
+	private scheduleDiffStatsRefresh(): void {
+		this._statsRefreshScheduler.schedule();
+	}
+
+	private static readonly STATS_DEBOUNCE_MS = 2000;
+	private static readonly STATS_REQUEUE_MS = 5000;
+
+	private async _doRefreshDiffStats(): Promise<void> {
+		if (this._statsRefreshInFlight) {
+			this._statsRefreshScheduler.schedule(OrchestratorServiceImpl.STATS_REQUEUE_MS);
+			return;
+		}
+		this._statsRefreshInFlight = true;
+		try {
+			let changed = false;
+			const updated = await Promise.all(this._repositories.map(async repo => {
+				const statsMap = await this.fetchStatsForRepo(repo.path, repo.worktrees);
+				const worktrees = repo.worktrees.map(wt => {
+					const s = statsMap.get(wt.path) ?? EMPTY_STATS;
+					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged) {
+						changed = true;
+						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions };
+					}
+					return wt;
+				});
+				return { ...repo, worktrees };
+			}));
+			if (changed) {
+				this._repositories = updated;
+				this._onDidChangeRepositories.fire();
+			}
+		} finally {
+			this._statsRefreshInFlight = false;
+		}
+	}
+
+	private async fetchStatsForRepo(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
+		const results = await Promise.all(
+			worktrees.map(wt => wt.path === repoPath
+				? Promise.resolve(EMPTY_STATS)
+				: this.gitService.getDiffStats(repoPath, wt.path).catch(() => EMPTY_STATS))
+		);
+		const map = new Map<string, IDiffStats>();
+		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
+		return map;
+	}
+
+	//#endregion
 
 	private saveState(): void {
 		const state: IPersistedOrchestratorState = {
@@ -385,14 +495,13 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				const currentBranch = await this.gitService.getCurrentBranch(saved.path);
 				const gitWorktrees = await this.gitService.listWorktrees(saved.path);
 
-				const worktrees: IWorktreeEntry[] = gitWorktrees
-					.filter(wt => !wt.isBare)
-					.map(wt => ({
-						name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-						path: wt.path,
-						branch: wt.branch,
-						isActive: false,
-					}));
+				const nonBare = gitWorktrees.filter(w => !w.isBare);
+				const worktrees: IWorktreeEntry[] = nonBare.map(wt => ({
+					name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+					path: wt.path,
+					branch: wt.branch,
+					isActive: false,
+				}));
 
 				if (worktrees.length === 0) {
 					worktrees.push({
@@ -401,6 +510,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 						branch: currentBranch,
 						isActive: false,
 					});
+				}
+
+				const statsMap = await this.fetchStatsForRepo(saved.path, worktrees);
+				for (let i = 0; i < worktrees.length; i++) {
+					const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
+					worktrees[i] = { ...worktrees[i], ...s };
 				}
 
 				this._repositories.push({

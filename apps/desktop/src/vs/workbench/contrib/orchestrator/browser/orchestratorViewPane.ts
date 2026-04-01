@@ -58,7 +58,10 @@ export class OrchestratorViewPane extends ViewPane {
 
 		// Sticky header bar
 		const headerBar = append(container, $('.orchestrator-header-bar'));
-		const headerTitle = append(headerBar, $('.orchestrator-header-title'));
+		const headerLeft = append(headerBar, $('.orchestrator-header-left'));
+		const headerIcon = append(headerLeft, $('.codicon.codicon-project'));
+		headerIcon.classList.add('orchestrator-header-icon');
+		const headerTitle = append(headerLeft, $('.orchestrator-header-title'));
 		headerTitle.textContent = localize('projects', "Projects");
 		const addBtn = append(headerBar, $('.orchestrator-header-add.codicon.codicon-diff-added'));
 		addBtn.title = localize('addRepository', "Add Repository");
@@ -90,24 +93,18 @@ export class OrchestratorViewPane extends ViewPane {
 		const header = append(repoSection, $('.repo-header'));
 		const headerLeft = append(header, $('.repo-header-left'));
 
-		const chevron = append(headerLeft, $('.repo-chevron.codicon'));
-		chevron.classList.add(repo.isCollapsed ? 'codicon-chevron-right' : 'codicon-chevron-down');
-
-		const avatar = append(headerLeft, $('.repo-avatar'));
-		avatar.textContent = repo.name.charAt(0).toUpperCase();
+		const folderIcon = append(headerLeft, $('.repo-folder-icon.codicon'));
+		folderIcon.classList.add(repo.isCollapsed ? 'codicon-folder' : 'codicon-folder-opened');
 
 		const nameEl = append(headerLeft, $('.repo-name'));
 		nameEl.textContent = repo.name;
-
-		const countEl = append(headerLeft, $('.repo-count'));
-		countEl.textContent = `(${repo.worktrees.length})`;
 
 		const headerActions = append(header, $('.repo-header-actions'));
 
 		const addWorktreeBtn = append(headerActions, $('.repo-action.codicon.codicon-plus'));
 		addWorktreeBtn.title = localize('addWorktree', "Add Worktree");
 
-		const removeRepoBtn = append(headerActions, $('.repo-action.codicon.codicon-trash'));
+		const removeRepoBtn = append(headerActions, $('.repo-action.codicon.codicon-close'));
 		removeRepoBtn.title = localize('removeRepo', "Remove Repository");
 
 		this.renderDisposables.add(addDisposableListener(addWorktreeBtn, EventType.CLICK, e => {
@@ -143,8 +140,24 @@ export class OrchestratorViewPane extends ViewPane {
 		this.applySessionStateIcon(iconEl, worktree);
 
 		const info = append(item, $('.worktree-info'));
-		const nameEl = append(info, $('.worktree-name'));
+
+		const nameRow = append(info, $('.worktree-name-row'));
+		const nameEl = append(nameRow, $('.worktree-name'));
 		nameEl.textContent = worktree.name;
+
+		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
+		if (hasStats) {
+			const statsEl = append(nameRow, $('.worktree-diff-stats'));
+			if (worktree.additions) {
+				const addEl = append(statsEl, $('.diff-stat-add'));
+				addEl.textContent = `+${worktree.additions}`;
+			}
+			if (worktree.deletions) {
+				const delEl = append(statsEl, $('.diff-stat-del'));
+				delEl.textContent = `-${worktree.deletions}`;
+			}
+		}
+
 		const branchEl = append(info, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
 
@@ -181,13 +194,13 @@ export class OrchestratorViewPane extends ViewPane {
 				break;
 			}
 			case WorktreeSessionState.Permission:
-				el.classList.add('codicon', 'codicon-debug-pause', 'state-waiting');
+				el.classList.add('codicon', 'codicon-stop-circle', 'state-waiting');
 				break;
 			case WorktreeSessionState.Review:
 				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			default:
-				el.classList.add('codicon', 'codicon-git-branch');
+				el.classList.add('codicon', 'codicon-worktree');
 				break;
 		}
 	}
