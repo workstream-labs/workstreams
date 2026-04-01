@@ -56,7 +56,6 @@ import { ResourceMap } from '../../../../../base/common/map.js';
 import { AbstractTreePart } from '../../../../../base/browser/ui/tree/abstractTree.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
-import { IOrchestratorService } from '../../../../services/orchestrator/common/orchestratorService.js';
 
 
 function hasExpandedRootChild(tree: WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>, treeInput: ExplorerItem[]): boolean {
@@ -187,9 +186,6 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 	private decorationsProvider: ExplorerDecorationsProvider | undefined;
 	private readonly delegate: IExplorerViewContainerDelegate | undefined;
 
-	// Per-worktree explorer tree state cache
-	private readonly _worktreeViewStateCache = new Map<string, IAsyncDataTreeViewState>();
-	private _trackedWorktreePath: string | undefined;
 	private _pendingWorktreeViewState: IAsyncDataTreeViewState | undefined;
 
 	override get singleViewPaneContainerTitle(): string {
@@ -221,8 +217,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IOpenerService openerService: IOpenerService,
-		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
-		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
+		@IAccessibilityService private readonly accessibilityService: IAccessibilityService
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -598,19 +593,6 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		this._register(this.storageService.onWillSaveState(() => {
 			this.storeTreeViewState();
 		}));
-
-		// Per-worktree tree state: save on switch, restore on re-entry
-		this._trackedWorktreePath = this.orchestratorService.activeWorktree?.path;
-		this._register(this.orchestratorService.onDidChangeActiveWorktree(newWorktree => {
-			if (this._trackedWorktreePath && this.tree?.getInput()) {
-				this._worktreeViewStateCache.set(this._trackedWorktreePath, this.tree.getViewState());
-			}
-			this._pendingWorktreeViewState = this._worktreeViewStateCache.get(newWorktree.path);
-			this._trackedWorktreePath = newWorktree.path;
-		}));
-		this._register(this.orchestratorService.onDidRemoveWorktree(({ worktreePath }) => {
-			this._worktreeViewStateCache.delete(worktreePath);
-		}));
 	}
 
 	// React on events
@@ -629,6 +611,14 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 
 	private storeTreeViewState() {
 		this.storageService.store(ExplorerView.TREE_VIEW_STATE_STORAGE_KEY, JSON.stringify(this.tree.getViewState()), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+	}
+
+	getTreeViewState(): IAsyncDataTreeViewState | undefined {
+		return this.tree?.getInput() ? this.tree.getViewState() : undefined;
+	}
+
+	setPendingTreeViewState(state: IAsyncDataTreeViewState): void {
+		this._pendingWorktreeViewState = state;
 	}
 
 	private setContextKeys(stat: ExplorerItem | null | undefined): void {

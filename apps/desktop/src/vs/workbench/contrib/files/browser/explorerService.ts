@@ -19,6 +19,7 @@ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uri
 import { IBulkEditService, ResourceFileEdit } from '../../../../editor/browser/services/bulkEditService.js';
 import { UndoRedoSource } from '../../../../platform/undoRedo/common/undoRedo.js';
 import { IExplorerView, IExplorerService } from './files.js';
+import { IAsyncDataTreeViewState } from '../../../../base/browser/ui/tree/asyncDataTree.js';
 import { IProgressService, ProgressLocation, IProgressCompositeOptions, IProgressOptions } from '../../../../platform/progress/common/progress.js';
 import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
@@ -156,6 +157,14 @@ export class ExplorerService implements IExplorerService {
 
 	registerView(contextProvider: IExplorerView): void {
 		this.view = contextProvider;
+	}
+
+	getTreeViewState(): IAsyncDataTreeViewState | undefined {
+		return this.view?.getTreeViewState();
+	}
+
+	setPendingTreeViewState(state: IAsyncDataTreeViewState): void {
+		this.view?.setPendingTreeViewState(state);
 	}
 
 	getContext(respectMultiSelection: boolean, ignoreNestedChildren: boolean = false): ExplorerItem[] {

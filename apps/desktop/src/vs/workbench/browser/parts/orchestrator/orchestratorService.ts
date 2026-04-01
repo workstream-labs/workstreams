@@ -371,7 +371,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	}
 
 	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
-	private static readonly RETRY_DELAY_MS = 1500;
+	private static readonly RETRY_DELAY_MS = 500;
 	private static readonly MAX_RETRIES = 3;
 	private _editorRetryCount = 0;
 
@@ -381,7 +381,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			for (const group of this.editorGroupsService.groups) {
 				if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
 					this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
-					await group.openEditor(group.activeEditor);
+					try {
+						await group.openEditor(group.activeEditor);
+					} catch (err) {
+						this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
+					}
 					retried = true;
 				}
 			}
