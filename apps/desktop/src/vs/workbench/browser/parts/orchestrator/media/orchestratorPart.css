@@ -13,6 +13,43 @@
 	user-select: none;
 }
 
+/* -- Sticky header bar -- */
+
+.monaco-workbench .orchestrator-content .orchestrator-header-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 12px;
+	flex-shrink: 0;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--vscode-sideBar-background);
+}
+
+.monaco-workbench .orchestrator-content .orchestrator-header-title {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
+	opacity: 0.7;
+}
+
+.monaco-workbench .orchestrator-content .orchestrator-header-add {
+	cursor: pointer;
+	font-size: 16px;
+	color: var(--vscode-descriptionForeground);
+	border-radius: 4px;
+	padding: 2px;
+	transition: color 0.1s ease, background-color 0.1s ease;
+}
+
+.monaco-workbench .orchestrator-content .orchestrator-header-add:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
 /* -- Repo list (scrollable) -- */
 
 .monaco-workbench .orchestrator-content .repo-list {
@@ -280,29 +317,3 @@
 
 /* -- Footer -- */
 
-.monaco-workbench .orchestrator-content .orchestrator-footer {
-	padding: 8px;
-	border-top: 1px solid var(--vscode-panel-border, var(--vscode-sideBar-border, transparent));
-	flex-shrink: 0;
-}
-
-.monaco-workbench .orchestrator-content .add-repo-button {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 6px;
-	cursor: pointer;
-	border-radius: 5px;
-	font-size: 12px;
-	color: var(--vscode-descriptionForeground);
-	background: transparent;
-	border: 1px dashed rgba(255, 255, 255, 0.1);
-	width: 100%;
-	box-sizing: border-box;
-	transition: background-color 0.1s ease, border-color 0.15s ease;
-}
-
-.monaco-workbench .orchestrator-content .add-repo-button:hover {
-	background-color: var(--vscode-list-hoverBackground);
-	border-color: var(--vscode-descriptionForeground);
-}
