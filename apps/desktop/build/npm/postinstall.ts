@@ -292,6 +292,10 @@ async function main() {
 		}
 
 		const taskDir = dir;
+		if (!fs.existsSync(path.join(root, taskDir))) {
+			log(taskDir, 'Directory does not exist, skipping.');
+			continue;
+		}
 		parallelTasks.push(() => {
 			const env = { ...process.env };
 			clearInheritedNpmrcConfig(taskDir, env);
