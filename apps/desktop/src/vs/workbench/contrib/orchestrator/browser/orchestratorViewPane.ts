@@ -58,7 +58,10 @@ export class OrchestratorViewPane extends ViewPane {
 
 		// Sticky header bar
 		const headerBar = append(container, $('.orchestrator-header-bar'));
-		const headerTitle = append(headerBar, $('.orchestrator-header-title'));
+		const headerLeft = append(headerBar, $('.orchestrator-header-left'));
+		const headerIcon = append(headerLeft, $('.codicon.codicon-project'));
+		headerIcon.classList.add('orchestrator-header-icon');
+		const headerTitle = append(headerLeft, $('.orchestrator-header-title'));
 		headerTitle.textContent = localize('projects', "Projects");
 		const addBtn = append(headerBar, $('.orchestrator-header-add.codicon.codicon-diff-added'));
 		addBtn.title = localize('addRepository', "Add Repository");
@@ -90,24 +93,18 @@ export class OrchestratorViewPane extends ViewPane {
 		const header = append(repoSection, $('.repo-header'));
 		const headerLeft = append(header, $('.repo-header-left'));
 
-		const chevron = append(headerLeft, $('.repo-chevron.codicon'));
-		chevron.classList.add(repo.isCollapsed ? 'codicon-chevron-right' : 'codicon-chevron-down');
-
-		const avatar = append(headerLeft, $('.repo-avatar'));
-		avatar.textContent = repo.name.charAt(0).toUpperCase();
+		const folderIcon = append(headerLeft, $('.repo-folder-icon.codicon'));
+		folderIcon.classList.add(repo.isCollapsed ? 'codicon-folder' : 'codicon-folder-opened');
 
 		const nameEl = append(headerLeft, $('.repo-name'));
 		nameEl.textContent = repo.name;
-
-		const countEl = append(headerLeft, $('.repo-count'));
-		countEl.textContent = `(${repo.worktrees.length})`;
 
 		const headerActions = append(header, $('.repo-header-actions'));
 
 		const addWorktreeBtn = append(headerActions, $('.repo-action.codicon.codicon-plus'));
 		addWorktreeBtn.title = localize('addWorktree', "Add Worktree");
 
-		const removeRepoBtn = append(headerActions, $('.repo-action.codicon.codicon-trash'));
+		const removeRepoBtn = append(headerActions, $('.repo-action.codicon.codicon-close'));
 		removeRepoBtn.title = localize('removeRepo', "Remove Repository");
 
 		this.renderDisposables.add(addDisposableListener(addWorktreeBtn, EventType.CLICK, e => {
