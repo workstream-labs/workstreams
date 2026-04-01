@@ -11,8 +11,11 @@ import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, parseWorktreeList } 
 
 const execFile = promisify(cp.execFile);
 const readFile = promisify(fs.readFile);
+const stat = promisify(fs.stat);
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
+
+const MAX_UNTRACKED_FILE_SIZE = 256 * 1024; // 256 KB — skip large/binary files
 
 const WORKSTREAMS_DIR = '.workstreams';
 const WORKTREE_SUBDIR = 'tree';
@@ -110,8 +113,8 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
 			]);
 
-			// Deduplicate by file path — a file touched in both committed and
-			// uncommitted diffs should only be counted once (latest wins)
+			// Accumulate by file path — committed diff (merge-base → branch tip) and
+			// uncommitted diff (branch tip → working tree) are additive, not overlapping
 			const files = new Map<string, { add: number; del: number }>();
 
 			for (const result of [committedResult, uncommittedResult]) {
@@ -140,18 +143,26 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 			// 3) Untracked new files — git diff HEAD misses these entirely
 			if (untrackedResult) {
-				for (const file of untrackedResult.stdout.trim().split('\n')) {
-					if (!file || file.startsWith('.claude/') || files.has(file)) {
-						continue;
-					}
+				const untrackedFiles = untrackedResult.stdout.trim().split('\n')
+					.filter(f => f && !f.startsWith('.claude/') && !files.has(f));
+
+				const lineCountResults = await Promise.all(untrackedFiles.map(async file => {
 					try {
 						const filePath = path.join(worktreePath, file);
+						const fileStat = await stat(filePath);
+						if (fileStat.size > MAX_UNTRACKED_FILE_SIZE) {
+							return { file, add: 1 };
+						}
 						const content = await readFile(filePath, 'utf8');
 						const lineCount = content.split('\n').length - (content.endsWith('\n') ? 1 : 0);
-						files.set(file, { add: Math.max(lineCount, 1), del: 0 });
+						return { file, add: Math.max(lineCount, 1) };
 					} catch {
-						files.set(file, { add: 1, del: 0 });
+						return { file, add: 1 };
 					}
+				}));
+
+				for (const { file, add } of lineCountResults) {
+					files.set(file, { add, del: 0 });
 				}
 			}
 
