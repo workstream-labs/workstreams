@@ -18,6 +18,16 @@ cd workstreams
 bun install && bun link
 ```
 
+### Desktop App (dev setup)
+
+A single script handles everything — nvm, Node 22, npm install, Electron, and compilation:
+
+```bash
+cd apps/desktop
+bash install.sh
+./scripts/code.sh   # launch the app
+```
+
 ## Quick Start
 
 ```bash
