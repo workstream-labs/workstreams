@@ -56,14 +56,17 @@ export class OrchestratorViewPane extends ViewPane {
 		container.style.height = '100%';
 		container.style.minHeight = '0';
 
-		this.repoListElement = append(container, $('.repo-list'));
-
-		const footer = append(container, $('.orchestrator-footer'));
-		const addButton = append(footer, $('.add-repo-button'));
-		addButton.textContent = localize('addRepository', "+ Add Repository");
-		this._register(addDisposableListener(addButton, EventType.CLICK, () => {
+		// Sticky header bar
+		const headerBar = append(container, $('.orchestrator-header-bar'));
+		const headerTitle = append(headerBar, $('.orchestrator-header-title'));
+		headerTitle.textContent = localize('projects', "Projects");
+		const addBtn = append(headerBar, $('.orchestrator-header-add.codicon.codicon-diff-added'));
+		addBtn.title = localize('addRepository', "Add Repository");
+		this._register(addDisposableListener(addBtn, EventType.CLICK, () => {
 			this.orchestratorService.pickAndAddRepository();
 		}));
+
+		this.repoListElement = append(container, $('.repo-list'));
 
 		this.renderContent();
 	}
