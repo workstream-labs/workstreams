@@ -28,6 +28,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
 import { VIEWLET_ID } from '../../scm/common/scm.js';
 import { WorkstreamCommentsViewRegistration } from './workstreamCommentsView.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 
 // Ensure the service singletons are registered (side-effect imports)
 import '../../../services/workstreamComments/browser/workstreamCommentServiceImpl.js';
@@ -111,6 +112,41 @@ registerWorkbenchContribution2(
 	WorkstreamCommentsContribution,
 	WorkbenchPhase.AfterRestored,
 );
+
+// --- "Open Comment" action (click-to-navigate from tree view) ---
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workstreamComments.openComment',
+			title: localize2("openComment", "Open Comment in Editor"),
+			f1: false,
+		});
+	}
+
+	async run(_accessor: ServicesAccessor, worktreePath: string, filePath: string, line: number, side: string): Promise<void> {
+		const editorService = _accessor.get(IEditorService);
+		const modifiedUri = URI.file(`${worktreePath}/${filePath}`);
+
+		// Build a git: URI for the HEAD version (original side of the diff)
+		const originalUri = modifiedUri.with({
+			scheme: 'git',
+			path: modifiedUri.path,
+			query: JSON.stringify({ path: modifiedUri.fsPath, ref: 'HEAD' }),
+		});
+
+		await editorService.openEditor({
+			original: { resource: originalUri },
+			modified: { resource: modifiedUri },
+			label: `${basename(filePath)} (Working Tree)`,
+			options: {
+				selection: { startLineNumber: line, startColumn: 1 },
+				revealIfOpened: true,
+				pinned: false,
+			},
+		});
+	}
+});
 
 // --- "Send Comments to Claude" action ---
 

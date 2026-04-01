@@ -137,10 +137,13 @@ export class OrchestratorTerminalContribution extends Disposable {
 				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0 });
 				this._logService.trace(`${TAG} Claimed terminal ${instance.instanceId} → "${this._activeKey}"`);
 
-				// Inject worktree path so Claude hooks can identify which worktree this session belongs to
+				// Inject worktree path so Claude hooks can identify which worktree this session belongs to.
+				// Set via shellLaunchConfig.env so it's inherited silently by the shell process
+				// (instead of sendText which visibly runs an export command).
 				const worktreePath = this._findWorktreePath(this._activeKey);
 				if (worktreePath) {
-					instance.sendText(`export WORKSTREAMS_WORKTREE_PATH="${worktreePath}" CLAUDE_EVENT_TYPE=""`, true);
+					const slc = instance.shellLaunchConfig;
+					slc.env = { ...slc.env, WORKSTREAMS_WORKTREE_PATH: worktreePath };
 				}
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);

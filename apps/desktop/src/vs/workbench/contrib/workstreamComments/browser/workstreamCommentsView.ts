@@ -189,6 +189,11 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 				collapsibleState: TreeItemCollapsibleState.None,
 				themeIcon: Codicon.comment,
 				contextValue: 'workstream-comment',
+				command: {
+					id: 'workstreamComments.openComment',
+					title: localize('comments.open', "Open Comment"),
+					arguments: [worktree.path, c.filePath, c.line, c.side],
+				},
 			};
 		});
 	}
