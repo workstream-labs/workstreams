@@ -181,13 +181,13 @@ export class OrchestratorViewPane extends ViewPane {
 				break;
 			}
 			case WorktreeSessionState.Permission:
-				el.classList.add('codicon', 'codicon-debug-pause', 'state-waiting');
+				el.classList.add('codicon', 'codicon-stop-circle', 'state-waiting');
 				break;
 			case WorktreeSessionState.Review:
 				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			default:
-				el.classList.add('codicon', 'codicon-git-branch');
+				el.classList.add('codicon', 'codicon-worktree');
 				break;
 		}
 	}
