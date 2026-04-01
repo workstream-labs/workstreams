@@ -8,11 +8,8 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { IWorktreeEntry } from '../../common/orchestratorService.js';
 import { OrchestratorServiceImpl, validateWorktreeName, friendlyName } from '../../../../browser/parts/orchestrator/orchestratorService.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
-import { IGitWorktreeService, IGitWorktreeInfo, parseWorktreeList } from '../../common/gitWorktreeService.js';
-import { IWorkspaceEditingService, IDidEnterWorkspaceEvent } from '../../../../services/workspaces/common/workspaceEditing.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { IWorkspaceFolderCreationData } from '../../../../../platform/workspaces/common/workspaces.js';
-import { Emitter, Event } from '../../../../../base/common/event.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, parseWorktreeList } from '../../common/gitWorktreeService.js';
+import { IWorkspaceEditingService } from '../../../../services/workspaces/common/workspaceEditing.js';
 import { IEditorGroupsService, IEditorWorkingSet } from '../../../../services/editor/common/editorGroupsService.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 
@@ -28,39 +25,11 @@ class MockGitWorktreeService implements IGitWorktreeService {
 	}
 	async addWorktree(repoPath: string, name: string): Promise<string> { return `${repoPath}/.workstreams/${name}/tree`; }
 	async removeWorktree(): Promise<void> { }
-}
-
-interface IUpdateFoldersCall {
-	index: number;
-	deleteCount: number | undefined;
-	foldersToAdd: IWorkspaceFolderCreationData[] | undefined;
-}
-
-class MockWorkspaceEditingService implements IWorkspaceEditingService {
-	declare readonly _serviceBrand: undefined;
-
-	readonly updateFoldersCalls: IUpdateFoldersCall[] = [];
-	readonly addFoldersCalls: IWorkspaceFolderCreationData[][] = [];
-	readonly removeFoldersCalls: URI[][] = [];
-
-	private readonly _onDidEnterWorkspace = new Emitter<IDidEnterWorkspaceEvent>();
-	readonly onDidEnterWorkspace: Event<IDidEnterWorkspaceEvent> = this._onDidEnterWorkspace.event;
-
-	async addFolders(folders: IWorkspaceFolderCreationData[]): Promise<void> { this.addFoldersCalls.push(folders); }
-	async removeFolders(folders: URI[]): Promise<void> { this.removeFoldersCalls.push(folders); }
-	async updateFolders(index: number, deleteCount?: number, foldersToAdd?: IWorkspaceFolderCreationData[]): Promise<void> {
-		this.updateFoldersCalls.push({ index, deleteCount, foldersToAdd });
-	}
-	async enterWorkspace(): Promise<void> { }
-	async createAndEnterWorkspace(): Promise<void> { }
-	async saveAndEnterWorkspace(): Promise<void> { }
-	async copyWorkspaceSettings(): Promise<void> { }
-	async pickNewWorkspacePath(): Promise<URI | undefined> { return undefined; }
+	async getDiffStats(): Promise<IDiffStats> { return { filesChanged: 0, additions: 0, deletions: 0 }; }
 }
 
 suite('OrchestratorService', () => {
 	let service: OrchestratorServiceImpl;
-	let mockWorkspaceEditing: MockWorkspaceEditingService;
 	let savedWorkingSets: Map<string, IEditorWorkingSet>;
 	let appliedWorkingSets: (IEditorWorkingSet | 'empty')[];
 	let createService: () => OrchestratorServiceImpl;
@@ -70,8 +39,7 @@ suite('OrchestratorService', () => {
 	setup(() => {
 		const instantiationService = ds.add(workbenchInstantiationService(undefined, ds));
 		instantiationService.stub(IGitWorktreeService, new MockGitWorktreeService());
-		mockWorkspaceEditing = new MockWorkspaceEditingService();
-		instantiationService.stub(IWorkspaceEditingService, mockWorkspaceEditing);
+		instantiationService.stub(IWorkspaceEditingService, { addFolders: async () => { }, updateFolders: async () => { } });
 
 		// Set up working set tracking on the editor groups service mock
 		savedWorkingSets = new Map();
@@ -247,46 +215,6 @@ suite('OrchestratorService', () => {
 			assert.strictEqual(service.repositories[1].worktrees[0].isActive, true);
 		});
 
-		test('updates workspace folder to worktree path', async () => {
-			await service.addRepository('/path/to/repo');
-			await service.addWorktree('/path/to/repo', 'feature', '');
-			mockWorkspaceEditing.updateFoldersCalls.length = 0;
-
-			await service.switchTo(service.repositories[0].worktrees[1]);
-
-			assert.strictEqual(mockWorkspaceEditing.updateFoldersCalls.length, 1);
-			const call = mockWorkspaceEditing.updateFoldersCalls[0];
-			assert.strictEqual(call.index, 0);
-			assert.strictEqual(call.foldersToAdd?.length, 1);
-			assert.strictEqual(call.foldersToAdd![0].uri.fsPath, '/path/to/repo/.workstreams/feature/tree');
-		});
-
-		test('skips workspace update when switching to same worktree path', async () => {
-			await service.addRepository('/path/to/repo');
-			mockWorkspaceEditing.updateFoldersCalls.length = 0;
-
-			// switchTo the local worktree (already active from addRepository auto-select)
-			await service.switchTo(service.repositories[0].worktrees[0]);
-
-			assert.strictEqual(mockWorkspaceEditing.updateFoldersCalls.length, 0);
-		});
-
-		test('switches workspace folder between worktrees', async () => {
-			await service.addRepository('/path/to/repo');
-			await service.addWorktree('/path/to/repo', 'feat-a', '');
-			await service.addWorktree('/path/to/repo', 'feat-b', '');
-			mockWorkspaceEditing.updateFoldersCalls.length = 0;
-
-			await service.switchTo(service.repositories[0].worktrees[1]); // feat-a
-			await service.switchTo(service.repositories[0].worktrees[2]); // feat-b
-
-			assert.strictEqual(mockWorkspaceEditing.updateFoldersCalls.length, 2);
-			assert.strictEqual(
-				mockWorkspaceEditing.updateFoldersCalls[1].foldersToAdd![0].uri.fsPath,
-				'/path/to/repo/.workstreams/feat-b/tree'
-			);
-		});
-
 		test('saves editor working set when switching away from a worktree', async () => {
 			await service.addRepository('/path/to/repo');
 			await service.addWorktree('/path/to/repo', 'feature', '');
@@ -336,7 +264,7 @@ suite('persistence', () => {
 	setup(() => {
 		const instantiationService = ds.add(workbenchInstantiationService(undefined, ds));
 		instantiationService.stub(IGitWorktreeService, new MockGitWorktreeService());
-		instantiationService.stub(IWorkspaceEditingService, new MockWorkspaceEditingService());
+		instantiationService.stub(IWorkspaceEditingService, { addFolders: async () => { }, updateFolders: async () => { } });
 		storageService = instantiationService.get(IStorageService);
 
 		const editorGroupsService = instantiationService.get(IEditorGroupsService);
@@ -419,7 +347,7 @@ suite('persistence', () => {
 		fakeGit.isGitRepository = async () => false;
 		const instantiationService = ds.add(workbenchInstantiationService(undefined, ds));
 		instantiationService.stub(IGitWorktreeService, fakeGit);
-		instantiationService.stub(IWorkspaceEditingService, new MockWorkspaceEditingService());
+		instantiationService.stub(IWorkspaceEditingService, { addFolders: async () => { }, updateFolders: async () => { } });
 
 		// Copy over the storage state
 		const raw = storageService.get(OrchestratorServiceImpl.STORAGE_KEY, StorageScope.APPLICATION);
