@@ -143,8 +143,24 @@ export class OrchestratorViewPane extends ViewPane {
 		this.applySessionStateIcon(iconEl, worktree);
 
 		const info = append(item, $('.worktree-info'));
-		const nameEl = append(info, $('.worktree-name'));
+
+		const nameRow = append(info, $('.worktree-name-row'));
+		const nameEl = append(nameRow, $('.worktree-name'));
 		nameEl.textContent = worktree.name;
+
+		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
+		if (hasStats) {
+			const statsEl = append(nameRow, $('.worktree-diff-stats'));
+			if (worktree.additions) {
+				const addEl = append(statsEl, $('.diff-stat-add'));
+				addEl.textContent = `+${worktree.additions}`;
+			}
+			if (worktree.deletions) {
+				const delEl = append(statsEl, $('.diff-stat-del'));
+				delEl.textContent = `-${worktree.deletions}`;
+			}
+		}
+
 		const branchEl = append(info, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
 

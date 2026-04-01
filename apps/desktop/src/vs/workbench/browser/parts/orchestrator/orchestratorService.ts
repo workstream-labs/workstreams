@@ -128,14 +128,21 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		const gitWorktrees = await this.gitService.listWorktrees(path);
 
 		// Build worktree entries from discovered worktrees
-		const worktrees: IWorktreeEntry[] = gitWorktrees
-			.filter(wt => !wt.isBare)
-			.map(wt => ({
-				name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-				path: wt.path,
-				branch: wt.branch,
-				isActive: false,
-			}));
+		const nonBare = gitWorktrees.filter(w => !w.isBare);
+		const statsResults = await Promise.all(
+			nonBare.map(wt => wt.path === path
+				? Promise.resolve({ filesChanged: 0, additions: 0, deletions: 0 })
+				: this.gitService.getDiffStats(path, wt.path))
+		);
+		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => ({
+			name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+			path: wt.path,
+			branch: wt.branch,
+			isActive: false,
+			filesChanged: statsResults[i].filesChanged,
+			additions: statsResults[i].additions,
+			deletions: statsResults[i].deletions,
+		}));
 
 		// If no worktrees found (fresh init), add the main worktree
 		if (worktrees.length === 0) {
@@ -385,14 +392,21 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				const currentBranch = await this.gitService.getCurrentBranch(saved.path);
 				const gitWorktrees = await this.gitService.listWorktrees(saved.path);
 
-				const worktrees: IWorktreeEntry[] = gitWorktrees
-					.filter(wt => !wt.isBare)
-					.map(wt => ({
-						name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-						path: wt.path,
-						branch: wt.branch,
-						isActive: false,
-					}));
+				const nonBare = gitWorktrees.filter(w => !w.isBare);
+				const statsResults = await Promise.all(
+					nonBare.map(wt => wt.path === saved.path
+						? Promise.resolve({ filesChanged: 0, additions: 0, deletions: 0 })
+						: this.gitService.getDiffStats(saved.path, wt.path))
+				);
+				const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => ({
+					name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
+					path: wt.path,
+					branch: wt.branch,
+					isActive: false,
+					filesChanged: statsResults[i].filesChanged,
+					additions: statsResults[i].additions,
+					deletions: statsResults[i].deletions,
+				}));
 
 				if (worktrees.length === 0) {
 					worktrees.push({

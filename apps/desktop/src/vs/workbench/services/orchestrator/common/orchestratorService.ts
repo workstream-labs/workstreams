@@ -20,6 +20,9 @@ export interface IWorktreeEntry {
 	readonly description?: string;
 	readonly isActive: boolean;
 	readonly sessionState?: WorktreeSessionState;
+	readonly filesChanged?: number;
+	readonly additions?: number;
+	readonly deletions?: number;
 }
 
 export interface IRepositoryEntry {

@@ -13,6 +13,12 @@ export interface IGitWorktreeInfo {
 
 export const IGitWorktreeService = createDecorator<IGitWorktreeService>('gitWorktreeService');
 
+export interface IDiffStats {
+	readonly filesChanged: number;
+	readonly additions: number;
+	readonly deletions: number;
+}
+
 export interface IGitWorktreeService {
 	readonly _serviceBrand: undefined;
 
@@ -23,6 +29,7 @@ export interface IGitWorktreeService {
 	listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]>;
 	addWorktree(repoPath: string, name: string): Promise<string>;
 	removeWorktree(repoPath: string, worktreePath: string, branchName?: string): Promise<void>;
+	getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats>;
 }
 
 export function parseWorktreeList(output: string): IGitWorktreeInfo[] {
