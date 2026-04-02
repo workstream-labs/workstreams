@@ -284,6 +284,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	}
 
 	async switchTo(worktree: IWorktreeEntry): Promise<void> {
+		this._editorRetryCount = 0;
 		const previousPath = this._activeWorktree?.path;
 		this._activeWorktree = worktree;
 
@@ -353,11 +354,54 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			 * the new worktree.
 			 */
 			this._onDidApplyWorktreeEditorState.fire(worktree);
+
+			// Step 7: Auto-retry editors that failed during restoration.
+			// The folder swap triggers an extension host restart (10 ms
+			// scheduler in WorkspaceChangeExtHostRelauncher). Editors that
+			// depend on extension-provided services (e.g. diff editors via
+			// the git extension) may hit a "Canceled" error while the host
+			// is restarting. Once the restart completes the editors open
+			// fine — so retry any error placeholders after a brief delay.
+			this.retryFailedEditors();
 		} else {
 			this._onDidChangeActiveWorktree.fire(worktree);
 		}
 
 		this.scheduleDiffStatsRefresh();
+	}
+
+	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
+	private static readonly RETRY_DELAY_MS = 500;
+	private static readonly MAX_RETRIES = 3;
+	private _editorRetryCount = 0;
+
+	private retryFailedEditors(): void {
+		setTimeout(async () => {
+			let retried = false;
+			for (const group of this.editorGroupsService.groups) {
+				if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
+					this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
+					try {
+						await group.openEditor(group.activeEditor);
+					} catch (err) {
+						this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
+					}
+					retried = true;
+				}
+			}
+
+			if (retried && this._editorRetryCount < OrchestratorServiceImpl.MAX_RETRIES) {
+				const stillFailing = this.editorGroupsService.groups.some(
+					g => g.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID
+				);
+				if (stillFailing) {
+					this._editorRetryCount++;
+					this.retryFailedEditors();
+					return;
+				}
+			}
+			this._editorRetryCount = 0;
+		}, OrchestratorServiceImpl.RETRY_DELAY_MS);
 	}
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): void {

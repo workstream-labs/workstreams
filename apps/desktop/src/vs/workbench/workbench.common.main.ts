@@ -310,8 +310,9 @@ import './contrib/output/browser/outputView.js';
 // Terminal
 import './contrib/terminal/terminal.all.js';
 
-// Orchestrator terminal isolation
+// Orchestrator worktree contributions
 import './contrib/orchestrator/browser/orchestratorTerminalContribution.js';
+import './contrib/orchestrator/browser/orchestratorExplorerContribution.js';
 import './contrib/orchestrator/browser/orchestratorViewPane.js';
 
 // External terminal

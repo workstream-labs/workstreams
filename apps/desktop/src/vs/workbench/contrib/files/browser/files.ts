@@ -11,7 +11,7 @@ import { List } from '../../../../base/browser/ui/list/listWidget.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ExplorerItem } from '../common/explorerModel.js';
 import { coalesce } from '../../../../base/common/arrays.js';
-import { AsyncDataTree } from '../../../../base/browser/ui/tree/asyncDataTree.js';
+import { AsyncDataTree, IAsyncDataTreeViewState } from '../../../../base/browser/ui/tree/asyncDataTree.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditableData } from '../../../common/views.js';
 import { createDecorator, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -45,6 +45,9 @@ export interface IExplorerService {
 	select(resource: URI, reveal?: boolean | string): Promise<void>;
 
 	registerView(contextAndRefreshProvider: IExplorerView): void;
+
+	getTreeViewState(): IAsyncDataTreeViewState | undefined;
+	setPendingTreeViewState(state: IAsyncDataTreeViewState): void;
 }
 
 export const IExplorerService = createDecorator<IExplorerService>('explorerService');
@@ -64,6 +67,8 @@ export interface IExplorerView {
 	focusNext(): void;
 	focusLast(): void;
 	hasPhantomElements(): boolean;
+	getTreeViewState(): IAsyncDataTreeViewState | undefined;
+	setPendingTreeViewState(state: IAsyncDataTreeViewState): void;
 }
 
 function getFocus(listService: IListService): unknown | undefined {

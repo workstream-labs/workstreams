@@ -186,6 +186,8 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 	private decorationsProvider: ExplorerDecorationsProvider | undefined;
 	private readonly delegate: IExplorerViewContainerDelegate | undefined;
 
+	private _pendingWorktreeViewState: IAsyncDataTreeViewState | undefined;
+
 	override get singleViewPaneContainerTitle(): string {
 		return this.name;
 	}
@@ -611,6 +613,14 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		this.storageService.store(ExplorerView.TREE_VIEW_STATE_STORAGE_KEY, JSON.stringify(this.tree.getViewState()), StorageScope.WORKSPACE, StorageTarget.MACHINE);
 	}
 
+	getTreeViewState(): IAsyncDataTreeViewState | undefined {
+		return this.tree?.getInput() ? this.tree.getViewState() : undefined;
+	}
+
+	setPendingTreeViewState(state: IAsyncDataTreeViewState): void {
+		this._pendingWorktreeViewState = state;
+	}
+
 	private setContextKeys(stat: ExplorerItem | null | undefined): void {
 		const folders = this.contextService.getWorkspace().folders;
 		const resource = stat ? stat.resource : folders[folders.length - 1].uri;
@@ -758,7 +768,11 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		}
 
 		let viewState: IAsyncDataTreeViewState | undefined;
-		if (this.tree?.getInput()) {
+		if (this._pendingWorktreeViewState) {
+			// Restoring a previously visited worktree — use its cached state
+			viewState = this._pendingWorktreeViewState;
+			this._pendingWorktreeViewState = undefined;
+		} else if (this.tree?.getInput()) {
 			viewState = this.tree.getViewState();
 		} else {
 			const rawViewState = this.storageService.get(ExplorerView.TREE_VIEW_STATE_STORAGE_KEY, StorageScope.WORKSPACE);
