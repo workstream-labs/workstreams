@@ -54,6 +54,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		let selectedAgent = options.defaultAgent;
 		let selectedBranch = options.defaultBranch;
 		let activeDropdown: HTMLElement | null = null;
+		let activeDropdownTrigger: HTMLElement | null = null;
 
 		// --- Overlay ---
 		const overlay = document.createElement('div');
@@ -193,12 +194,19 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			: localize('submitHintOther', "Ctrl+Enter to create");
 		footerRight.appendChild(hint);
 
-		// --- Dropdown helper ---
-		function showDropdown(container: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
+		// --- Dropdown helper (rendered on document.body to escape backdrop-filter) ---
+		function showDropdown(trigger: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
 			closeActiveDropdown();
 
 			const menu = document.createElement('div');
 			menu.className = 'add-worktree-dropdown';
+
+			// Position below the trigger button using fixed coords
+			const rect = trigger.getBoundingClientRect();
+			menu.style.position = 'fixed';
+			menu.style.top = `${rect.bottom + 4}px`;
+			menu.style.left = `${rect.left}px`;
+			menu.style.minWidth = `${Math.max(rect.width, 150)}px`;
 
 			for (const item of items) {
 				const option = document.createElement('div');
@@ -224,7 +232,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				menu.appendChild(option);
 			}
 
-			container.appendChild(menu);
+			document.body.appendChild(menu);
 			activeDropdown = menu;
 		}
 
@@ -232,35 +240,38 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			if (activeDropdown) {
 				activeDropdown.remove();
 				activeDropdown = null;
+				activeDropdownTrigger = null;
 			}
 		}
 
 		// --- Agent dropdown ---
 		disposables.add(addDisposableListener(agentBtn, EventType.CLICK, (e) => {
 			e.stopPropagation();
-			if (activeDropdown?.parentElement === agentContainer) {
+			if (activeDropdownTrigger === agentBtn) {
 				closeActiveDropdown();
 				return;
 			}
 			showDropdown(
-				agentContainer,
+				agentBtn,
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent })),
 				(id) => { selectedAgent = id; updateAgentButton(); }
 			);
+			activeDropdownTrigger = agentBtn;
 		}));
 
 		// --- Branch dropdown ---
 		disposables.add(addDisposableListener(branchBtn, EventType.CLICK, (e) => {
 			e.stopPropagation();
-			if (activeDropdown?.parentElement === branchContainer) {
+			if (activeDropdownTrigger === branchBtn) {
 				closeActiveDropdown();
 				return;
 			}
 			showDropdown(
-				branchContainer,
+				branchBtn,
 				options.branches.map(b => ({ id: b, label: b, selected: b === selectedBranch })),
 				(id) => { selectedBranch = id; updateBranchButton(); }
 			);
+			activeDropdownTrigger = branchBtn;
 		}));
 
 		// --- Name input → branch preview ---

@@ -521,13 +521,7 @@
 }
 
 .add-worktree-dropdown {
-	position: absolute;
-	top: calc(100% + 4px);
-	left: 0;
-	min-width: 150px;
-	background: var(--vscode-editorWidget-background, var(--vscode-input-background));
-	-webkit-backdrop-filter: none;
-	backdrop-filter: none;
+	background: var(--vscode-input-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 8px;
 	padding: 4px;
@@ -537,6 +531,8 @@
 	z-index: 10001;
 	max-height: 200px;
 	overflow-y: auto;
+	font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+	font-size: var(--vscode-font-size, 13px);
 }
 
 .add-worktree-dropdown-item {
