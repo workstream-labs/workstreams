@@ -13,47 +13,47 @@
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	background: rgba(0, 0, 0, 0.3);
+	background: rgba(0, 0, 0, 0.4);
 }
 
 .ask-feedback-dialog {
 	display: flex;
 	flex-direction: column;
-	min-width: 480px;
-	max-width: 90vw;
-	padding: 20px 24px;
-	border-radius: var(--vscode-cornerRadius-xLarge, 8px);
-	box-shadow: var(--vscode-shadow-xl, 0 0 8px rgba(0, 0, 0, 0.36));
-	background-color: var(--vscode-dialog-background, var(--vscode-editorWidget-background));
-	color: var(--vscode-dialog-foreground, var(--vscode-editorWidget-foreground));
-	border: 1px solid var(--vscode-dialog-border, var(--vscode-editorWidget-border));
+	width: 360px;
+	padding: 16px;
+	border-radius: 8px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32);
+	background-color: var(--vscode-editorWidget-background);
+	color: var(--vscode-editorWidget-foreground);
+	border: 1px solid var(--vscode-editorWidget-border, transparent);
 }
 
 .ask-feedback-title {
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 600;
-	margin-bottom: 16px;
+	margin-bottom: 12px;
 }
 
 .ask-feedback-label {
 	display: block;
-	font-size: 12px;
+	font-size: 11px;
+	font-weight: 500;
 	margin-bottom: 4px;
-	color: var(--vscode-foreground);
-	opacity: 0.8;
+	color: var(--vscode-descriptionForeground);
 }
 
 .ask-feedback-select {
 	width: 100%;
-	padding: 6px 8px;
-	margin-bottom: 12px;
-	font-size: 13px;
+	padding: 4px 6px;
+	margin-bottom: 10px;
+	font-size: 12px;
 	font-family: inherit;
-	border-radius: var(--vscode-cornerRadius, 4px);
+	border-radius: 4px;
 	border: 1px solid var(--vscode-input-border, transparent);
 	background-color: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
 	outline: none;
+	box-sizing: border-box;
 }
 
 .ask-feedback-select:focus {
@@ -62,17 +62,18 @@
 
 .ask-feedback-textarea {
 	width: 100%;
-	padding: 6px 8px;
-	margin-bottom: 16px;
-	font-size: 13px;
+	padding: 6px;
+	margin-bottom: 12px;
+	font-size: 12px;
 	font-family: inherit;
-	border-radius: var(--vscode-cornerRadius, 4px);
+	line-height: 1.4;
+	border-radius: 4px;
 	border: 1px solid var(--vscode-input-border, transparent);
 	background-color: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
 	outline: none;
-	resize: vertical;
-	min-height: 80px;
+	resize: none;
+	min-height: 72px;
 	box-sizing: border-box;
 }
 
@@ -87,14 +88,14 @@
 .ask-feedback-buttons {
 	display: flex;
 	justify-content: flex-end;
-	gap: 8px;
+	gap: 6px;
 }
 
 .ask-feedback-button {
-	padding: 6px 14px;
-	font-size: 13px;
+	padding: 4px 12px;
+	font-size: 12px;
 	font-family: inherit;
-	border-radius: var(--vscode-cornerRadius, 4px);
+	border-radius: 4px;
 	border: none;
 	cursor: pointer;
 	outline: none;
@@ -106,12 +107,12 @@
 }
 
 .ask-feedback-button-cancel {
-	background-color: var(--vscode-button-secondaryBackground);
-	color: var(--vscode-button-secondaryForeground);
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
 }
 
 .ask-feedback-button-cancel:hover {
-	background-color: var(--vscode-button-secondaryHoverBackground);
+	color: var(--vscode-foreground);
 }
 
 .ask-feedback-button-submit {
