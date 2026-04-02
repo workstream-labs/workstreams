@@ -451,7 +451,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 	}
 
-	private scheduleRefresh(): void {
+	scheduleRefresh(): void {
 		this._refreshScheduler.schedule();
 	}
 

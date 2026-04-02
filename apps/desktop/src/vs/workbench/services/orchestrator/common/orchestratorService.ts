@@ -68,4 +68,10 @@ export interface IOrchestratorService {
 	addWorktree(repoPath: string, name: string, description: string): Promise<void>;
 	removeWorktree(repoPath: string, branchName: string): Promise<void>;
 	switchTo(worktree: IWorktreeEntry): Promise<void>;
+
+	/**
+	 * Schedule a debounced refresh of worktree state (branches, diff stats).
+	 * Called by contributions that detect external changes (e.g. terminal commands).
+	 */
+	scheduleRefresh(): void;
 }
