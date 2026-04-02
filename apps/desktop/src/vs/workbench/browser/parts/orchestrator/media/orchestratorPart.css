@@ -325,5 +325,214 @@
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
+/* -- Add Worktree Modal -- */
+
+.add-worktree-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding-top: 12%;
+	background: rgba(0, 0, 0, 0.35);
+}
+
+.add-worktree-modal {
+	width: 560px;
+	max-width: 90vw;
+}
+
+.add-worktree-header {
+	display: flex;
+	justify-content: space-between;
+	padding: 0 4px 8px;
+}
+
+.add-worktree-label {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.add-worktree-branch-preview {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--monaco-monospace-font);
+}
+
+.add-worktree-card {
+	background: var(--vscode-quickInput-background, var(--vscode-editor-background));
+	border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
+	border-radius: 12px;
+	padding: 14px 16px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.add-worktree-name-input {
+	width: 100%;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--vscode-foreground);
+	font-size: 14px;
+	font-family: inherit;
+	padding: 4px 0;
+	box-sizing: border-box;
+}
+
+.add-worktree-name-input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+.add-worktree-validation {
+	display: none;
+	font-size: 11px;
+	color: var(--vscode-errorForeground);
+	padding: 2px 0 0;
+}
+
+.add-worktree-separator {
+	height: 1px;
+	background: var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
+	margin: 8px 0;
+}
+
+.add-worktree-prompt {
+	width: 100%;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--vscode-foreground);
+	font-size: 13px;
+	font-family: inherit;
+	resize: none;
+	padding: 4px 0;
+	min-height: 64px;
+	box-sizing: border-box;
+}
+
+.add-worktree-prompt::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+.add-worktree-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 8px;
+}
+
+.add-worktree-footer-left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.add-worktree-footer-right {
+	display: flex;
+	align-items: center;
+}
+
+.add-worktree-select-container {
+	position: relative;
+}
+
+.add-worktree-select-btn {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	background: transparent;
+	border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.12));
+	border-radius: 6px;
+	color: var(--vscode-foreground);
+	font-size: 12px;
+	padding: 4px 8px;
+	cursor: pointer;
+	font-family: inherit;
+	line-height: 1;
+}
+
+.add-worktree-select-btn:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.add-worktree-agent-icon {
+	font-size: 14px;
+}
+
+.add-worktree-no-agent-label {
+	opacity: 0.5;
+}
+
+.add-worktree-select-btn.disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.add-worktree-select-btn.disabled:hover {
+	background: transparent;
+}
+
+.add-worktree-prompt.disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.add-worktree-select-arrow {
+	font-size: 10px;
+	opacity: 0.5;
+}
+
+.add-worktree-hint {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.6;
+}
+
+.add-worktree-dropdown {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	min-width: 140px;
+	background: var(--vscode-quickInput-background, var(--vscode-editor-background));
+	border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.12));
+	border-radius: 8px;
+	padding: 4px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+	z-index: 1;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.add-worktree-dropdown-item {
+	padding: 6px 10px;
+	font-size: 12px;
+	cursor: pointer;
+	border-radius: 4px;
+	color: var(--vscode-foreground);
+}
+
+.add-worktree-dropdown-item:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.add-worktree-dropdown-item.selected {
+	color: var(--vscode-focusBorder);
+}
+
+.add-worktree-dropdown-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.add-worktree-dropdown-icon {
+	font-size: 14px;
+	flex-shrink: 0;
+}
+
 /* -- Footer -- */
 

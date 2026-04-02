@@ -76,13 +76,26 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		}
 	}
 
-	async addWorktree(repoPath: string, name: string): Promise<string> {
+	async listBranches(repoPath: string): Promise<string[]> {
+		try {
+			const { stdout } = await execFile('git', ['branch', '--format=%(refname:short)'], { cwd: repoPath });
+			return stdout.trim().split('\n').filter(b => b);
+		} catch {
+			return [];
+		}
+	}
+
+	async addWorktree(repoPath: string, name: string, baseBranch?: string): Promise<string> {
 		const workstreamsDir = path.join(repoPath, WORKSTREAMS_DIR);
 		const worktreeDir = path.join(workstreamsDir, name);
 		const worktreePath = path.join(worktreeDir, WORKTREE_SUBDIR);
 
 		await mkdir(worktreeDir, { recursive: true });
-		await execFile('git', ['worktree', 'add', '-b', name, worktreePath], { cwd: repoPath });
+		const args = ['worktree', 'add', '-b', name, worktreePath];
+		if (baseBranch) {
+			args.push(baseBranch);
+		}
+		await execFile('git', args, { cwd: repoPath });
 
 		await this.ensureGitignore(repoPath);
 
@@ -180,6 +193,22 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		} catch {
 			return empty;
 		}
+	}
+
+	private static readonly KNOWN_AGENTS = ['claude', 'codex'];
+
+	async detectAgents(): Promise<string[]> {
+		const results = await Promise.all(
+			GitWorktreeMainService.KNOWN_AGENTS.map(async agent => {
+				try {
+					await execFile('which', [agent]);
+					return agent;
+				} catch {
+					return null;
+				}
+			})
+		);
+		return results.filter((a): a is string => a !== null);
 	}
 
 	private async ensureGitignore(repoPath: string): Promise<void> {

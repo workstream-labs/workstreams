@@ -22,6 +22,7 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { showAddWorktreeModal, agentsFromIds } from './addWorktreeModal.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
 export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
@@ -109,7 +110,7 @@ export class OrchestratorViewPane extends ViewPane {
 
 		this.renderDisposables.add(addDisposableListener(addWorktreeBtn, EventType.CLICK, e => {
 			e.stopPropagation();
-			this.orchestratorService.pickAndAddWorktree(repo.path);
+			this.showAddWorktreeModal(repo.path);
 		}));
 
 		this.renderDisposables.add(addDisposableListener(removeRepoBtn, EventType.CLICK, e => {
@@ -174,6 +175,26 @@ export class OrchestratorViewPane extends ViewPane {
 		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
 			this.orchestratorService.switchTo(worktree);
 		}));
+	}
+
+	private async showAddWorktreeModal(repoPath: string): Promise<void> {
+		const [branches, detectedIds] = await Promise.all([
+			this.orchestratorService.listBranches(repoPath),
+			this.orchestratorService.detectAgents(),
+		]);
+		const currentBranch = branches.length > 0 ? branches[0] : 'main';
+		const agents = agentsFromIds(detectedIds);
+
+		const result = await showAddWorktreeModal({
+			branches: branches.length > 0 ? branches : ['main'],
+			agents,
+			defaultBranch: currentBranch,
+			defaultAgent: agents.length > 0 ? agents[0].id : '',
+		});
+
+		if (result) {
+			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch);
+		}
 	}
 
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

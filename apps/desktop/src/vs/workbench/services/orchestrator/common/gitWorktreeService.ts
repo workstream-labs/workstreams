@@ -27,9 +27,11 @@ export interface IGitWorktreeService {
 	getCurrentBranch(repoPath: string): Promise<string>;
 	getRemoteUrl(repoPath: string): Promise<string | undefined>;
 	listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]>;
-	addWorktree(repoPath: string, name: string): Promise<string>;
+	listBranches(repoPath: string): Promise<string[]>;
+	addWorktree(repoPath: string, name: string, baseBranch?: string): Promise<string>;
 	removeWorktree(repoPath: string, worktreePath: string, branchName?: string, force?: boolean): Promise<void>;
 	getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats>;
+	detectAgents(): Promise<string[]>;
 }
 
 export function parseWorktreeList(output: string): IGitWorktreeInfo[] {
