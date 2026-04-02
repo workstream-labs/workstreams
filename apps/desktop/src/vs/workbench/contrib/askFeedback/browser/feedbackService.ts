@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 const SLACK_WEBHOOK_URL = 'REDACTED_SLACK_WEBHOOK';
+const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzO_-j2fyvhzBnK6-ItltmbeKsg1ryOh09cka_N3PQJq-TI2d0lyD38ZUsPVc17thEmew/exec';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -102,4 +103,11 @@ export async function submitFeedback(feedback: IFeedbackResult): Promise<void> {
 
 	// Response is opaque in no-cors mode — we can't read the status.
 	// The request is fire-and-forget; errors throw from fetch itself (network failure).
+
+	// Also log to Google Sheets for durable record
+	await fetch(GOOGLE_SHEETS_URL, {
+		method: 'POST',
+		mode: 'no-cors',
+		body: JSON.stringify({ type: TYPE_LABELS[feedback.type], text: feedback.text }),
+	});
 }
