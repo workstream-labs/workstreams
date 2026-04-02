@@ -361,6 +361,7 @@
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 10px;
 	padding: 14px 16px;
+	overflow: visible;
 	box-shadow:
 		0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.12)),
 		0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16)),
