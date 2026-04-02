@@ -3,9 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { IRequestService } from '../../../../platform/request/common/request.js';
-
 const SLACK_WEBHOOK_URL = 'REDACTED_SLACK_WEBHOOK';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -62,7 +59,7 @@ const TYPE_EMOJI: Record<FeedbackType, string> = {
 	other: ':thought_balloon:',
 };
 
-export async function submitFeedback(feedback: IFeedbackResult, requestService: IRequestService): Promise<void> {
+export async function submitFeedback(feedback: IFeedbackResult): Promise<void> {
 	const payload = {
 		blocks: [
 			{
@@ -91,15 +88,18 @@ export async function submitFeedback(feedback: IFeedbackResult, requestService: 
 		],
 	};
 
-	const context = await requestService.request({
-		type: 'POST',
-		url: SLACK_WEBHOOK_URL,
-		headers: { 'Content-Type': 'application/json' },
-		data: JSON.stringify(payload),
-		callSite: 'askFeedback.submitFeedback',
-	}, CancellationToken.None);
+	// Use application/x-www-form-urlencoded with payload= to avoid CORS preflight.
+	// Slack webhooks accept this format natively. Combined with no-cors mode,
+	// the request bypasses browser CORS restrictions entirely.
+	const body = 'payload=' + encodeURIComponent(JSON.stringify(payload));
 
-	if (context.res.statusCode && context.res.statusCode >= 400) {
-		throw new Error(`Slack webhook returned ${context.res.statusCode}`);
-	}
+	await fetch(SLACK_WEBHOOK_URL, {
+		method: 'POST',
+		mode: 'no-cors',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body,
+	});
+
+	// Response is opaque in no-cors mode — we can't read the status.
+	// The request is fire-and-forget; errors throw from fetch itself (network failure).
 }
