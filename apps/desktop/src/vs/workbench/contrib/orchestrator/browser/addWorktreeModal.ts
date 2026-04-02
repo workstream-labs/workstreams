@@ -34,6 +34,7 @@ export interface AddWorktreeModalOptions {
 export const KNOWN_AGENTS: ReadonlyMap<string, AgentOption> = new Map([
 	['claude', { id: 'claude', label: 'Claude', icon: Codicon.claude }],
 	['codex', { id: 'codex', label: 'Codex', icon: Codicon.openai }],
+	['terminal', { id: 'terminal', label: 'Terminal', icon: Codicon.terminal }],
 ]);
 
 export function agentsFromIds(ids: string[]): AgentOption[] {

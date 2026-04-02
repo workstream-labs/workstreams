@@ -183,7 +183,7 @@ export class OrchestratorViewPane extends ViewPane {
 			this.orchestratorService.detectAgents(),
 		]);
 		const currentBranch = branches.length > 0 ? branches[0] : 'main';
-		const agents = agentsFromIds(detectedIds);
+		const agents = agentsFromIds([...detectedIds, 'terminal']);
 
 		const result = await showAddWorktreeModal({
 			branches: branches.length > 0 ? branches : ['main'],
