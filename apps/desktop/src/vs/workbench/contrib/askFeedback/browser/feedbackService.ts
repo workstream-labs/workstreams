@@ -3,6 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { IRequestService } from '../../../../platform/request/common/request.js';
+
 const SLACK_WEBHOOK_URL = 'REDACTED_SLACK_WEBHOOK';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@ const TYPE_EMOJI: Record<FeedbackType, string> = {
 	other: ':thought_balloon:',
 };
 
-export async function submitFeedback(feedback: IFeedbackResult): Promise<void> {
+export async function submitFeedback(feedback: IFeedbackResult, requestService: IRequestService): Promise<void> {
 	const payload = {
 		blocks: [
 			{
@@ -88,13 +91,15 @@ export async function submitFeedback(feedback: IFeedbackResult): Promise<void> {
 		],
 	};
 
-	const response = await fetch(SLACK_WEBHOOK_URL, {
-		method: 'POST',
+	const context = await requestService.request({
+		type: 'POST',
+		url: SLACK_WEBHOOK_URL,
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(payload),
-	});
+		data: JSON.stringify(payload),
+		callSite: 'askFeedback.submitFeedback',
+	}, CancellationToken.None);
 
-	if (!response.ok) {
-		throw new Error(`Slack webhook returned ${response.status}`);
+	if (context.res.statusCode && context.res.statusCode >= 400) {
+		throw new Error(`Slack webhook returned ${context.res.statusCode}`);
 	}
 }

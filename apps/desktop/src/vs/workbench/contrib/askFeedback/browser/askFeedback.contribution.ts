@@ -14,6 +14,7 @@ import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/c
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { IRequestService } from '../../../../platform/request/common/request.js';
 import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
 import { type FeedbackType, type IFeedbackResult, submitFeedback, tryAcquireFeedback } from './feedbackService.js';
 
@@ -133,6 +134,7 @@ registerAction2(class AskFeedbackAction extends Action2 {
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const layoutService = accessor.get(ILayoutService);
 		const notificationService = accessor.get(INotificationService);
+		const requestService = accessor.get(IRequestService);
 
 		if (!tryAcquireFeedback()) {
 			notificationService.notify({
@@ -148,7 +150,7 @@ registerAction2(class AskFeedbackAction extends Action2 {
 		}
 
 		try {
-			await submitFeedback(result);
+			await submitFeedback(result, requestService);
 			notificationService.info(localize('feedbackSent', "Thank you for your feedback!"));
 		} catch {
 			notificationService.notify({
