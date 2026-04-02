@@ -67,29 +67,22 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		card.className = 'add-worktree-card';
 		modal.appendChild(card);
 
-		// --- Header labels (inside card) ---
-		const header = document.createElement('div');
-		header.className = 'add-worktree-header';
+		// --- Name input row (input + branch preview on same line) ---
+		const nameRow = document.createElement('div');
+		nameRow.className = 'add-worktree-name-row';
+		card.appendChild(nameRow);
 
-		const nameLabel = document.createElement('span');
-		nameLabel.className = 'add-worktree-label';
-		nameLabel.textContent = localize('workspaceName', "Workspace name");
-
-		const branchPreview = document.createElement('span');
-		branchPreview.className = 'add-worktree-branch-preview';
-		branchPreview.textContent = localize('branchName', "branch name");
-
-		header.appendChild(nameLabel);
-		header.appendChild(branchPreview);
-		card.appendChild(header);
-
-		// --- Name input ---
 		const nameInput = document.createElement('input');
 		nameInput.type = 'text';
 		nameInput.className = 'add-worktree-name-input';
+		nameInput.placeholder = localize('workspaceName', "Workspace name");
 		nameInput.spellcheck = false;
 		nameInput.autocomplete = 'off';
-		card.appendChild(nameInput);
+		nameRow.appendChild(nameInput);
+
+		const branchPreview = document.createElement('span');
+		branchPreview.className = 'add-worktree-branch-preview';
+		nameRow.appendChild(branchPreview);
 
 		// --- Validation message ---
 		const validationMsg = document.createElement('div');
@@ -270,7 +263,8 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		// --- Name input → branch preview ---
 		disposables.add(addDisposableListener(nameInput, EventType.INPUT, () => {
 			const value = nameInput.value.trim();
-			branchPreview.textContent = value || localize('branchName', "branch name");
+			branchPreview.textContent = value;
+			branchPreview.style.display = value ? '' : 'none';
 			if (value) {
 				const error = validateWorktreeName(value);
 				validationMsg.textContent = error || '';

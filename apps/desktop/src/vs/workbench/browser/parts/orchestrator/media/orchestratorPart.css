@@ -354,25 +354,6 @@
 	to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.add-worktree-header {
-	display: flex;
-	justify-content: space-between;
-	padding: 0 0 4px;
-}
-
-.add-worktree-label {
-	font-size: 12px;
-	color: var(--vscode-foreground);
-	opacity: 0.6;
-}
-
-.add-worktree-branch-preview {
-	font-size: 12px;
-	color: var(--vscode-foreground);
-	opacity: 0.4;
-	font-family: var(--monaco-monospace-font);
-}
-
 .add-worktree-card {
 	background: var(--vscode-input-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
@@ -384,8 +365,15 @@
 		0 12px 48px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
 }
 
+.add-worktree-name-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
 .add-worktree-name-input {
-	width: 100%;
+	flex: 1;
+	min-width: 0;
 	background: transparent;
 	border: none;
 	outline: none;
@@ -398,6 +386,19 @@
 
 .add-worktree-name-input::placeholder {
 	color: var(--vscode-input-placeholderForeground);
+}
+
+.add-worktree-branch-preview {
+	display: none;
+	flex-shrink: 0;
+	font-size: 12px;
+	color: var(--vscode-input-placeholderForeground, var(--vscode-foreground));
+	font-family: var(--monaco-monospace-font);
+	padding-bottom: 4px;
+	max-width: 40%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .add-worktree-validation {
