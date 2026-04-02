@@ -14,7 +14,7 @@ import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/c
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { IsAuxiliaryWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
 
 type FeedbackType = 'bug' | 'feature' | 'other';
 
