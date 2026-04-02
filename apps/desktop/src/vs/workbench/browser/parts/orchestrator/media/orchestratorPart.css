@@ -338,12 +338,20 @@
 	align-items: flex-start;
 	justify-content: center;
 	padding-top: 15vh;
-	background: rgba(0, 0, 0, 0.6);
+	background: color-mix(in srgb, var(--vscode-editor-background) 70%, transparent);
+	-webkit-backdrop-filter: blur(8px) saturate(120%);
+	backdrop-filter: blur(8px) saturate(120%);
 }
 
 .add-worktree-modal {
 	width: 560px;
 	max-width: 90vw;
+	animation: addWorktreeModalIn 0.15s ease-out;
+}
+
+@keyframes addWorktreeModalIn {
+	from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+	to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .add-worktree-header {
@@ -354,25 +362,26 @@
 
 .add-worktree-label {
 	font-size: 12px;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	color: var(--vscode-foreground);
 	opacity: 0.6;
 }
 
 .add-worktree-branch-preview {
 	font-size: 12px;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
-	opacity: 0.45;
+	color: var(--vscode-foreground);
+	opacity: 0.4;
 	font-family: var(--monaco-monospace-font);
 }
 
 .add-worktree-card {
-	background: var(--vscode-editorWidget-background);
+	background: var(--vscode-input-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 10px;
 	padding: 14px 16px;
 	box-shadow:
-		0 2px 6px rgba(0, 0, 0, 0.2),
-		0 12px 40px rgba(0, 0, 0, 0.45);
+		0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.12)),
+		0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16)),
+		0 12px 48px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
 }
 
 .add-worktree-name-input {
@@ -380,7 +389,7 @@
 	background: transparent;
 	border: none;
 	outline: none;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	color: var(--vscode-input-foreground, var(--vscode-foreground));
 	font-size: 14px;
 	font-family: inherit;
 	padding: 2px 0 6px;
@@ -400,7 +409,7 @@
 
 .add-worktree-separator {
 	height: 1px;
-	background: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	background: var(--vscode-panel-border, var(--vscode-editorWidget-border));
 	margin: 0 0 8px;
 }
 
@@ -409,7 +418,7 @@
 	background: transparent;
 	border: none;
 	outline: none;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	color: var(--vscode-input-foreground, var(--vscode-foreground));
 	font-size: 13px;
 	font-family: inherit;
 	resize: none;
@@ -434,7 +443,7 @@
 	justify-content: space-between;
 	padding-top: 8px;
 	margin-top: 4px;
-	border-top: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border));
 }
 
 .add-worktree-footer-left {
@@ -456,19 +465,20 @@
 	display: flex;
 	align-items: center;
 	gap: 5px;
-	background: var(--vscode-input-background);
-	border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+	background: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 6px;
-	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	color: var(--vscode-foreground);
 	font-size: 12px;
 	padding: 4px 8px;
 	cursor: pointer;
 	font-family: inherit;
 	line-height: 1.3;
+	transition: border-color 0.1s ease;
 }
 
 .add-worktree-select-btn:hover {
-	background: var(--vscode-inputOption-hoverBackground, var(--vscode-input-background));
+	border-color: var(--vscode-focusBorder);
 }
 
 .add-worktree-select-btn.disabled {
@@ -477,7 +487,7 @@
 }
 
 .add-worktree-select-btn.disabled:hover {
-	background: var(--vscode-input-background);
+	border-color: var(--vscode-editorWidget-border, var(--vscode-panel-border));
 }
 
 .add-worktree-agent-icon {
@@ -497,8 +507,8 @@
 
 .add-worktree-hint {
 	font-size: 11px;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
-	opacity: 0.4;
+	color: var(--vscode-foreground);
+	opacity: 0.35;
 }
 
 .add-worktree-dropdown {
@@ -506,13 +516,13 @@
 	bottom: calc(100% + 4px);
 	left: 0;
 	min-width: 150px;
-	background: var(--vscode-editorWidget-background);
+	background: var(--vscode-input-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 8px;
 	padding: 4px;
 	box-shadow:
-		0 2px 6px rgba(0, 0, 0, 0.2),
-		0 8px 24px rgba(0, 0, 0, 0.4);
+		0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16)),
+		0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
 	z-index: 1;
 	max-height: 200px;
 	overflow-y: auto;
@@ -526,7 +536,7 @@
 	font-size: 12px;
 	cursor: pointer;
 	border-radius: 4px;
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	color: var(--vscode-foreground);
 }
 
 .add-worktree-dropdown-item:hover {
