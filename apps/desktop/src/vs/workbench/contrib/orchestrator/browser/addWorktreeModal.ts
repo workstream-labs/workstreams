@@ -82,6 +82,8 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		const branchPreview = document.createElement('span');
 		branchPreview.className = 'add-worktree-branch-preview';
+		branchPreview.textContent = localize('branchName', "branch name");
+		branchPreview.classList.add('placeholder');
 		nameRow.appendChild(branchPreview);
 
 		// --- Validation message ---
@@ -263,8 +265,13 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		// --- Name input → branch preview ---
 		disposables.add(addDisposableListener(nameInput, EventType.INPUT, () => {
 			const value = nameInput.value.trim();
-			branchPreview.textContent = value;
-			branchPreview.style.display = value ? '' : 'none';
+			if (value) {
+				branchPreview.textContent = value;
+				branchPreview.classList.remove('placeholder');
+			} else {
+				branchPreview.textContent = localize('branchName', "branch name");
+				branchPreview.classList.add('placeholder');
+			}
 			if (value) {
 				const error = validateWorktreeName(value);
 				validationMsg.textContent = error || '';
