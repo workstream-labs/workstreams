@@ -39,10 +39,6 @@
 	min-width: 350px; /* more narrow when aligned vertically */
 }
 
-.monaco-dialog-box:has(.wide-dialog) {
-	min-width: 650px;
-}
-
 /** Dialog: Title Actions Row */
 .monaco-dialog-box .dialog-toolbar-row {
 	height: 20px;

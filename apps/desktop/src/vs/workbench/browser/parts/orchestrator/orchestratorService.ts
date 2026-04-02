@@ -12,6 +12,7 @@ import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IGitWorktreeService, IDiffStats } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
@@ -256,13 +257,19 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			try {
 				await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch);
 			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
+				const raw = err instanceof Error ? err.message : String(err);
+				const fatalMatch = raw.match(/fatal:\s*(.+)/i);
+				const reason = fatalMatch ? fatalMatch[1].trim() : raw;
 				const { confirmed } = await this.dialogService.confirm({
 					type: Severity.Warning,
 					message: localize('worktreeRemoveFailed', "Failed to remove worktree"),
-					detail: localize('worktreeRemoveFailedDetail', "{0}\n\nDo you want to force delete this worktree? This will discard any uncommitted changes.", message),
+					detail: reason,
 					primaryButton: localize('forceDelete', "Force Delete"),
-					custom: { classes: ['wide-dialog'] },
+					custom: {
+						markdownDetails: [{
+							markdown: new MarkdownString(localize('worktreeRemoveForcePrompt', "Do you want to force delete this worktree? This will discard any uncommitted changes.")),
+						}],
+					},
 				});
 				if (!confirmed) {
 					return;
