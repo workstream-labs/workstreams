@@ -370,42 +370,37 @@
 .add-worktree-name-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 0;
 }
 
-.add-worktree-name-input {
-	flex: 1;
-	min-width: 0;
+.add-worktree-name-input,
+.add-worktree-branch-input {
 	background: transparent;
 	border: none;
 	outline: none;
 	color: var(--vscode-input-foreground, var(--vscode-foreground));
-	font-size: 14px;
+	font-size: 13px;
 	font-family: inherit;
 	padding: 2px 0 6px;
 	box-sizing: border-box;
 }
 
-.add-worktree-name-input::placeholder {
-	color: var(--vscode-input-placeholderForeground);
+.add-worktree-name-input {
+	flex: 1;
+	min-width: 0;
 }
 
-.add-worktree-branch-preview {
-	flex-shrink: 0;
-	font-size: 12px;
-	color: var(--vscode-foreground);
+.add-worktree-branch-input {
+	flex: 1;
+	min-width: 0;
+	text-align: right;
 	font-family: var(--monaco-monospace-font);
-	padding-bottom: 4px;
-	max-width: 40%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	opacity: 0.5;
+	font-size: 12px;
 }
 
-.add-worktree-branch-preview.placeholder {
+.add-worktree-name-input::placeholder,
+.add-worktree-branch-input::placeholder {
 	color: var(--vscode-input-placeholderForeground);
-	opacity: 1;
 }
 
 .add-worktree-validation {
@@ -449,9 +444,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding-top: 8px;
-	margin-top: 4px;
-	border-top: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border));
+	padding: 8px 6px 0;
 }
 
 .add-worktree-footer-left {
