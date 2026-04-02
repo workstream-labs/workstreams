@@ -199,6 +199,10 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 			const menu = document.createElement('div');
 			menu.className = 'add-worktree-dropdown';
+			// Use the card's computed background so the dropdown is guaranteed
+			// the same fully-opaque color (CSS variables can fail to resolve
+			// on absolutely-positioned overflow children in some compositing contexts)
+			menu.style.backgroundColor = getComputedStyle(card).backgroundColor;
 
 			for (const item of items) {
 				const option = document.createElement('div');
