@@ -262,6 +262,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					message: localize('worktreeRemoveFailed', "Failed to remove worktree"),
 					detail: localize('worktreeRemoveFailedDetail', "{0}\n\nDo you want to force delete this worktree? This will discard any uncommitted changes.", message),
 					primaryButton: localize('forceDelete', "Force Delete"),
+					custom: { classes: ['wide-dialog'] },
 				});
 				if (!confirmed) {
 					return;
