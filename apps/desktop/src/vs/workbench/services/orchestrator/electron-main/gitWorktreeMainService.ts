@@ -89,8 +89,12 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		return worktreePath;
 	}
 
-	async removeWorktree(repoPath: string, worktreePath: string, branchName?: string): Promise<void> {
-		await execFile('git', ['worktree', 'remove', worktreePath], { cwd: repoPath });
+	async removeWorktree(repoPath: string, worktreePath: string, branchName?: string, force?: boolean): Promise<void> {
+		const args = ['worktree', 'remove', worktreePath];
+		if (force) {
+			args.push('--force');
+		}
+		await execFile('git', args, { cwd: repoPath });
 		if (branchName) {
 			await execFile('git', ['branch', '-D', branchName], { cwd: repoPath });
 		}

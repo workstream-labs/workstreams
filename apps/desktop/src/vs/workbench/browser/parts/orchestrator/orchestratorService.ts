@@ -9,7 +9,7 @@ import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { basename } from '../../../../base/common/path.js';
-import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IGitWorktreeService, IDiffStats } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { localize } from '../../../../nls.js';
@@ -76,6 +76,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	get activeWorktree(): IWorktreeEntry | undefined { return this._activeWorktree; }
 
 	constructor(
+		@IDialogService private readonly dialogService: IDialogService,
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IGitWorktreeService private readonly gitService: IGitWorktreeService,
@@ -256,11 +257,25 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				this.notificationService.notify({
-					severity: Severity.Error,
-					message: localize('worktreeRemoveFailed', "Failed to remove worktree: {0}", message),
+				const { confirmed } = await this.dialogService.confirm({
+					type: Severity.Warning,
+					message: localize('worktreeRemoveFailed', "Failed to remove worktree"),
+					detail: localize('worktreeRemoveFailedDetail', "{0}\n\nDo you want to force delete this worktree? This will discard any uncommitted changes.", message),
+					primaryButton: localize('forceDelete', "Force Delete"),
 				});
-				return;
+				if (!confirmed) {
+					return;
+				}
+				try {
+					await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch, true);
+				} catch (forceErr) {
+					const forceMessage = forceErr instanceof Error ? forceErr.message : String(forceErr);
+					this.notificationService.notify({
+						severity: Severity.Error,
+						message: localize('worktreeForceRemoveFailed', "Failed to force remove worktree: {0}", forceMessage),
+					});
+					return;
+				}
 			}
 		}
 

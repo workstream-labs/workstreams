@@ -28,7 +28,7 @@ export interface IGitWorktreeService {
 	getRemoteUrl(repoPath: string): Promise<string | undefined>;
 	listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]>;
 	addWorktree(repoPath: string, name: string): Promise<string>;
-	removeWorktree(repoPath: string, worktreePath: string, branchName?: string): Promise<void>;
+	removeWorktree(repoPath: string, worktreePath: string, branchName?: string, force?: boolean): Promise<void>;
 	getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats>;
 }
 
