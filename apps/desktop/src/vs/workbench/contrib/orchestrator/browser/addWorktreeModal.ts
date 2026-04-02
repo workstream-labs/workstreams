@@ -68,7 +68,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		card.className = 'add-worktree-card';
 		modal.appendChild(card);
 
-		// --- Name inputs row: workspace name + branch name side by side ---
+		// --- Name input row (input + branch preview on same line) ---
 		const nameRow = document.createElement('div');
 		nameRow.className = 'add-worktree-name-row';
 		card.appendChild(nameRow);
@@ -81,13 +81,11 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		nameInput.autocomplete = 'off';
 		nameRow.appendChild(nameInput);
 
-		const branchInput = document.createElement('input');
-		branchInput.type = 'text';
-		branchInput.className = 'add-worktree-branch-input';
-		branchInput.placeholder = localize('branchName', "branch name");
-		branchInput.spellcheck = false;
-		branchInput.autocomplete = 'off';
-		nameRow.appendChild(branchInput);
+		const branchPreview = document.createElement('span');
+		branchPreview.className = 'add-worktree-branch-preview';
+		branchPreview.textContent = localize('branchName', "branch name");
+		branchPreview.classList.add('placeholder');
+		nameRow.appendChild(branchPreview);
 
 		// --- Validation message ---
 		const validationMsg = document.createElement('div');
@@ -111,10 +109,10 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		}
 		card.appendChild(textarea);
 
-		// --- Footer (below card) ---
+		// --- Footer (inside card) ---
 		const footer = document.createElement('div');
 		footer.className = 'add-worktree-footer';
-		modal.appendChild(footer);
+		card.appendChild(footer);
 
 		const footerLeft = document.createElement('div');
 		footerLeft.className = 'add-worktree-footer-left';
@@ -265,19 +263,16 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			);
 		}));
 
-		// --- Auto-populate branch name from workspace name ---
-		let branchManuallyEdited = false;
-
+		// --- Name input → branch preview ---
 		disposables.add(addDisposableListener(nameInput, EventType.INPUT, () => {
-			if (!branchManuallyEdited) {
-				const slug = nameInput.value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
-				branchInput.value = slug;
+			const value = nameInput.value.trim();
+			if (value) {
+				branchPreview.textContent = value;
+				branchPreview.classList.remove('placeholder');
+			} else {
+				branchPreview.textContent = localize('branchName', "branch name");
+				branchPreview.classList.add('placeholder');
 			}
-		}));
-
-		disposables.add(addDisposableListener(branchInput, EventType.INPUT, () => {
-			branchManuallyEdited = branchInput.value.length > 0;
-			const value = branchInput.value.trim();
 			if (value) {
 				const error = validateWorktreeName(value);
 				validationMsg.textContent = error || '';
@@ -295,8 +290,8 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			}
 		}));
 
-		// --- Close dropdown on modal click (outside dropdown) ---
-		disposables.add(addDisposableListener(modal, EventType.CLICK, () => {
+		// --- Close dropdown on card click ---
+		disposables.add(addDisposableListener(card, EventType.CLICK, () => {
 			closeActiveDropdown();
 		}));
 
@@ -317,22 +312,22 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		// --- Submit ---
 		function submit(): void {
-			const branch = branchInput.value.trim();
-			if (!branch) {
-				validationMsg.textContent = localize('branchRequired', "Branch name is required");
+			const name = nameInput.value.trim();
+			if (!name) {
+				validationMsg.textContent = localize('nameRequired', "Name is required");
 				validationMsg.style.display = 'block';
-				branchInput.focus();
+				nameInput.focus();
 				return;
 			}
-			const error = validateWorktreeName(branch);
+			const error = validateWorktreeName(name);
 			if (error) {
 				validationMsg.textContent = error;
 				validationMsg.style.display = 'block';
-				branchInput.focus();
+				nameInput.focus();
 				return;
 			}
 			close({
-				name: branch,
+				name,
 				prompt: textarea.value.trim(),
 				agent: selectedAgent,
 				baseBranch: selectedBranch,
