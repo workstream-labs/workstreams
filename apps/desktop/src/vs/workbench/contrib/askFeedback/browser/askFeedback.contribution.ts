@@ -13,15 +13,9 @@ import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
-import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
-
-type FeedbackType = 'bug' | 'feature' | 'other';
-
-interface IFeedbackResult {
-	type: FeedbackType;
-	text: string;
-}
+import { type FeedbackType, type IFeedbackResult, submitFeedback, tryAcquireFeedback } from './feedbackService.js';
 
 function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | undefined> {
 	return new Promise(resolve => {
@@ -140,12 +134,27 @@ registerAction2(class AskFeedbackAction extends Action2 {
 		const layoutService = accessor.get(ILayoutService);
 		const notificationService = accessor.get(INotificationService);
 
+		if (!tryAcquireFeedback()) {
+			notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('feedbackRateLimited', "You're sending feedback too quickly. Please wait a moment and try again."),
+			});
+			return;
+		}
+
 		const result = await showFeedbackDialog(layoutService.activeContainer);
 		if (!result) {
 			return;
 		}
 
-		// TODO: Send feedback to backend
-		notificationService.info(localize('feedbackSent', "Thank you for your feedback!"));
+		try {
+			await submitFeedback(result);
+			notificationService.info(localize('feedbackSent', "Thank you for your feedback!"));
+		} catch {
+			notificationService.notify({
+				severity: Severity.Error,
+				message: localize('feedbackError', "Failed to send feedback. Please try again later."),
+			});
+		}
 	}
 });
