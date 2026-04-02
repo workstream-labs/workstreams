@@ -525,14 +525,16 @@
 	top: calc(100% + 4px);
 	left: 0;
 	min-width: 150px;
-	background: var(--vscode-input-background);
+	background: var(--vscode-editorWidget-background, var(--vscode-input-background));
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 8px;
 	padding: 4px;
 	box-shadow:
-		0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16)),
-		0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
-	z-index: 1;
+		0 2px 8px rgba(0, 0, 0, 0.2),
+		0 8px 32px rgba(0, 0, 0, 0.35);
+	z-index: 10001;
 	max-height: 200px;
 	overflow-y: auto;
 }
@@ -554,6 +556,7 @@
 
 .add-worktree-dropdown-item.selected {
 	color: var(--vscode-focusBorder);
+	background: var(--vscode-list-hoverBackground);
 }
 
 .add-worktree-dropdown-icon {
