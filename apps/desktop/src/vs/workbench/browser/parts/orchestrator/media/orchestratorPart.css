@@ -357,7 +357,7 @@
 .add-worktree-header {
 	display: flex;
 	justify-content: space-between;
-	padding: 0 6px 6px;
+	padding: 0 0 4px;
 }
 
 .add-worktree-label {

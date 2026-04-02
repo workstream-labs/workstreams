@@ -62,7 +62,12 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		modal.className = 'add-worktree-modal';
 		overlay.appendChild(modal);
 
-		// --- Header labels ---
+		// --- Card container ---
+		const card = document.createElement('div');
+		card.className = 'add-worktree-card';
+		modal.appendChild(card);
+
+		// --- Header labels (inside card) ---
 		const header = document.createElement('div');
 		header.className = 'add-worktree-header';
 
@@ -76,12 +81,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		header.appendChild(nameLabel);
 		header.appendChild(branchPreview);
-		modal.appendChild(header);
-
-		// --- Card container ---
-		const card = document.createElement('div');
-		card.className = 'add-worktree-card';
-		modal.appendChild(card);
+		card.appendChild(header);
 
 		// --- Name input ---
 		const nameInput = document.createElement('input');
