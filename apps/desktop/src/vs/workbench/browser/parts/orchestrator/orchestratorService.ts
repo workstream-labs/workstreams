@@ -61,8 +61,8 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
-	private readonly _statsRefreshScheduler: RunOnceScheduler;
-	private _statsRefreshInFlight = false;
+	private readonly _refreshScheduler: RunOnceScheduler;
+	private _refreshInFlight = false;
 	private _worktreeUris: URI[] = [];
 
 	/**
@@ -92,7 +92,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	) {
 		super();
 
-		this._statsRefreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshDiffStats(), OrchestratorServiceImpl.STATS_DEBOUNCE_MS));
+		this._refreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshGitState(), OrchestratorServiceImpl.REFRESH_DEBOUNCE_MS));
 
 		// Keep URI cache in sync so onDidFilesChange doesn't allocate on every event
 		this._register(this.onDidChangeRepositories(() => this._rebuildWorktreeUriCache()));
@@ -101,7 +101,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this._register(this.fileService.onDidFilesChange(e => {
 			for (const uri of this._worktreeUris) {
 				if (e.affects(uri)) {
-					this.scheduleDiffStatsRefresh();
+					this.scheduleRefresh();
 					return;
 				}
 			}
@@ -110,14 +110,14 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		// Agent finishes work in any worktree (including background ones not watched by VS Code)
 		this._register(this.onDidChangeSessionState(({ state }) => {
 			if (state === WorktreeSessionState.Idle || state === WorktreeSessionState.Review) {
-				this.scheduleDiffStatsRefresh();
+				this.scheduleRefresh();
 			}
 		}));
 
 		// Window regains focus — catch external changes (git CLI, manual edits)
 		this._register(this.hostService.onDidChangeFocus(focused => {
 			if (focused) {
-				this.scheduleDiffStatsRefresh();
+				this.scheduleRefresh();
 			}
 		}));
 
@@ -187,7 +187,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 
 		// Populate diff stats in parallel
-		const statsMap = await this.fetchStatsForRepo(path, worktrees);
+		const statsMap = await this._fetchDiffStats(path, worktrees);
 		for (let i = 0; i < worktrees.length; i++) {
 			const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
 			worktrees[i] = { ...worktrees[i], ...s };
@@ -390,7 +390,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			this._onDidChangeActiveWorktree.fire(worktree);
 		}
 
-		this.scheduleDiffStatsRefresh();
+		this.scheduleRefresh();
 	}
 
 	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
@@ -451,28 +451,32 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 	}
 
-	private scheduleDiffStatsRefresh(): void {
-		this._statsRefreshScheduler.schedule();
+	private scheduleRefresh(): void {
+		this._refreshScheduler.schedule();
 	}
 
-	private static readonly STATS_DEBOUNCE_MS = 2000;
-	private static readonly STATS_REQUEUE_MS = 5000;
+	private static readonly REFRESH_DEBOUNCE_MS = 2000;
+	private static readonly REFRESH_REQUEUE_MS = 5000;
 
-	private async _doRefreshDiffStats(): Promise<void> {
-		if (this._statsRefreshInFlight) {
-			this._statsRefreshScheduler.schedule(OrchestratorServiceImpl.STATS_REQUEUE_MS);
+	private async _doRefreshGitState(): Promise<void> {
+		if (this._refreshInFlight) {
+			this._refreshScheduler.schedule(OrchestratorServiceImpl.REFRESH_REQUEUE_MS);
 			return;
 		}
-		this._statsRefreshInFlight = true;
+		this._refreshInFlight = true;
 		try {
 			let changed = false;
 			const updated = await Promise.all(this._repositories.map(async repo => {
-				const statsMap = await this.fetchStatsForRepo(repo.path, repo.worktrees);
+				const [statsMap, branchMap] = await Promise.all([
+					this._fetchDiffStats(repo.path, repo.worktrees),
+					this._fetchBranches(repo.worktrees),
+				]);
 				const worktrees = repo.worktrees.map(wt => {
 					const s = statsMap.get(wt.path) ?? EMPTY_STATS;
-					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged) {
+					const branch = branchMap.get(wt.path) ?? wt.branch;
+					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch) {
 						changed = true;
-						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions };
+						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, branch };
 					}
 					return wt;
 				});
@@ -483,17 +487,26 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				this._onDidChangeRepositories.fire();
 			}
 		} finally {
-			this._statsRefreshInFlight = false;
+			this._refreshInFlight = false;
 		}
 	}
 
-	private async fetchStatsForRepo(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
+	private async _fetchDiffStats(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
 		const results = await Promise.all(
 			worktrees.map(wt => wt.path === repoPath
 				? Promise.resolve(EMPTY_STATS)
 				: this.gitService.getDiffStats(repoPath, wt.path).catch(() => EMPTY_STATS))
 		);
 		const map = new Map<string, IDiffStats>();
+		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
+		return map;
+	}
+
+	private async _fetchBranches(worktrees: readonly IWorktreeEntry[]): Promise<Map<string, string>> {
+		const results = await Promise.all(
+			worktrees.map(wt => this.gitService.getCurrentBranch(wt.path).catch(() => wt.branch))
+		);
+		const map = new Map<string, string>();
 		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
 		return map;
 	}
@@ -563,7 +576,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					});
 				}
 
-				const statsMap = await this.fetchStatsForRepo(saved.path, worktrees);
+				const statsMap = await this._fetchDiffStats(saved.path, worktrees);
 				for (let i = 0; i < worktrees.length; i++) {
 					const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
 					worktrees[i] = { ...worktrees[i], ...s };
