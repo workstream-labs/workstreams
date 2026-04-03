@@ -22,6 +22,8 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { ITerminalService } from '../../terminal/browser/terminal.js';
+import { showAddWorktreeModal, agentsFromIds } from './addWorktreeModal.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
 export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
@@ -34,6 +36,7 @@ export class OrchestratorViewPane extends ViewPane {
 	constructor(
 		options: IViewPaneOptions,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
+		@ITerminalService private readonly terminalService: ITerminalService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -109,7 +112,7 @@ export class OrchestratorViewPane extends ViewPane {
 
 		this.renderDisposables.add(addDisposableListener(addWorktreeBtn, EventType.CLICK, e => {
 			e.stopPropagation();
-			this.orchestratorService.pickAndAddWorktree(repo.path);
+			this.showAddWorktreeModal(repo.path);
 		}));
 
 		this.renderDisposables.add(addDisposableListener(removeRepoBtn, EventType.CLICK, e => {
@@ -174,6 +177,44 @@ export class OrchestratorViewPane extends ViewPane {
 		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
 			this.orchestratorService.switchTo(worktree);
 		}));
+	}
+
+	private async showAddWorktreeModal(repoPath: string): Promise<void> {
+		const [branches, activeBranch, detectedIds] = await Promise.all([
+			this.orchestratorService.listBranches(repoPath),
+			this.orchestratorService.getCurrentBranch(repoPath).catch(() => ''),
+			this.orchestratorService.detectAgents(),
+		]);
+		const currentBranch = (activeBranch && branches.includes(activeBranch)) ? activeBranch : branches[0];
+		const agents = agentsFromIds([...detectedIds, 'terminal']);
+
+		const result = await showAddWorktreeModal({
+			branches,
+			agents,
+			defaultBranch: currentBranch,
+			defaultAgent: agents.length > 0 ? agents[0].id : '',
+		});
+
+		if (result) {
+			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch, result.featureName);
+
+			const repo = this.orchestratorService.repositories.find(r => r.path === repoPath);
+			const newWorktree = repo?.worktrees.find(w => w.branch === result.name);
+			if (newWorktree) {
+				// switchTo swaps the workspace folder, so terminals open in the worktree directory
+				await this.orchestratorService.switchTo(newWorktree);
+
+				const terminal = await this.terminalService.createTerminal();
+				await this.terminalService.revealActiveTerminal();
+
+				if (result.agent !== 'terminal') {
+					terminal.sendText(result.agent, true);
+
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					terminal.sendText(result.prompt || '', true);
+				}
+			}
+		}
 	}
 
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

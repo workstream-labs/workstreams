@@ -7,6 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { localize } from '../../../../nls.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
+import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../../../contrib/terminal/browser/terminal.js';
@@ -151,6 +152,15 @@ export class OrchestratorTerminalContribution extends Disposable {
 		}));
 
 		/**
+		 * Refresh orchestrator state (branches, diff stats) after terminal commands finish.
+		 * Shell integration reports command completion; we hook into it so that
+		 * `git checkout` (or any command that changes git state) updates the sidebar.
+		 */
+		this._register(this._terminalService.onDidCreateInstance(instance => {
+			this._listenForCommandFinished(instance);
+		}));
+
+		/**
 		 * Clean up ownership and listeners when terminals are disposed.
 		 */
 		this._register(this._terminalService.onDidDisposeInstance(instance => {
@@ -191,6 +201,26 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._logService.trace(
 			`${TAG} [${context}] activeKey="${this._activeKey}" | total=${all.length} fg=${fg.length} bg=${bgCount} | ownership=[${owned.join(', ')}]`
 		);
+	}
+
+	/**
+	 * Listen for command completions on a terminal instance.
+	 * If shell integration is already active, hooks immediately; otherwise
+	 * waits for the CommandDetection capability to be added.
+	 */
+	private _listenForCommandFinished(instance: ITerminalInstance): void {
+		const cap = instance.capabilities.get(TerminalCapability.CommandDetection);
+		if (cap) {
+			this._register(cap.onCommandFinished(() => this._orchestratorService.scheduleRefresh()));
+			return;
+		}
+		const listener = instance.capabilities.onDidAddCapability(e => {
+			if (e.id === TerminalCapability.CommandDetection) {
+				this._register(e.capability.onCommandFinished(() => this._orchestratorService.scheduleRefresh()));
+				listener.dispose();
+			}
+		});
+		this._register(listener);
 	}
 
 	/**

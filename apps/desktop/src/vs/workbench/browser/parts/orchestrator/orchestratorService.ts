@@ -9,9 +9,10 @@ import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { basename } from '../../../../base/common/path.js';
-import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IGitWorktreeService, IDiffStats } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
@@ -25,9 +26,17 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 
 const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 
+interface IPersistedWorktreeState {
+	readonly branch: string;
+	readonly name: string;
+	readonly description?: string;
+	readonly baseBranch?: string;
+}
+
 interface IPersistedRepositoryState {
 	readonly path: string;
 	readonly isCollapsed: boolean;
+	readonly worktrees?: IPersistedWorktreeState[];
 }
 
 interface IPersistedOrchestratorState {
@@ -60,8 +69,8 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
-	private readonly _statsRefreshScheduler: RunOnceScheduler;
-	private _statsRefreshInFlight = false;
+	private readonly _refreshScheduler: RunOnceScheduler;
+	private _refreshInFlight = false;
 	private _worktreeUris: URI[] = [];
 
 	/**
@@ -76,6 +85,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	get activeWorktree(): IWorktreeEntry | undefined { return this._activeWorktree; }
 
 	constructor(
+		@IDialogService private readonly dialogService: IDialogService,
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IGitWorktreeService private readonly gitService: IGitWorktreeService,
@@ -90,7 +100,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	) {
 		super();
 
-		this._statsRefreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshDiffStats(), OrchestratorServiceImpl.STATS_DEBOUNCE_MS));
+		this._refreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshGitState(), OrchestratorServiceImpl.REFRESH_DEBOUNCE_MS));
 
 		// Keep URI cache in sync so onDidFilesChange doesn't allocate on every event
 		this._register(this.onDidChangeRepositories(() => this._rebuildWorktreeUriCache()));
@@ -99,7 +109,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this._register(this.fileService.onDidFilesChange(e => {
 			for (const uri of this._worktreeUris) {
 				if (e.affects(uri)) {
-					this.scheduleDiffStatsRefresh();
+					this.scheduleRefresh();
 					return;
 				}
 			}
@@ -108,14 +118,14 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		// Agent finishes work in any worktree (including background ones not watched by VS Code)
 		this._register(this.onDidChangeSessionState(({ state }) => {
 			if (state === WorktreeSessionState.Idle || state === WorktreeSessionState.Review) {
-				this.scheduleDiffStatsRefresh();
+				this.scheduleRefresh();
 			}
 		}));
 
 		// Window regains focus — catch external changes (git CLI, manual edits)
 		this._register(this.hostService.onDidChangeFocus(focused => {
 			if (focused) {
-				this.scheduleDiffStatsRefresh();
+				this.scheduleRefresh();
 			}
 		}));
 
@@ -185,7 +195,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 
 		// Populate diff stats in parallel
-		const statsMap = await this.fetchStatsForRepo(path, worktrees);
+		const statsMap = await this._fetchDiffStats(path, worktrees);
 		for (let i = 0; i < worktrees.length; i++) {
 			const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
 			worktrees[i] = { ...worktrees[i], ...s };
@@ -227,14 +237,27 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.saveState();
 	}
 
-	async addWorktree(repoPath: string, name: string, description: string): Promise<void> {
+	async getCurrentBranch(repoPath: string): Promise<string> {
+		return this.gitService.getCurrentBranch(repoPath);
+	}
+
+	async listBranches(repoPath: string): Promise<string[]> {
+		return this.gitService.listBranches(repoPath);
+	}
+
+	async detectAgents(): Promise<string[]> {
+		return this.gitService.detectAgents();
+	}
+
+	async addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void> {
 		// Create actual git worktree
-		const worktreePath = await this.gitService.addWorktree(repoPath, name);
+		const worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
 
 		const worktree: IWorktreeEntry = {
-			name: friendlyName(name),
+			name: displayName || name,
 			path: worktreePath,
 			branch: name,
+			baseBranch,
 			description,
 			isActive: false,
 		};
@@ -255,12 +278,33 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			try {
 				await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch);
 			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				this.notificationService.notify({
-					severity: Severity.Error,
-					message: localize('worktreeRemoveFailed', "Failed to remove worktree: {0}", message),
+				const raw = err instanceof Error ? err.message : String(err);
+				const fatalMatch = raw.match(/fatal:\s*(.+)/i);
+				const reason = fatalMatch ? fatalMatch[1].trim() : raw;
+				const { confirmed } = await this.dialogService.confirm({
+					type: Severity.Warning,
+					message: localize('worktreeRemoveFailed', "Failed to remove worktree"),
+					detail: reason,
+					primaryButton: localize('forceDelete', "Force Delete"),
+					custom: {
+						markdownDetails: [{
+							markdown: new MarkdownString(localize('worktreeRemoveForcePrompt', "Do you want to force delete this worktree? This will discard any uncommitted changes.")),
+						}],
+					},
 				});
-				return;
+				if (!confirmed) {
+					return;
+				}
+				try {
+					await this.gitService.removeWorktree(repoPath, worktree.path, worktree.branch, true);
+				} catch (forceErr) {
+					const forceMessage = forceErr instanceof Error ? forceErr.message : String(forceErr);
+					this.notificationService.notify({
+						severity: Severity.Error,
+						message: localize('worktreeForceRemoveFailed', "Failed to force remove worktree: {0}", forceMessage),
+					});
+					return;
+				}
 			}
 		}
 
@@ -367,7 +411,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			this._onDidChangeActiveWorktree.fire(worktree);
 		}
 
-		this.scheduleDiffStatsRefresh();
+		this.scheduleRefresh();
 	}
 
 	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
@@ -428,28 +472,32 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 	}
 
-	private scheduleDiffStatsRefresh(): void {
-		this._statsRefreshScheduler.schedule();
+	scheduleRefresh(): void {
+		this._refreshScheduler.schedule();
 	}
 
-	private static readonly STATS_DEBOUNCE_MS = 2000;
-	private static readonly STATS_REQUEUE_MS = 5000;
+	private static readonly REFRESH_DEBOUNCE_MS = 2000;
+	private static readonly REFRESH_REQUEUE_MS = 5000;
 
-	private async _doRefreshDiffStats(): Promise<void> {
-		if (this._statsRefreshInFlight) {
-			this._statsRefreshScheduler.schedule(OrchestratorServiceImpl.STATS_REQUEUE_MS);
+	private async _doRefreshGitState(): Promise<void> {
+		if (this._refreshInFlight) {
+			this._refreshScheduler.schedule(OrchestratorServiceImpl.REFRESH_REQUEUE_MS);
 			return;
 		}
-		this._statsRefreshInFlight = true;
+		this._refreshInFlight = true;
 		try {
 			let changed = false;
 			const updated = await Promise.all(this._repositories.map(async repo => {
-				const statsMap = await this.fetchStatsForRepo(repo.path, repo.worktrees);
+				const [statsMap, branchMap] = await Promise.all([
+					this._fetchDiffStats(repo.path, repo.worktrees),
+					this._fetchBranches(repo.worktrees),
+				]);
 				const worktrees = repo.worktrees.map(wt => {
 					const s = statsMap.get(wt.path) ?? EMPTY_STATS;
-					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged) {
+					const branch = branchMap.get(wt.path) ?? wt.branch;
+					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch) {
 						changed = true;
-						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions };
+						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, branch };
 					}
 					return wt;
 				});
@@ -460,17 +508,26 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				this._onDidChangeRepositories.fire();
 			}
 		} finally {
-			this._statsRefreshInFlight = false;
+			this._refreshInFlight = false;
 		}
 	}
 
-	private async fetchStatsForRepo(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
+	private async _fetchDiffStats(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
 		const results = await Promise.all(
 			worktrees.map(wt => wt.path === repoPath
 				? Promise.resolve(EMPTY_STATS)
 				: this.gitService.getDiffStats(repoPath, wt.path).catch(() => EMPTY_STATS))
 		);
 		const map = new Map<string, IDiffStats>();
+		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
+		return map;
+	}
+
+	private async _fetchBranches(worktrees: readonly IWorktreeEntry[]): Promise<Map<string, string>> {
+		const results = await Promise.all(
+			worktrees.map(wt => this.gitService.getCurrentBranch(wt.path).catch(() => wt.branch))
+		);
+		const map = new Map<string, string>();
 		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
 		return map;
 	}
@@ -482,6 +539,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			repositories: this._repositories.map(r => ({
 				path: r.path,
 				isCollapsed: r.isCollapsed,
+				worktrees: r.worktrees.map(wt => ({
+					branch: wt.branch,
+					name: wt.name,
+					description: wt.description,
+					baseBranch: wt.baseBranch,
+				})),
 			})),
 			activeWorktreePath: this._activeWorktree?.path,
 		};
@@ -523,13 +586,25 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				const currentBranch = await this.gitService.getCurrentBranch(saved.path);
 				const gitWorktrees = await this.gitService.listWorktrees(saved.path);
 
+				const savedWorktreeMap = new Map<string, IPersistedWorktreeState>();
+				if (saved.worktrees) {
+					for (const sw of saved.worktrees) {
+						savedWorktreeMap.set(sw.branch, sw);
+					}
+				}
+
 				const nonBare = gitWorktrees.filter(w => !w.isBare);
-				const worktrees: IWorktreeEntry[] = nonBare.map(wt => ({
-					name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-					path: wt.path,
-					branch: wt.branch,
-					isActive: false,
-				}));
+				const worktrees: IWorktreeEntry[] = nonBare.map(wt => {
+					const persisted = savedWorktreeMap.get(wt.branch);
+					return {
+						name: persisted?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+						path: wt.path,
+						branch: wt.branch,
+						baseBranch: persisted?.baseBranch,
+						description: persisted?.description,
+						isActive: false,
+					};
+				});
 
 				if (worktrees.length === 0) {
 					worktrees.push({
@@ -540,7 +615,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					});
 				}
 
-				const statsMap = await this.fetchStatsForRepo(saved.path, worktrees);
+				const statsMap = await this._fetchDiffStats(saved.path, worktrees);
 				for (let i = 0; i < worktrees.length; i++) {
 					const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
 					worktrees[i] = { ...worktrees[i], ...s };
@@ -586,8 +661,8 @@ export function validateWorktreeName(value: string): string | undefined {
 	if (/\s/.test(value)) {
 		return localize('worktreeNameNoSpaces', "Name cannot contain spaces");
 	}
-	if (/[~^:\\/]/.test(value)) {
-		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, \\, or /");
+	if (/[~^:\\]/.test(value)) {
+		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, or \\");
 	}
 	if (/\.\./.test(value)) {
 		return localize('worktreeNameNoDots', "Name cannot contain '..'");
@@ -598,8 +673,8 @@ export function validateWorktreeName(value: string): string | undefined {
 	if (/\.lock$/.test(value)) {
 		return localize('worktreeNameNoLock', "Name cannot end with '.lock'");
 	}
-	if (/^\./.test(value) || /\.$/.test(value)) {
-		return localize('worktreeNameNoDotEdge', "Name cannot start or end with '.'");
+	if (/^[./]/.test(value) || /\.$/.test(value) || /\/\.|\/\//.test(value)) {
+		return localize('worktreeNameNoDotEdge', "Name cannot start with '.' or '/', contain '/.', or have consecutive '/'");
 	}
 	if (/[\x00-\x1f\x7f]/.test(value)) {
 		return localize('worktreeNameNoControl', "Name cannot contain control characters");

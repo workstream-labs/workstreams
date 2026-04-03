@@ -1,0 +1,189 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.ask-feedback-modal-block {
+	position: fixed;
+	height: 100%;
+	width: 100%;
+	left: 0;
+	top: 0;
+	z-index: 10000;
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	padding-top: 15vh;
+	background: transparent;
+	font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+	font-size: var(--vscode-font-size, 13px);
+}
+
+.ask-feedback-dialog {
+	display: flex;
+	flex-direction: column;
+	width: 480px;
+	max-width: 90vw;
+	background-color: var(--vscode-editorWidget-background);
+	color: var(--vscode-editorWidget-foreground);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	border-radius: 10px;
+	padding: 14px 16px;
+	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+	animation: askFeedbackIn 0.15s ease-out;
+}
+
+@keyframes askFeedbackIn {
+	from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+	to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Suppress VS Code's default focus border on all modal inputs */
+.ask-feedback-dialog *:focus {
+	outline: none !important;
+	box-shadow: none !important;
+	border-color: inherit !important;
+}
+
+.ask-feedback-title {
+	font-size: 14px;
+	font-weight: 600;
+	padding-bottom: 10px;
+	margin-bottom: 0;
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+}
+
+.ask-feedback-separator {
+	height: 1px;
+	background: var(--vscode-panel-border, var(--vscode-editorWidget-border));
+	margin-bottom: 10px;
+}
+
+/* -- Type pill selector -- */
+
+.ask-feedback-type-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.ask-feedback-type-pill {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	background: transparent;
+	border: 1px solid var(--vscode-dropdown-border, var(--vscode-editorWidget-border));
+	border-radius: 6px;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	padding: 4px 10px;
+	cursor: pointer;
+	font-family: inherit;
+	line-height: 1.3;
+	transition: border-color 0.1s ease, color 0.1s ease, background 0.1s ease;
+}
+
+.ask-feedback-type-pill:hover {
+	border-color: var(--vscode-focusBorder);
+	color: var(--vscode-foreground);
+}
+
+.ask-feedback-type-pill.selected {
+	background: var(--vscode-button-background);
+	border-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.ask-feedback-type-pill .codicon {
+	font-size: 14px;
+}
+
+/* -- Textarea -- */
+
+.ask-feedback-textarea {
+	width: 100%;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	font-size: 13px;
+	font-family: inherit;
+	line-height: 1.45;
+	resize: none;
+	padding: 2px 0;
+	min-height: 80px;
+	box-sizing: border-box;
+}
+
+.ask-feedback-textarea::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+/* -- Footer -- */
+
+.ask-feedback-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 8px;
+	margin-top: 4px;
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border));
+}
+
+.ask-feedback-footer-left {
+	display: flex;
+	align-items: center;
+}
+
+.ask-feedback-hint {
+	font-size: 11px;
+	color: var(--vscode-foreground);
+	opacity: 0.2;
+	transition: opacity 0.15s ease;
+}
+
+.ask-feedback-hint.ready {
+	opacity: 0.6;
+}
+
+.ask-feedback-footer-right {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.ask-feedback-button {
+	padding: 4px 12px;
+	font-size: 12px;
+	font-family: inherit;
+	border-radius: 6px;
+	border: none;
+	cursor: pointer;
+	outline: none;
+	line-height: 1.3;
+	transition: opacity 0.1s ease;
+}
+
+.ask-feedback-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.ask-feedback-button-cancel {
+	background-color: transparent;
+	color: var(--vscode-descriptionForeground);
+}
+
+.ask-feedback-button-cancel:hover {
+	color: var(--vscode-foreground);
+}
+
+.ask-feedback-button-submit {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.ask-feedback-button-submit:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}

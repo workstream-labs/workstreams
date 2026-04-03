@@ -17,6 +17,7 @@ export interface IWorktreeEntry {
 	readonly name: string;
 	readonly path: string;
 	readonly branch: string;
+	readonly baseBranch?: string;
 	readonly description?: string;
 	readonly isActive: boolean;
 	readonly sessionState?: WorktreeSessionState;
@@ -65,7 +66,16 @@ export interface IOrchestratorService {
 	removeRepository(repoPath: string): Promise<void>;
 	toggleRepositoryCollapsed(repoPath: string): void;
 
-	addWorktree(repoPath: string, name: string, description: string): Promise<void>;
+	addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void>;
 	removeWorktree(repoPath: string, branchName: string): Promise<void>;
 	switchTo(worktree: IWorktreeEntry): Promise<void>;
+	getCurrentBranch(repoPath: string): Promise<string>;
+	listBranches(repoPath: string): Promise<string[]>;
+	detectAgents(): Promise<string[]>;
+
+	/**
+	 * Schedule a debounced refresh of worktree state (branches, diff stats).
+	 * Called by contributions that detect external changes (e.g. terminal commands).
+	 */
+	scheduleRefresh(): void;
 }

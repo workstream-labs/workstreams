@@ -8,7 +8,8 @@ import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
 import * as nls from '../../../../nls.js';
-import { Extensions as DragAndDropExtensions, IDragAndDropContributionRegistry, IDraggedResourceEditorInput } from '../../../../platform/dnd/browser/dnd.js';
+import { Extensions as DragAndDropExtensions, IDragAndDropContributionRegistry, IDraggedResourceEditorInput, IResourceDropHandler } from '../../../../platform/dnd/browser/dnd.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -19,6 +20,7 @@ import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../browser/edit
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { EditorExtensions, IEditorFactoryRegistry } from '../../../common/editor.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IViewContainersRegistry, IViewsRegistry, Extensions as ViewContainerExtensions, ViewContainerLocation, WindowVisibility } from '../../../common/views.js';
 import { ITerminalProfileService, TERMINAL_VIEW_ID, TerminalCommandId } from '../common/terminal.js';
 import { TerminalEditingService } from './terminalEditingService.js';
@@ -99,6 +101,26 @@ Registry.as<IDragAndDropContributionRegistry>(DragAndDropExtensions.DragAndDropC
 		if (terminalResources.length) {
 			event.dataTransfer?.setData(TerminalDataTransfers.Terminals, JSON.stringify(terminalResources.map(({ resource }) => resource.toString())));
 		}
+	}
+});
+
+// Register drop handler so that files dropped onto a terminal editor
+// are sent to the terminal as a path instead of opening in an editor tab
+Registry.as<IDragAndDropContributionRegistry>(DragAndDropExtensions.DragAndDropContribution).registerDropHandler(new class TerminalFileDropHandler implements IResourceDropHandler {
+	async handleDrop(resource: URI, accessor: ServicesAccessor): Promise<boolean> {
+		const editorService = accessor.get(IEditorService);
+		const terminalService = accessor.get(ITerminalService);
+		// Only handle drops when the active editor is a terminal
+		if (editorService.activeEditorPane?.getId() !== terminalEditorId) {
+			return false;
+		}
+		const instance = terminalService.activeInstance;
+		if (!instance) {
+			return false;
+		}
+		instance.focus();
+		await instance.sendPath(resource, false);
+		return true;
 	}
 });
 

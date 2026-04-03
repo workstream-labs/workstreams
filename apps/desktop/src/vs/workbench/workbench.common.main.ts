@@ -310,6 +310,9 @@ import './contrib/output/browser/outputView.js';
 // Terminal
 import './contrib/terminal/terminal.all.js';
 
+// Feedback
+import './contrib/askFeedback/browser/askFeedback.contribution.js';
+
 // Orchestrator worktree contributions
 import './contrib/orchestrator/browser/orchestratorTerminalContribution.js';
 import './contrib/orchestrator/browser/orchestratorExplorerContribution.js';
