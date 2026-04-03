@@ -80,10 +80,9 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		card.className = 'add-worktree-card';
 		modal.appendChild(card);
 
-		// --- Preset panel (below card, right-aligned) ---
+		// --- Preset panel (created early, appended to agentContainer later) ---
 		const presetPanel = document.createElement('div');
 		presetPanel.className = 'add-worktree-preset-panel';
-		card.appendChild(presetPanel);
 
 		let activePresetAgent: string | null = null;
 		const presetDisposables = new DisposableStore();
@@ -357,6 +356,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		agentBtn.className = 'add-worktree-select-btn';
 		agentBtn.type = 'button';
 		agentContainer.appendChild(agentBtn);
+		agentContainer.appendChild(presetPanel);
 
 		function updateAgentButton(): void {
 			agentBtn.textContent = '';
@@ -485,6 +485,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				activeDropdown.remove();
 				activeDropdown = null;
 			}
+			hidePresetPanel();
 		}
 
 		// --- Agent dropdown ---
