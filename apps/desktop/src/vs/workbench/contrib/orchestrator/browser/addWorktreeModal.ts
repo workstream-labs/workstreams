@@ -76,7 +76,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		const nameInput = document.createElement('input');
 		nameInput.type = 'text';
 		nameInput.className = 'add-worktree-name-input';
-		nameInput.placeholder = localize('featureName', "Feature name");
+		nameInput.placeholder = localize('featureName', "Feature name *");
 		nameInput.spellcheck = false;
 		nameInput.autocomplete = 'off';
 		nameRow.appendChild(nameInput);
@@ -84,7 +84,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		const branchInput = document.createElement('input');
 		branchInput.type = 'text';
 		branchInput.className = 'add-worktree-branch-input';
-		branchInput.placeholder = localize('branchName', "branch-name");
+		branchInput.placeholder = localize('branchName', "branch-name *");
 		branchInput.spellcheck = false;
 		branchInput.autocomplete = 'off';
 		nameRow.appendChild(branchInput);
