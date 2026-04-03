@@ -338,7 +338,7 @@
 	align-items: flex-start;
 	justify-content: center;
 	padding-top: 15vh;
-	background: rgba(0, 0, 0, 0.5);
+	background: transparent;
 	font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
 	font-size: var(--vscode-font-size, 13px);
 }
@@ -355,15 +355,12 @@
 }
 
 .add-worktree-card {
-	background: var(--vscode-input-background);
+	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 10px;
 	padding: 14px 16px;
 	overflow: visible;
-	box-shadow:
-		0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.12)),
-		0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16)),
-		0 12px 48px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
+	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
 }
 
 .add-worktree-name-row {
@@ -472,10 +469,10 @@
 	display: flex;
 	align-items: center;
 	gap: 5px;
-	background: var(--vscode-editor-background);
-	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+	border: 1px solid var(--vscode-dropdown-border, var(--vscode-editorWidget-border));
 	border-radius: 6px;
-	color: var(--vscode-foreground);
+	color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
 	font-size: 12px;
 	padding: 4px 8px;
 	cursor: pointer;
@@ -523,13 +520,11 @@
 	top: calc(100% + 4px);
 	left: 0;
 	min-width: 150px;
-	background: var(--vscode-input-background);
+	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 8px;
 	padding: 4px;
-	box-shadow:
-		0 2px 8px rgba(0, 0, 0, 0.2),
-		0 8px 32px rgba(0, 0, 0, 0.35);
+	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
 	z-index: 10001;
 	max-height: 200px;
 	overflow-y: auto;
