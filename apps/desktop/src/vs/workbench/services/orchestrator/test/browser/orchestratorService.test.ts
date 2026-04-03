@@ -8,7 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { IWorktreeEntry } from '../../common/orchestratorService.js';
 import { OrchestratorServiceImpl, validateWorktreeName, friendlyName } from '../../../../browser/parts/orchestrator/orchestratorService.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
-import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, parseWorktreeList } from '../../common/gitWorktreeService.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IWorktreeMeta, parseWorktreeList } from '../../common/gitWorktreeService.js';
 import { IWorkspaceEditingService } from '../../../../services/workspaces/common/workspaceEditing.js';
 import { IEditorGroupsService, IEditorWorkingSet } from '../../../../services/editor/common/editorGroupsService.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
@@ -28,6 +28,8 @@ class MockGitWorktreeService implements IGitWorktreeService {
 	async addWorktree(repoPath: string, name: string): Promise<string> { return `${repoPath}/.workstreams/${name}/tree`; }
 	async removeWorktree(): Promise<void> { }
 	async getDiffStats(): Promise<IDiffStats> { return { filesChanged: 0, additions: 0, deletions: 0 }; }
+	async writeWorktreeMeta(): Promise<void> { }
+	async readWorktreeMeta(): Promise<IWorktreeMeta | null> { return null; }
 }
 
 suite('OrchestratorService', () => {
