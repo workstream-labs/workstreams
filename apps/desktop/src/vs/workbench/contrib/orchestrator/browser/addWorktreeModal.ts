@@ -499,7 +499,6 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent, hasSettings: a.id !== 'terminal' })),
 				(id) => { selectedAgent = id; updateAgentButton(); },
 				(agentId) => {
-				closeActiveDropdown();
 				if (activePresetAgent === agentId) {
 					hidePresetPanel();
 				} else {
