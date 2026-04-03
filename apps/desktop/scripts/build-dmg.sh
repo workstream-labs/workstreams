@@ -103,7 +103,6 @@ ARTIFACTS=(
 	"out-vscode-reh-min"
 	"out-vscode-reh-web-min"
 	".build"
-	"${DMG_OUTPUT_DIR}"
 	"${PARENT_DIR}/${APP_DIR}"
 )
 
@@ -112,7 +111,7 @@ ARTIFACTS=(
 # ---------------------------------------------------------------------------
 step "Step 1/7 — Cleaning previous build artifacts"
 
-for artifact in "out" "out-build" "out-vscode-min" "out-vscode-reh-min" "out-vscode-reh-web-min" ".build" "${DMG_OUTPUT_DIR}"; do
+for artifact in "out" "out-build" "out-vscode-min" "out-vscode-reh-min" "out-vscode-reh-web-min" ".build"; do
 	if [[ -d "$artifact" ]]; then
 		warn "  Removing $artifact/"
 		rm -rf "$artifact"
