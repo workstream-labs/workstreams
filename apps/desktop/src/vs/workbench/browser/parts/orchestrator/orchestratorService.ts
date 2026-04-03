@@ -237,6 +237,10 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.saveState();
 	}
 
+	async getCurrentBranch(repoPath: string): Promise<string> {
+		return this.gitService.getCurrentBranch(repoPath);
+	}
+
 	async listBranches(repoPath: string): Promise<string[]> {
 		return this.gitService.listBranches(repoPath);
 	}

@@ -180,15 +180,16 @@ export class OrchestratorViewPane extends ViewPane {
 	}
 
 	private async showAddWorktreeModal(repoPath: string): Promise<void> {
-		const [branches, detectedIds] = await Promise.all([
+		const [branches, activeBranch, detectedIds] = await Promise.all([
 			this.orchestratorService.listBranches(repoPath),
+			this.orchestratorService.getCurrentBranch(repoPath).catch(() => ''),
 			this.orchestratorService.detectAgents(),
 		]);
-		const currentBranch = branches.length > 0 ? branches[0] : 'main';
+		const currentBranch = (activeBranch && branches.includes(activeBranch)) ? activeBranch : branches[0];
 		const agents = agentsFromIds([...detectedIds, 'terminal']);
 
 		const result = await showAddWorktreeModal({
-			branches: branches.length > 0 ? branches : ['main'],
+			branches,
 			agents,
 			defaultBranch: currentBranch,
 			defaultAgent: agents.length > 0 ? agents[0].id : '',

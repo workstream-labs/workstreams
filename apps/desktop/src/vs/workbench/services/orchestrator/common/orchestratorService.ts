@@ -69,6 +69,7 @@ export interface IOrchestratorService {
 	addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void>;
 	removeWorktree(repoPath: string, branchName: string): Promise<void>;
 	switchTo(worktree: IWorktreeEntry): Promise<void>;
+	getCurrentBranch(repoPath: string): Promise<string>;
 	listBranches(repoPath: string): Promise<string[]>;
 	detectAgents(): Promise<string[]>;
 
