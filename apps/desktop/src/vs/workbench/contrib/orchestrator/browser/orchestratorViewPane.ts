@@ -22,6 +22,7 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { showAddWorktreeModal, agentsFromIds } from './addWorktreeModal.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
@@ -35,6 +36,7 @@ export class OrchestratorViewPane extends ViewPane {
 	constructor(
 		options: IViewPaneOptions,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
+		@ITerminalService private readonly terminalService: ITerminalService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -194,6 +196,23 @@ export class OrchestratorViewPane extends ViewPane {
 
 		if (result) {
 			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch, result.featureName);
+
+			const repo = this.orchestratorService.repositories.find(r => r.path === repoPath);
+			const newWorktree = repo?.worktrees.find(w => w.branch === result.name);
+			if (newWorktree) {
+				// switchTo swaps the workspace folder, so terminals open in the worktree directory
+				await this.orchestratorService.switchTo(newWorktree);
+
+				const terminal = await this.terminalService.createTerminal();
+				await this.terminalService.revealActiveTerminal();
+
+				if (result.agent !== 'terminal') {
+					terminal.sendText(result.agent, true);
+
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					terminal.sendText(result.prompt || '', true);
+				}
+			}
 		}
 	}
 
