@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { addDisposableListener, EventType } from '../../../../base/browser/dom.js';
+import { addDisposableListener, DragAndDropObserver, EventType } from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
@@ -11,12 +11,19 @@ import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { validateWorktreeName } from '../../../browser/parts/orchestrator/orchestratorService.js';
 
+export interface DroppedImage {
+	readonly name: string;
+	readonly data: Uint8Array;
+	readonly mimeType: string;
+}
+
 export interface AddWorktreeResult {
 	readonly name: string;
 	readonly featureName: string;
 	readonly prompt: string;
 	readonly agent: string;
 	readonly baseBranch: string;
+	readonly images: DroppedImage[];
 }
 
 export interface AgentOption {
@@ -111,6 +118,138 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			textarea.classList.add('disabled');
 		}
 		card.appendChild(textarea);
+
+		// --- Image attachments ---
+		const droppedImages: DroppedImage[] = [];
+
+		const imageStrip = document.createElement('div');
+		imageStrip.className = 'add-worktree-image-strip';
+		card.appendChild(imageStrip);
+
+		function addImageToStrip(image: DroppedImage): void {
+			droppedImages.push(image);
+
+			const thumb = document.createElement('div');
+			thumb.className = 'add-worktree-image-thumb';
+
+			const img = document.createElement('img');
+			const blob = new Blob([image.data], { type: image.mimeType });
+			img.src = URL.createObjectURL(blob);
+			img.alt = image.name;
+			disposables.add({ dispose: () => URL.revokeObjectURL(img.src) });
+			thumb.appendChild(img);
+
+			const nameLabel = document.createElement('span');
+			nameLabel.className = 'add-worktree-image-name';
+			nameLabel.textContent = image.name;
+			nameLabel.title = image.name;
+			thumb.appendChild(nameLabel);
+
+			const removeBtn = document.createElement('span');
+			removeBtn.className = 'add-worktree-image-remove codicon codicon-close';
+			removeBtn.title = localize('removeImage', "Remove image");
+			thumb.appendChild(removeBtn);
+
+			disposables.add(addDisposableListener(removeBtn, EventType.CLICK, (e) => {
+				e.stopPropagation();
+				const idx = droppedImages.indexOf(image);
+				if (idx >= 0) {
+					droppedImages.splice(idx, 1);
+				}
+				thumb.remove();
+				if (droppedImages.length === 0) {
+					imageStrip.classList.remove('has-images');
+				}
+			}));
+
+			imageStrip.appendChild(thumb);
+			imageStrip.classList.add('has-images');
+		}
+
+		// --- Drop overlay ---
+		const dropOverlay = document.createElement('div');
+		dropOverlay.className = 'add-worktree-drop-overlay';
+		dropOverlay.textContent = localize('dropImages', "Drop images here");
+		card.appendChild(dropOverlay);
+
+		// --- Drag and drop ---
+		const SUPPORTED_IMAGE_TYPES = new Set([
+			'image/png', 'image/jpeg', 'image/jpg', 'image/gif',
+			'image/webp', 'image/bmp', 'image/tiff',
+		]);
+
+		function containsImageFiles(e: DragEvent): boolean {
+			if (!e.dataTransfer) {
+				return false;
+			}
+			const items = e.dataTransfer.items;
+			if (items && items.length > 0) {
+				return Array.from(items).some(item =>
+					item.kind === 'file' && SUPPORTED_IMAGE_TYPES.has(item.type)
+				);
+			}
+			return false;
+		}
+
+		disposables.add(new DragAndDropObserver(card, {
+			onDragOver: (e) => {
+				if (containsImageFiles(e)) {
+					e.preventDefault();
+					e.stopPropagation();
+					if (e.dataTransfer) {
+						e.dataTransfer.dropEffect = 'copy';
+					}
+					dropOverlay.classList.add('visible');
+				}
+			},
+			onDragLeave: () => {
+				dropOverlay.classList.remove('visible');
+			},
+			onDrop: (e) => {
+				dropOverlay.classList.remove('visible');
+				if (!e.dataTransfer?.files) {
+					return;
+				}
+				e.preventDefault();
+				e.stopPropagation();
+
+				const files = Array.from(e.dataTransfer.files).filter(
+					f => SUPPORTED_IMAGE_TYPES.has(f.type)
+				);
+				for (const file of files) {
+					file.arrayBuffer().then(buffer => {
+						addImageToStrip({
+							name: file.name,
+							data: new Uint8Array(buffer),
+							mimeType: file.type,
+						});
+					});
+				}
+			},
+		}));
+
+		// --- Also support paste ---
+		disposables.add(addDisposableListener(overlay, EventType.PASTE, (e: ClipboardEvent) => {
+			const items = e.clipboardData?.items;
+			if (!items) {
+				return;
+			}
+			for (const item of Array.from(items)) {
+				if (item.kind === 'file' && SUPPORTED_IMAGE_TYPES.has(item.type)) {
+					const file = item.getAsFile();
+					if (file) {
+						e.preventDefault();
+						file.arrayBuffer().then(buffer => {
+							addImageToStrip({
+								name: file.name || localize('pastedImage', "pasted-image.png"),
+								data: new Uint8Array(buffer),
+								mimeType: file.type,
+							});
+						});
+					}
+				}
+			}
+		}));
 
 		// --- Footer (inside card) ---
 		const footer = document.createElement('div');
@@ -372,6 +511,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				prompt: textarea.value.trim(),
 				agent: selectedAgent,
 				baseBranch: selectedBranch,
+				images: [...droppedImages],
 			});
 		}
 

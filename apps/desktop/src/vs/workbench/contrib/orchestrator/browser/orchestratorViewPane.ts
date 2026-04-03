@@ -23,7 +23,10 @@ import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContaine
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { ITerminalService } from '../../terminal/browser/terminal.js';
-import { showAddWorktreeModal, agentsFromIds } from './addWorktreeModal.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
+import { URI } from '../../../../base/common/uri.js';
+import { showAddWorktreeModal, agentsFromIds, DroppedImage } from './addWorktreeModal.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
 export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
@@ -37,6 +40,7 @@ export class OrchestratorViewPane extends ViewPane {
 		options: IViewPaneOptions,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
 		@ITerminalService private readonly terminalService: ITerminalService,
+		@IFileService private readonly fileService: IFileService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -201,6 +205,10 @@ export class OrchestratorViewPane extends ViewPane {
 			const repo = this.orchestratorService.repositories.find(r => r.path === repoPath);
 			const newWorktree = repo?.worktrees.find(w => w.branch === result.name);
 			if (newWorktree) {
+				// Save dropped images into worktree and build prompt with image references
+				const imagePaths = await this.saveDroppedImages(newWorktree.path, result.images);
+				const prompt = this.buildPromptWithImages(result.prompt, imagePaths);
+
 				// switchTo swaps the workspace folder, so terminals open in the worktree directory
 				await this.orchestratorService.switchTo(newWorktree);
 
@@ -211,10 +219,44 @@ export class OrchestratorViewPane extends ViewPane {
 					terminal.sendText(result.agent, true);
 
 					await new Promise(resolve => setTimeout(resolve, 2000));
-					terminal.sendText(result.prompt || '', true);
+					terminal.sendText(prompt, true);
 				}
 			}
 		}
+	}
+
+	private async saveDroppedImages(worktreePath: string, images: DroppedImage[]): Promise<string[]> {
+		if (images.length === 0) {
+			return [];
+		}
+
+		const imagesDir = URI.file(`${worktreePath}/.workstreams/images`);
+		await this.fileService.createFolder(imagesDir);
+
+		const paths: string[] = [];
+		for (const image of images) {
+			const filePath = URI.joinPath(imagesDir, image.name);
+			await this.fileService.writeFile(filePath, VSBuffer.wrap(image.data));
+			paths.push(filePath.fsPath);
+		}
+		return paths;
+	}
+
+	private buildPromptWithImages(prompt: string, imagePaths: string[]): string {
+		if (imagePaths.length === 0) {
+			return prompt || '';
+		}
+
+		const parts: string[] = [];
+		if (prompt) {
+			parts.push(prompt);
+		}
+		parts.push('');
+		parts.push('Reference images:');
+		for (const p of imagePaths) {
+			parts.push(p);
+		}
+		return parts.join('\n');
 	}
 
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
