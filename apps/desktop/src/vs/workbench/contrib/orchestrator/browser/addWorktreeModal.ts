@@ -263,18 +263,21 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			);
 		}));
 
-		// --- Name input → branch preview ---
+		// --- Name input → branch preview (auto-slugify, read-only display) ---
 		disposables.add(addDisposableListener(nameInput, EventType.INPUT, () => {
 			const value = nameInput.value.trim();
-			if (value) {
-				branchPreview.textContent = value;
+			const slug = value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+			if (slug) {
+				branchPreview.textContent = slug;
 				branchPreview.classList.remove('placeholder');
+				branchPreview.classList.add('has-value');
 			} else {
 				branchPreview.textContent = localize('branchName', "branch name");
 				branchPreview.classList.add('placeholder');
+				branchPreview.classList.remove('has-value');
 			}
-			if (value) {
-				const error = validateWorktreeName(value);
+			if (slug) {
+				const error = validateWorktreeName(slug);
 				validationMsg.textContent = error || '';
 				validationMsg.style.display = error ? 'block' : 'none';
 			} else {
@@ -312,13 +315,14 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		// --- Submit ---
 		function submit(): void {
-			const name = nameInput.value.trim();
-			if (!name) {
+			const raw = nameInput.value.trim();
+			if (!raw) {
 				validationMsg.textContent = localize('nameRequired', "Name is required");
 				validationMsg.style.display = 'block';
 				nameInput.focus();
 				return;
 			}
+			const name = raw.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
 			const error = validateWorktreeName(name);
 			if (error) {
 				validationMsg.textContent = error;

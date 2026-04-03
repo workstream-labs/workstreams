@@ -366,16 +366,16 @@
 .add-worktree-name-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 0;
 }
 
 .add-worktree-name-input {
-	flex: 1;
+	flex: 6;
 	min-width: 0;
 	background: transparent;
 	border: none;
 	outline: none;
-	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
 	font-size: 14px;
 	font-family: inherit;
 	padding: 2px 0 6px;
@@ -387,21 +387,21 @@
 }
 
 .add-worktree-branch-preview {
-	flex-shrink: 0;
+	flex: 4;
+	min-width: 0;
 	font-size: 12px;
-	color: var(--vscode-foreground);
+	color: var(--vscode-input-placeholderForeground);
 	font-family: var(--monaco-monospace-font);
 	padding-bottom: 4px;
-	max-width: 40%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	opacity: 0.5;
+	text-align: right;
 }
 
-.add-worktree-branch-preview.placeholder {
-	color: var(--vscode-input-placeholderForeground);
-	opacity: 1;
+.add-worktree-branch-preview.has-value {
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	opacity: 0.5;
 }
 
 .add-worktree-validation {
@@ -422,7 +422,7 @@
 	background: transparent;
 	border: none;
 	outline: none;
-	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
 	font-size: 13px;
 	font-family: inherit;
 	resize: none;
@@ -430,6 +430,13 @@
 	min-height: 72px;
 	box-sizing: border-box;
 	line-height: 1.45;
+}
+
+/* Suppress VS Code's default focus border on all modal inputs */
+.add-worktree-card *:focus {
+	outline: none !important;
+	box-shadow: none !important;
+	border-color: inherit !important;
 }
 
 .add-worktree-prompt::placeholder {
