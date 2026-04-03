@@ -630,8 +630,8 @@ export function validateWorktreeName(value: string): string | undefined {
 	if (/\s/.test(value)) {
 		return localize('worktreeNameNoSpaces', "Name cannot contain spaces");
 	}
-	if (/[~^:\\/]/.test(value)) {
-		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, \\, or /");
+	if (/[~^:\\]/.test(value)) {
+		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, or \\");
 	}
 	if (/\.\./.test(value)) {
 		return localize('worktreeNameNoDots', "Name cannot contain '..'");
@@ -642,8 +642,8 @@ export function validateWorktreeName(value: string): string | undefined {
 	if (/\.lock$/.test(value)) {
 		return localize('worktreeNameNoLock', "Name cannot end with '.lock'");
 	}
-	if (/^\./.test(value) || /\.$/.test(value)) {
-		return localize('worktreeNameNoDotEdge', "Name cannot start or end with '.'");
+	if (/^[./]/.test(value) || /\.$/.test(value) || /\/\.|\/\//.test(value)) {
+		return localize('worktreeNameNoDotEdge', "Name cannot start with '.' or '/', contain '/.', or have consecutive '/'");
 	}
 	if (/[\x00-\x1f\x7f]/.test(value)) {
 		return localize('worktreeNameNoControl', "Name cannot contain control characters");

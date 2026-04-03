@@ -9,34 +9,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
-
-function validateBranchName(value: string): string | undefined {
-	if (!value.trim()) {
-		return localize('branchRequired', "Branch name is required");
-	}
-	if (/\s/.test(value)) {
-		return localize('branchNoSpaces', "Branch name cannot contain spaces");
-	}
-	if (/[~^:\\]/.test(value)) {
-		return localize('branchNoSpecial', "Branch name cannot contain ~, ^, :, or \\");
-	}
-	if (/\.\./.test(value)) {
-		return localize('branchNoDots', "Branch name cannot contain '..'");
-	}
-	if (/@\{/.test(value)) {
-		return localize('branchNoReflog', "Branch name cannot contain '@{brace}'");
-	}
-	if (/\.lock$/.test(value)) {
-		return localize('branchNoLock', "Branch name cannot end with '.lock'");
-	}
-	if (/^[./]/.test(value) || /\.$/.test(value) || /\/\.|\/\//.test(value)) {
-		return localize('branchNoDotSlashEdge', "Branch name cannot start with '.', contain '/.', or have consecutive '/'");
-	}
-	if (/[\x00-\x1f\x7f]/.test(value)) {
-		return localize('branchNoControl', "Branch name cannot contain control characters");
-	}
-	return undefined;
-}
+import { validateWorktreeName } from '../../../browser/parts/orchestrator/orchestratorService.js';
 
 export interface AddWorktreeResult {
 	readonly name: string;
@@ -296,7 +269,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		disposables.add(addDisposableListener(branchInput, EventType.INPUT, () => {
 			const value = branchInput.value.trim();
 			if (value) {
-				const error = validateBranchName(value);
+				const error = validateWorktreeName(value);
 				validationMsg.textContent = error || '';
 				validationMsg.style.display = error ? 'block' : 'none';
 			} else {
@@ -341,7 +314,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				branchInput.focus();
 				return;
 			}
-			const error = validateBranchName(branch);
+			const error = validateWorktreeName(branch);
 			if (error) {
 				validationMsg.textContent = error;
 				validationMsg.style.display = 'block';
