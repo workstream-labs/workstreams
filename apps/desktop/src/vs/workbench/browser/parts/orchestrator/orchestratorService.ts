@@ -242,7 +242,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		const worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
 
 		const worktree: IWorktreeEntry = {
-			name: displayName || friendlyName(name),
+			name: displayName || name,
 			path: worktreePath,
 			branch: name,
 			description,
