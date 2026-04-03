@@ -346,9 +346,9 @@
 }
 
 .add-worktree-modal {
-	display: flex;
-	gap: 8px;
+	width: 560px;
 	max-width: 90vw;
+	position: relative;
 	animation: addWorktreeModalIn 0.15s ease-out;
 }
 
@@ -358,9 +358,6 @@
 }
 
 .add-worktree-card {
-	width: 560px;
-	flex-shrink: 1;
-	min-width: 0;
 	position: relative;
 	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
@@ -686,14 +683,16 @@
 
 .add-worktree-preset-panel {
 	display: none;
-	width: 240px;
-	flex-shrink: 0;
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	width: 280px;
 	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 10px;
 	padding: 14px 16px;
 	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
-	align-self: flex-start;
+	z-index: 10001;
 }
 
 .add-worktree-preset-panel.visible {
@@ -702,8 +701,8 @@
 }
 
 @keyframes presetPanelIn {
-	from { opacity: 0; transform: translateX(-8px); }
-	to   { opacity: 1; transform: translateX(0); }
+	from { opacity: 0; transform: translateY(-4px); }
+	to   { opacity: 1; transform: translateY(0); }
 }
 
 .add-worktree-preset-header {
