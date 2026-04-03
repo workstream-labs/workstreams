@@ -135,6 +135,18 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		agentBtn.type = 'button';
 		agentContainer.appendChild(agentBtn);
 
+		const presetBtn = document.createElement('button');
+		presetBtn.className = 'add-worktree-preset-btn codicon codicon-settings';
+		presetBtn.type = 'button';
+		presetBtn.title = localize('agentPresets', "Agent presets");
+		agentContainer.appendChild(presetBtn);
+
+		function updatePresetButton(): void {
+			const isConfigurable = selectedAgent === 'claude' || selectedAgent === 'codex';
+			presetBtn.style.display = isConfigurable ? '' : 'none';
+		}
+		updatePresetButton();
+
 		function updateAgentButton(): void {
 			agentBtn.textContent = '';
 			if (!hasAgents) {
@@ -249,7 +261,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			showDropdown(
 				agentContainer,
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent })),
-				(id) => { selectedAgent = id; updateAgentButton(); }
+				(id) => { selectedAgent = id; updateAgentButton(); updatePresetButton(); }
 			);
 		}));
 
