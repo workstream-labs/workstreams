@@ -10,3 +10,5 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 docs/bun.lockb
 docs/node_modules/
+apps/Workstreams-darwin-*/
+apps/*.dmg
