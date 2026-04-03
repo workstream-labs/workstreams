@@ -196,11 +196,12 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		footerRight.appendChild(hint);
 
 		// --- Dropdown helper ---
-		function showDropdown(container: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
+		function showDropdown(container: HTMLElement, trigger: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
 			closeActiveDropdown();
 
 			const menu = document.createElement('div');
 			menu.className = 'add-worktree-dropdown';
+			menu.style.width = `${Math.round(trigger.offsetWidth * 1.25)}px`;
 
 			for (const item of items) {
 				const option = document.createElement('div');
@@ -245,7 +246,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				return;
 			}
 			showDropdown(
-				agentContainer,
+				agentContainer, agentBtn,
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent })),
 				(id) => { selectedAgent = id; updateAgentButton(); }
 			);
@@ -259,7 +260,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				return;
 			}
 			showDropdown(
-				branchContainer,
+				branchContainer, branchBtn,
 				options.branches.map(b => ({ id: b, label: b, selected: b === selectedBranch })),
 				(id) => { selectedBranch = id; updateBranchButton(); }
 			);

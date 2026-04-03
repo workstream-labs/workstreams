@@ -526,7 +526,6 @@
 	position: absolute;
 	top: calc(100% + 4px);
 	left: 0;
-	min-width: 150px;
 	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
 	border-radius: 8px;
@@ -546,6 +545,9 @@
 	cursor: pointer;
 	border-radius: 4px;
 	color: var(--vscode-foreground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .add-worktree-dropdown-item:hover {
