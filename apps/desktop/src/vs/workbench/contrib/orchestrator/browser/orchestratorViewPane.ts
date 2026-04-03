@@ -193,7 +193,7 @@ export class OrchestratorViewPane extends ViewPane {
 		});
 
 		if (result) {
-			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch);
+			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch, result.featureName);
 		}
 	}
 

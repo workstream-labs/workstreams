@@ -65,7 +65,7 @@ export interface IOrchestratorService {
 	removeRepository(repoPath: string): Promise<void>;
 	toggleRepositoryCollapsed(repoPath: string): void;
 
-	addWorktree(repoPath: string, name: string, description: string, baseBranch?: string): Promise<void>;
+	addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void>;
 	removeWorktree(repoPath: string, branchName: string): Promise<void>;
 	switchTo(worktree: IWorktreeEntry): Promise<void>;
 	listBranches(repoPath: string): Promise<string[]>;

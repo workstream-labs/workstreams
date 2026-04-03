@@ -13,6 +13,7 @@ import { validateWorktreeName } from '../../../browser/parts/orchestrator/orches
 
 export interface AddWorktreeResult {
 	readonly name: string;
+	readonly featureName: string;
 	readonly prompt: string;
 	readonly agent: string;
 	readonly baseBranch: string;
@@ -341,6 +342,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			}
 			close({
 				name: branch,
+				featureName: feature,
 				prompt: textarea.value.trim(),
 				agent: selectedAgent,
 				baseBranch: selectedBranch,

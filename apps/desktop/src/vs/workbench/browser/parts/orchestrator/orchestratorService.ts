@@ -237,12 +237,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		return this.gitService.detectAgents();
 	}
 
-	async addWorktree(repoPath: string, name: string, description: string, baseBranch?: string): Promise<void> {
+	async addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void> {
 		// Create actual git worktree
 		const worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
 
 		const worktree: IWorktreeEntry = {
-			name: friendlyName(name),
+			name: displayName || friendlyName(name),
 			path: worktreePath,
 			branch: name,
 			description,
