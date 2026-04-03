@@ -245,6 +245,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			name: displayName || name,
 			path: worktreePath,
 			branch: name,
+			baseBranch,
 			description,
 			isActive: false,
 		};

@@ -17,6 +17,7 @@ export interface IWorktreeEntry {
 	readonly name: string;
 	readonly path: string;
 	readonly branch: string;
+	readonly baseBranch?: string;
 	readonly description?: string;
 	readonly isActive: boolean;
 	readonly sessionState?: WorktreeSessionState;
