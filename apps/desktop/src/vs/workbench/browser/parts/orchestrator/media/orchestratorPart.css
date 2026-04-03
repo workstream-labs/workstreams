@@ -518,7 +518,12 @@
 .add-worktree-hint {
 	font-size: 11px;
 	color: var(--vscode-foreground);
-	opacity: 0.35;
+	opacity: 0.2;
+	transition: opacity 0.15s ease;
+}
+
+.add-worktree-hint.ready {
+	opacity: 0.6;
 }
 
 .add-worktree-dropdown {

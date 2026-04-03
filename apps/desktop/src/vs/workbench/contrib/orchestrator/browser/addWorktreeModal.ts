@@ -266,7 +266,16 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			);
 		}));
 
-		// --- Branch input validation ---
+		// --- Readiness: update hint when required fields change ---
+		function updateReadiness(): void {
+			const ready = nameInput.value.trim().length > 0
+				&& branchInput.value.trim().length > 0
+				&& !validateWorktreeName(branchInput.value.trim());
+			hint.classList.toggle('ready', ready);
+		}
+
+		disposables.add(addDisposableListener(nameInput, EventType.INPUT, updateReadiness));
+
 		disposables.add(addDisposableListener(branchInput, EventType.INPUT, () => {
 			const value = branchInput.value.trim();
 			if (value) {
@@ -277,6 +286,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				validationMsg.textContent = '';
 				validationMsg.style.display = 'none';
 			}
+			updateReadiness();
 		}));
 
 		// --- Close on overlay backdrop click ---
@@ -308,6 +318,13 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		// --- Submit ---
 		function submit(): void {
+			const feature = nameInput.value.trim();
+			if (!feature) {
+				validationMsg.textContent = localize('featureRequired', "Feature name is required");
+				validationMsg.style.display = 'block';
+				nameInput.focus();
+				return;
+			}
 			const branch = branchInput.value.trim();
 			if (!branch) {
 				validationMsg.textContent = localize('branchRequired', "Branch name is required");
