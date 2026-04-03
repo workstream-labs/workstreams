@@ -201,7 +201,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 			const menu = document.createElement('div');
 			menu.className = 'add-worktree-dropdown';
-			menu.style.width = `${Math.round(trigger.offsetWidth * 1.25)}px`;
+			menu.style.width = '200px';
 
 			for (const item of items) {
 				const option = document.createElement('div');
