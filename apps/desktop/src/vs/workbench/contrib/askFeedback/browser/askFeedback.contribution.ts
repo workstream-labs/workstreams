@@ -21,6 +21,7 @@ function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | u
 	return new Promise(resolve => {
 		const disposables = new DisposableStore();
 		let resolved = false;
+		let selectedType: FeedbackType = 'bug';
 
 		const dismiss = (result?: IFeedbackResult) => {
 			if (resolved) {
@@ -30,6 +31,20 @@ function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | u
 			modalBlock.remove();
 			disposables.dispose();
 			resolve(result);
+		};
+
+		const trySubmit = () => {
+			const text = textArea.value.trim();
+			if (!text) {
+				textArea.focus();
+				return;
+			}
+			dismiss({ type: selectedType, text });
+		};
+
+		const updateHint = () => {
+			const hasText = textArea.value.trim().length > 0;
+			hint.classList.toggle('ready', hasText);
 		};
 
 		// Modal backdrop
@@ -51,67 +66,87 @@ function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | u
 		const title = dialog.appendChild($('.ask-feedback-title'));
 		title.textContent = localize('feedbackDialog.title', "Send Feedback");
 
-		// Feedback type
-		const typeLabel = dialog.appendChild($('label.ask-feedback-label'));
-		typeLabel.textContent = localize('feedbackDialog.typeLabel', "Type");
-		typeLabel.setAttribute('for', 'ask-feedback-type');
+		// Separator
+		dialog.appendChild($('.ask-feedback-separator'));
 
-		const typeSelect = dialog.appendChild($('select.ask-feedback-select')) as HTMLSelectElement;
-		typeSelect.id = 'ask-feedback-type';
-		for (const [value, label] of [
-			['bug', localize('feedbackType.bug', "Bug")],
-			['feature', localize('feedbackType.featureRequest', "Feature Request")],
-			['other', localize('feedbackType.other', "Other")],
-		] as const) {
-			const option = document.createElement('option');
-			option.value = value;
-			option.textContent = label;
-			typeSelect.appendChild(option);
+		// Type pills
+		const typeRow = dialog.appendChild($('.ask-feedback-type-row'));
+		typeRow.setAttribute('role', 'radiogroup');
+		typeRow.setAttribute('aria-label', localize('feedbackDialog.typeLabel', "Type"));
+
+		const typeOptions: { value: FeedbackType; label: string; icon: string }[] = [
+			{ value: 'bug', label: localize('feedbackType.bug', "Bug"), icon: 'codicon-bug' },
+			{ value: 'feature', label: localize('feedbackType.featureRequest', "Feature Request"), icon: 'codicon-lightbulb' },
+			{ value: 'other', label: localize('feedbackType.other', "Other"), icon: 'codicon-comment' },
+		];
+
+		const pillElements: HTMLButtonElement[] = [];
+		for (const opt of typeOptions) {
+			const pill = typeRow.appendChild($('button.ask-feedback-type-pill')) as HTMLButtonElement;
+			pill.setAttribute('role', 'radio');
+			pill.setAttribute('aria-checked', opt.value === selectedType ? 'true' : 'false');
+
+			const icon = pill.appendChild($(`span.codicon.${opt.icon}`));
+			icon.setAttribute('aria-hidden', 'true');
+			pill.appendChild(document.createTextNode(opt.label));
+
+			if (opt.value === selectedType) {
+				pill.classList.add('selected');
+			}
+
+			disposables.add(addDisposableListener(pill, EventType.CLICK, () => {
+				selectedType = opt.value;
+				for (const p of pillElements) {
+					p.classList.remove('selected');
+					p.setAttribute('aria-checked', 'false');
+				}
+				pill.classList.add('selected');
+				pill.setAttribute('aria-checked', 'true');
+				textArea.focus();
+			}));
+
+			pillElements.push(pill);
 		}
 
-		// Feedback text
-		const textLabel = dialog.appendChild($('label.ask-feedback-label'));
-		textLabel.textContent = localize('feedbackDialog.textLabel', "Description");
-		textLabel.setAttribute('for', 'ask-feedback-text');
-
+		// Textarea
 		const textArea = dialog.appendChild($('textarea.ask-feedback-textarea')) as HTMLTextAreaElement;
 		textArea.id = 'ask-feedback-text';
 		textArea.placeholder = localize('feedbackDialog.placeholder', "Tell us what's on your mind...");
 		textArea.rows = 5;
+		disposables.add(addDisposableListener(textArea, EventType.INPUT, updateHint));
 
-		// Buttons
-		const buttonsRow = dialog.appendChild($('.ask-feedback-buttons'));
+		// Footer
+		const footer = dialog.appendChild($('.ask-feedback-footer'));
 
-		const cancelButton = buttonsRow.appendChild($('button.ask-feedback-button.ask-feedback-button-cancel'));
+		const footerLeft = footer.appendChild($('.ask-feedback-footer-left'));
+		const hint = footerLeft.appendChild($('span.ask-feedback-hint'));
+		const isMac = navigator.userAgent.includes('Mac');
+		hint.textContent = isMac
+			? localize('feedbackDialog.hintMac', "\u2318\u21A9 to submit")
+			: localize('feedbackDialog.hintWin', "Ctrl+Enter to submit");
+
+		const footerRight = footer.appendChild($('.ask-feedback-footer-right'));
+
+		const cancelButton = footerRight.appendChild($('button.ask-feedback-button.ask-feedback-button-cancel'));
 		cancelButton.textContent = localize('feedbackDialog.cancel', "Cancel");
 		disposables.add(addDisposableListener(cancelButton, EventType.CLICK, () => dismiss()));
 
-		const submitButton = buttonsRow.appendChild($('button.ask-feedback-button.ask-feedback-button-submit'));
+		const submitButton = footerRight.appendChild($('button.ask-feedback-button.ask-feedback-button-submit'));
 		submitButton.textContent = localize('feedbackDialog.submit', "Submit");
-		disposables.add(addDisposableListener(submitButton, EventType.CLICK, () => {
-			const text = textArea.value.trim();
-			if (!text) {
-				textArea.focus();
-				return;
-			}
-			dismiss({ type: typeSelect.value as FeedbackType, text });
-		}));
+		disposables.add(addDisposableListener(submitButton, EventType.CLICK, trySubmit));
 
 		// Keyboard handling
 		disposables.add(addDisposableListener(dialog, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const event = new StandardKeyboardEvent(e);
 			if (event.keyCode === KeyCode.Escape) {
 				dismiss();
-			} else if (event.keyCode === KeyCode.Enter && event.ctrlKey) {
-				const text = textArea.value.trim();
-				if (text) {
-					dismiss({ type: typeSelect.value as FeedbackType, text });
-				}
+			} else if (event.keyCode === KeyCode.Enter && (event.ctrlKey || event.metaKey)) {
+				trySubmit();
 			}
 		}));
 
-		// Focus the select initially
-		typeSelect.focus();
+		// Focus the textarea initially
+		textArea.focus();
 	});
 }
 
