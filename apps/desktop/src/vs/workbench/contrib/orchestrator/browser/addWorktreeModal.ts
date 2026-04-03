@@ -144,6 +144,14 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				}
 			}));
 
+			presetDisposables.add(addDisposableListener(commandInput, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					e.stopPropagation();
+					commandInput.blur();
+				}
+			}));
+
 			presetDisposables.add(addDisposableListener(closeBtn, EventType.CLICK, (e) => {
 				e.stopPropagation();
 				hidePresetPanel();

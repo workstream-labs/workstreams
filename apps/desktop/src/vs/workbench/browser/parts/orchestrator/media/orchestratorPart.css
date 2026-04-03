@@ -684,7 +684,7 @@
 	display: none;
 	position: absolute;
 	top: calc(100% + 4px);
-	left: calc(200px + 8px);
+	left: calc(200px + 10px);
 	width: 280px;
 	background: var(--vscode-editorWidget-background);
 	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
