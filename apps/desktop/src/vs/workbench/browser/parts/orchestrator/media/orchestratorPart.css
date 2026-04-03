@@ -386,22 +386,22 @@
 	color: var(--vscode-input-placeholderForeground);
 }
 
-.add-worktree-branch-preview {
+.add-worktree-branch-input {
 	flex: 4;
 	min-width: 0;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
 	font-size: 12px;
-	color: var(--vscode-input-placeholderForeground);
 	font-family: var(--monaco-monospace-font);
-	padding-bottom: 4px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	padding: 2px 0 6px;
+	box-sizing: border-box;
 	text-align: right;
 }
 
-.add-worktree-branch-preview.has-value {
-	color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
-	opacity: 0.5;
+.add-worktree-branch-input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
 }
 
 .add-worktree-validation {

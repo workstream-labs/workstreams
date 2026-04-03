@@ -9,7 +9,34 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
-import { validateWorktreeName } from '../../../browser/parts/orchestrator/orchestratorService.js';
+
+function validateBranchName(value: string): string | undefined {
+	if (!value.trim()) {
+		return localize('branchRequired', "Branch name is required");
+	}
+	if (/\s/.test(value)) {
+		return localize('branchNoSpaces', "Branch name cannot contain spaces");
+	}
+	if (/[~^:\\]/.test(value)) {
+		return localize('branchNoSpecial', "Branch name cannot contain ~, ^, :, or \\");
+	}
+	if (/\.\./.test(value)) {
+		return localize('branchNoDots', "Branch name cannot contain '..'");
+	}
+	if (/@\{/.test(value)) {
+		return localize('branchNoReflog', "Branch name cannot contain '@{brace}'");
+	}
+	if (/\.lock$/.test(value)) {
+		return localize('branchNoLock', "Branch name cannot end with '.lock'");
+	}
+	if (/^[./]/.test(value) || /\.$/.test(value) || /\/\.|\/\//.test(value)) {
+		return localize('branchNoDotSlashEdge', "Branch name cannot start with '.', contain '/.', or have consecutive '/'");
+	}
+	if (/[\x00-\x1f\x7f]/.test(value)) {
+		return localize('branchNoControl', "Branch name cannot contain control characters");
+	}
+	return undefined;
+}
 
 export interface AddWorktreeResult {
 	readonly name: string;
@@ -81,11 +108,13 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		nameInput.autocomplete = 'off';
 		nameRow.appendChild(nameInput);
 
-		const branchPreview = document.createElement('span');
-		branchPreview.className = 'add-worktree-branch-preview';
-		branchPreview.textContent = localize('branchName', "branch name");
-		branchPreview.classList.add('placeholder');
-		nameRow.appendChild(branchPreview);
+		const branchInput = document.createElement('input');
+		branchInput.type = 'text';
+		branchInput.className = 'add-worktree-branch-input';
+		branchInput.placeholder = localize('branchName', "branch name");
+		branchInput.spellcheck = false;
+		branchInput.autocomplete = 'off';
+		nameRow.appendChild(branchInput);
 
 		// --- Validation message ---
 		const validationMsg = document.createElement('div');
@@ -263,21 +292,11 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			);
 		}));
 
-		// --- Name input → branch preview (auto-slugify, read-only display) ---
-		disposables.add(addDisposableListener(nameInput, EventType.INPUT, () => {
-			const value = nameInput.value.trim();
-			const slug = value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
-			if (slug) {
-				branchPreview.textContent = slug;
-				branchPreview.classList.remove('placeholder');
-				branchPreview.classList.add('has-value');
-			} else {
-				branchPreview.textContent = localize('branchName', "branch name");
-				branchPreview.classList.add('placeholder');
-				branchPreview.classList.remove('has-value');
-			}
-			if (slug) {
-				const error = validateWorktreeName(slug);
+		// --- Branch input validation ---
+		disposables.add(addDisposableListener(branchInput, EventType.INPUT, () => {
+			const value = branchInput.value.trim();
+			if (value) {
+				const error = validateBranchName(value);
 				validationMsg.textContent = error || '';
 				validationMsg.style.display = error ? 'block' : 'none';
 			} else {
@@ -315,23 +334,22 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 
 		// --- Submit ---
 		function submit(): void {
-			const raw = nameInput.value.trim();
-			if (!raw) {
-				validationMsg.textContent = localize('nameRequired', "Name is required");
+			const branch = branchInput.value.trim();
+			if (!branch) {
+				validationMsg.textContent = localize('branchRequired', "Branch name is required");
 				validationMsg.style.display = 'block';
-				nameInput.focus();
+				branchInput.focus();
 				return;
 			}
-			const name = raw.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
-			const error = validateWorktreeName(name);
+			const error = validateBranchName(branch);
 			if (error) {
 				validationMsg.textContent = error;
 				validationMsg.style.display = 'block';
-				nameInput.focus();
+				branchInput.focus();
 				return;
 			}
 			close({
-				name,
+				name: branch,
 				prompt: textarea.value.trim(),
 				agent: selectedAgent,
 				baseBranch: selectedBranch,
