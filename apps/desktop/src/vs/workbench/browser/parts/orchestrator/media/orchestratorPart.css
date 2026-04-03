@@ -292,7 +292,7 @@
 
 .monaco-workbench .orchestrator-content .worktree-branch {
 	font-size: 10px;
-	opacity: 0.6;
+	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
