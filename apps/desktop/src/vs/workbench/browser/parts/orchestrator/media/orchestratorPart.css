@@ -348,7 +348,6 @@
 .add-worktree-modal {
 	width: 560px;
 	max-width: 90vw;
-	position: relative;
 	animation: addWorktreeModalIn 0.15s ease-out;
 }
 
@@ -684,7 +683,7 @@
 .add-worktree-preset-panel {
 	display: none;
 	position: absolute;
-	top: calc(100% + 8px);
+	top: calc(100% + 4px);
 	right: 0;
 	width: 280px;
 	background: var(--vscode-editorWidget-background);

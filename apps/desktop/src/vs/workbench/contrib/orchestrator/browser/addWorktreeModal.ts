@@ -80,10 +80,10 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		card.className = 'add-worktree-card';
 		modal.appendChild(card);
 
-		// --- Preset panel (right side, hidden by default) ---
+		// --- Preset panel (below card, right-aligned) ---
 		const presetPanel = document.createElement('div');
 		presetPanel.className = 'add-worktree-preset-panel';
-		modal.appendChild(presetPanel);
+		card.appendChild(presetPanel);
 
 		let activePresetAgent: string | null = null;
 		const presetDisposables = new DisposableStore();
