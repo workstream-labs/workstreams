@@ -83,6 +83,9 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		// --- Preset panel (created early, appended to agentContainer later) ---
 		const presetPanel = document.createElement('div');
 		presetPanel.className = 'add-worktree-preset-panel';
+		disposables.add(addDisposableListener(presetPanel, EventType.CLICK, (e) => {
+			e.stopPropagation();
+		}));
 
 		let activePresetAgent: string | null = null;
 		const presetDisposables = new DisposableStore();
