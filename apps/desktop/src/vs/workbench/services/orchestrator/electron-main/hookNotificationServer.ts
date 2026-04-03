@@ -29,6 +29,7 @@ function mapEventType(raw: string): IHookNotificationEvent['eventType'] | undefi
 			return 'Start';
 		case 'Stop':
 		case 'SessionEnd':
+		case 'Notification':
 			return 'Stop';
 		case 'PermissionRequest':
 			return 'PermissionRequest';

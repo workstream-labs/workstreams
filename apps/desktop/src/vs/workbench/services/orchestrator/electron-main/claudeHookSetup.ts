@@ -89,7 +89,7 @@ export async function setupClaudeHooks(logService: ILogService): Promise<void> {
 		// Tool-related hooks use matcher '*' (all tools);
 		// non-tool hooks omit matcher entirely. Matches Superset's registration pattern.
 		const toolEvents = new Set(['PostToolUse', 'PostToolUseFailure', 'PermissionRequest']);
-		const eventsToHook = ['UserPromptSubmit', 'Stop', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest'];
+		const eventsToHook = ['UserPromptSubmit', 'Stop', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification'];
 
 		let changed = false;
 		for (const event of eventsToHook) {
