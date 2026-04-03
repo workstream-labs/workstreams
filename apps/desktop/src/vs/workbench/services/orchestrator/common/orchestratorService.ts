@@ -74,6 +74,16 @@ export interface IOrchestratorService {
 	detectAgents(): Promise<string[]>;
 
 	/**
+	 * Get the stored startup command for an agent. Defaults to the agent id.
+	 */
+	getAgentCommand(agentId: string): string;
+
+	/**
+	 * Persist a custom startup command for an agent.
+	 */
+	setAgentCommand(agentId: string, command: string): void;
+
+	/**
 	 * Schedule a debounced refresh of worktree state (branches, diff stats).
 	 * Called by contributions that detect external changes (e.g. terminal commands).
 	 */

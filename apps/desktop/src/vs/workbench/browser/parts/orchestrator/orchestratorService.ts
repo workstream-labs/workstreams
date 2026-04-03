@@ -26,6 +26,12 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 
 const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 
+const DEFAULT_AGENT_COMMANDS: ReadonlyMap<string, string> = new Map([
+	['claude', 'claude'],
+	['codex', 'codex'],
+	['aider', 'aider'],
+]);
+
 interface IPersistedWorktreeState {
 	readonly branch: string;
 	readonly name: string;
@@ -47,6 +53,7 @@ interface IPersistedOrchestratorState {
 export class OrchestratorServiceImpl extends Disposable implements IOrchestratorService {
 
 	static readonly STORAGE_KEY = 'orchestrator.repositoryState';
+	static readonly AGENT_COMMANDS_KEY = 'orchestrator.agentCommands';
 
 	declare readonly _serviceBrand: undefined;
 
@@ -247,6 +254,38 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	async detectAgents(): Promise<string[]> {
 		return this.gitService.detectAgents();
+	}
+
+	getAgentCommand(agentId: string): string {
+		const raw = this.storageService.get(OrchestratorServiceImpl.AGENT_COMMANDS_KEY, StorageScope.APPLICATION);
+		if (raw) {
+			try {
+				const commands: Record<string, string> = JSON.parse(raw);
+				if (commands[agentId]) {
+					return commands[agentId];
+				}
+			} catch { /* ignore */ }
+		}
+		return DEFAULT_AGENT_COMMANDS.get(agentId) ?? agentId;
+	}
+
+	setAgentCommand(agentId: string, command: string): void {
+		let commands: Record<string, string> = {};
+		const raw = this.storageService.get(OrchestratorServiceImpl.AGENT_COMMANDS_KEY, StorageScope.APPLICATION);
+		if (raw) {
+			try {
+				commands = JSON.parse(raw);
+			} catch (e) {
+				this.logService.warn('[OrchestratorService] Failed to parse agent commands from storage:', e);
+			}
+		}
+		commands[agentId] = command;
+		this.storageService.store(
+			OrchestratorServiceImpl.AGENT_COMMANDS_KEY,
+			JSON.stringify(commands),
+			StorageScope.APPLICATION,
+			StorageTarget.MACHINE
+		);
 	}
 
 	async addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void> {

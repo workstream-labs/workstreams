@@ -319,7 +319,7 @@ registerAction2(class extends Action2 {
 		await terminalService.revealActiveTerminal();
 
 		// Start Claude Code session, then send comments after it initializes
-		terminal.sendText('claude', true);
+		terminal.sendText(orchestratorService.getAgentCommand('claude'), true);
 		await new Promise(resolve => setTimeout(resolve, 2000));
 
 		// Format selected comments as prompt
