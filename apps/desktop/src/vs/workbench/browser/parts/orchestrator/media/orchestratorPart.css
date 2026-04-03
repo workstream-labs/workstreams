@@ -500,25 +500,25 @@
 	border-color: var(--vscode-editorWidget-border, var(--vscode-panel-border));
 }
 
-.add-worktree-preset-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 26px;
-	height: 26px;
-	background: transparent;
-	border: 1px solid transparent;
-	border-radius: 6px;
-	color: var(--vscode-descriptionForeground);
-	font-size: 14px;
-	cursor: pointer;
-	padding: 0;
-	transition: color 0.1s ease, border-color 0.1s ease, background-color 0.1s ease;
+.add-worktree-dropdown-spacer {
+	flex: 1;
 }
 
-.add-worktree-preset-btn:hover {
-	color: var(--vscode-foreground);
-	border-color: var(--vscode-focusBorder);
+.add-worktree-dropdown-settings {
+	font-size: 14px;
+	opacity: 0;
+	padding: 2px;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: opacity 0.1s ease, background-color 0.1s ease;
+}
+
+.add-worktree-dropdown-item:hover .add-worktree-dropdown-settings {
+	opacity: 0.5;
+}
+
+.add-worktree-dropdown-settings:hover {
+	opacity: 1 !important;
 	background: var(--vscode-toolbar-hoverBackground);
 }
 

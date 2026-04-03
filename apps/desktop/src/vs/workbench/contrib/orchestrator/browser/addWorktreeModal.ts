@@ -135,18 +135,6 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		agentBtn.type = 'button';
 		agentContainer.appendChild(agentBtn);
 
-		const presetBtn = document.createElement('button');
-		presetBtn.className = 'add-worktree-preset-btn codicon codicon-settings';
-		presetBtn.type = 'button';
-		presetBtn.title = localize('agentPresets', "Agent presets");
-		agentContainer.appendChild(presetBtn);
-
-		function updatePresetButton(): void {
-			const isConfigurable = selectedAgent === 'claude' || selectedAgent === 'codex';
-			presetBtn.style.display = isConfigurable ? '' : 'none';
-		}
-		updatePresetButton();
-
 		function updateAgentButton(): void {
 			agentBtn.textContent = '';
 			if (!hasAgents) {
@@ -209,7 +197,15 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		footerRight.appendChild(hint);
 
 		// --- Dropdown helper ---
-		function showDropdown(container: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
+		interface DropdownItem {
+			id: string;
+			label: string;
+			icon?: ThemeIcon;
+			selected: boolean;
+			hasSettings?: boolean;
+		}
+
+		function showDropdown(container: HTMLElement, items: DropdownItem[], onSelect: (id: string) => void, onSettings?: (id: string) => void): void {
 			closeActiveDropdown();
 
 			const menu = document.createElement('div');
@@ -232,6 +228,23 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				} else {
 					option.textContent = item.label;
 				}
+
+				if (item.hasSettings) {
+					const spacer = document.createElement('span');
+					spacer.className = 'add-worktree-dropdown-spacer';
+					option.appendChild(spacer);
+
+					const settingsIcon = document.createElement('span');
+					settingsIcon.className = 'add-worktree-dropdown-settings codicon codicon-settings';
+					settingsIcon.title = localize('agentPresets', "Agent presets");
+					option.appendChild(settingsIcon);
+
+					disposables.add(addDisposableListener(settingsIcon, EventType.CLICK, (e) => {
+						e.stopPropagation();
+						onSettings?.(item.id);
+					}));
+				}
+
 				disposables.add(addDisposableListener(option, EventType.CLICK, (e) => {
 					e.stopPropagation();
 					onSelect(item.id);
@@ -260,8 +273,9 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			}
 			showDropdown(
 				agentContainer,
-				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent })),
-				(id) => { selectedAgent = id; updateAgentButton(); updatePresetButton(); }
+				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent, hasSettings: a.id !== 'terminal' })),
+				(id) => { selectedAgent = id; updateAgentButton(); },
+				(_agentId) => { /* TODO: open presets panel */ }
 			);
 		}));
 
