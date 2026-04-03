@@ -45,6 +45,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run watch` — watches client + extensions (use for active development)
 - `npm run watch-client` — watches client only
 
+### Building and installing the DMG (macOS)
+
+Full clean build from scratch:
+
+```bash
+# 1. Clean all build artifacts and caches
+rm -rf out out-build out-vscode-min out-vscode-reh-min out-vscode-reh-web-min .build dmg-output
+# Also clean the packaged app from the parent directory
+rm -rf ../Workstreams-darwin-arm64
+
+# 2. Clean macOS app data (if previously installed)
+rm -rf ~/Library/Application\ Support/Workstreams
+rm -rf ~/Library/Application\ Support/code-oss-dev
+rm -rf ~/Library/Caches/Workstreams
+
+# 3. Install dependencies (if node_modules is missing or stale)
+npm install
+
+# 4. Download Electron
+npm run electron
+
+# 5. Compile for production (generates out-build/)
+#    IMPORTANT: Use NODE_OPTIONS to avoid OOM on large codebase.
+#    NOTE: `npm run compile` generates out/ for DEV only — the DMG pipeline
+#    needs out-build/ which is produced by this gulp task.
+NODE_OPTIONS="--max-old-space-size=8192" npx gulp compile-build-without-mangling
+
+# 6. Minify for production (bundles out-build/ → out-vscode-min/)
+npx gulp minify-vscode
+
+# 7. Package the Electron app
+#    Use arm64 for Apple Silicon, x64 for Intel
+#    IMPORTANT: The .app is output to the PARENT directory (../Workstreams-darwin-arm64/),
+#    NOT inside out-vscode-min/. This is how the gulp packaging task works.
+npx gulp vscode-darwin-arm64-min
+
+# 8. Create the DMG
+#    Pass the parent dir (../) as buildDir since step 7 outputs the .app there.
+#    Generates dmg-output/Workstreams-darwin-arm64.dmg (~163 MB)
+mkdir -p dmg-output
+VSCODE_ARCH=arm64 VSCODE_QUALITY=stable npx tsx build/darwin/create-dmg.ts ../ dmg-output
+
+# 9. Install — open the DMG and drag to /Applications
+open dmg-output/Workstreams-darwin-arm64.dmg
+```
+
+**Build output directories:**
+- `out/` — dev compile (`npm run compile`), used by `scripts/code.sh`
+- `out-build/` — production compile (`gulp compile-build-*`), input for minify/bundle
+- `out-vscode-min/` — minified + bundled JS output
+- `../Workstreams-darwin-arm64/` — packaged Electron app with `Workstreams.app` (in parent dir)
+- `dmg-output/` — final DMG installer
+
+**Notes:**
+- `VSCODE_QUALITY` must be `stable`, `insider`, or `exploration` (determines DMG background image)
+- For Intel Macs, replace `arm64` with `x64` in steps 7-8
+- Python 3.10+ is required for DMG creation (auto-installed via Homebrew if missing)
+
 ## Architecture
 
 This is a fork of VS Code (Code - OSS) with two major custom additions: the **Orchestrator** (worktree sidebar in the workbench) and the **Sessions layer** (a separate agent-focused window).
