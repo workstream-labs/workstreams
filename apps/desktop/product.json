@@ -1,7 +1,7 @@
 {
 	"nameShort": "Workstreams",
 	"nameLong": "Workstreams",
-	"applicationName": "code-oss",
+	"applicationName": "workstreams",
 	"dataFolderName": ".vscode-oss",
 	"win32MutexName": "vscodeoss",
 	"licenseName": "MIT",
