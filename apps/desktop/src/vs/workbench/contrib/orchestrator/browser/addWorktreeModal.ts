@@ -37,7 +37,11 @@ export interface AddWorktreeModalOptions {
 	readonly agents: AgentOption[];
 	readonly defaultBranch: string;
 	readonly defaultAgent: string;
+	readonly agentCommands: Record<string, string>;
+	readonly onAgentCommandChange?: (agentId: string, command: string) => void;
 }
+
+export const TERMINAL_AGENT_ID = 'terminal';
 
 const KNOWN_AGENTS: ReadonlyMap<string, AgentOption> = new Map([
 	['claude', { id: 'claude', label: 'Claude', icon: Codicon.claude }],
@@ -75,6 +79,96 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		const card = document.createElement('div');
 		card.className = 'add-worktree-card';
 		modal.appendChild(card);
+
+		// --- Preset panel (created early, appended to agentContainer later) ---
+		const presetPanel = document.createElement('div');
+		presetPanel.className = 'add-worktree-preset-panel';
+		disposables.add(addDisposableListener(presetPanel, EventType.CLICK, (e) => {
+			e.stopPropagation();
+		}));
+
+		let activePresetAgent: string | null = null;
+		const presetDisposables = new DisposableStore();
+		disposables.add(presetDisposables);
+
+		function showPresetPanel(agentId: string): void {
+			const agent = options.agents.find(a => a.id === agentId);
+			if (!agent) {
+				return;
+			}
+
+			presetDisposables.clear();
+			presetPanel.textContent = '';
+			activePresetAgent = agentId;
+
+			const header = document.createElement('div');
+			header.className = 'add-worktree-preset-header';
+
+			const iconEl = document.createElement('span');
+			iconEl.className = `add-worktree-preset-icon codicon ${ThemeIcon.asClassName(agent.icon)}`;
+			header.appendChild(iconEl);
+
+			const titleEl = document.createElement('span');
+			titleEl.className = 'add-worktree-preset-title';
+			titleEl.textContent = agent.label;
+			header.appendChild(titleEl);
+
+			const closeBtn = document.createElement('span');
+			closeBtn.className = 'add-worktree-preset-close codicon codicon-close';
+			closeBtn.title = localize('closePresets', "Close");
+			header.appendChild(closeBtn);
+
+			presetPanel.appendChild(header);
+
+			const labelEl = document.createElement('label');
+			labelEl.className = 'add-worktree-preset-label';
+			labelEl.textContent = localize('command', "Command");
+			presetPanel.appendChild(labelEl);
+
+			const commandInput = document.createElement('input');
+			commandInput.type = 'text';
+			commandInput.className = 'add-worktree-preset-input';
+			commandInput.value = options.agentCommands[agentId] || agentId;
+			commandInput.spellcheck = false;
+			commandInput.autocomplete = 'off';
+			commandInput.placeholder = agentId;
+			presetPanel.appendChild(commandInput);
+
+			const descEl = document.createElement('div');
+			descEl.className = 'add-worktree-preset-desc';
+			descEl.textContent = localize('commandDesc', "Command to execute in terminal");
+			presetPanel.appendChild(descEl);
+
+			presetDisposables.add(addDisposableListener(commandInput, EventType.INPUT, () => {
+				const value = commandInput.value.trim();
+				if (value) {
+					options.agentCommands[agentId] = value;
+					options.onAgentCommandChange?.(agentId, value);
+				}
+			}));
+
+			presetDisposables.add(addDisposableListener(commandInput, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					e.stopPropagation();
+					commandInput.blur();
+				}
+			}));
+
+			presetDisposables.add(addDisposableListener(closeBtn, EventType.CLICK, (e) => {
+				e.stopPropagation();
+				hidePresetPanel();
+			}));
+
+			presetPanel.classList.add('visible');
+			commandInput.focus();
+			commandInput.select();
+		}
+
+		function hidePresetPanel(): void {
+			presetPanel.classList.remove('visible');
+			activePresetAgent = null;
+		}
 
 		// --- Name input row (input + branch preview on same line) ---
 		const nameRow = document.createElement('div');
@@ -133,7 +227,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			thumb.className = 'add-worktree-image-thumb';
 
 			const img = document.createElement('img');
-			const blob = new Blob([image.data], { type: image.mimeType });
+			const blob = new Blob([image.data.buffer], { type: image.mimeType });
 			img.src = URL.createObjectURL(blob);
 			img.alt = image.name;
 			disposables.add({ dispose: () => URL.revokeObjectURL(img.src) });
@@ -273,6 +367,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		agentBtn.className = 'add-worktree-select-btn';
 		agentBtn.type = 'button';
 		agentContainer.appendChild(agentBtn);
+		agentContainer.appendChild(presetPanel);
 
 		function updateAgentButton(): void {
 			agentBtn.textContent = '';
@@ -401,6 +496,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				activeDropdown.remove();
 				activeDropdown = null;
 			}
+			hidePresetPanel();
 		}
 
 		// --- Agent dropdown ---
@@ -414,7 +510,13 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				agentContainer,
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent, hasSettings: a.id !== 'terminal' })),
 				(id) => { selectedAgent = id; updateAgentButton(); },
-				(_agentId) => { /* TODO: open presets panel */ }
+				(agentId) => {
+				if (activePresetAgent === agentId) {
+					hidePresetPanel();
+				} else {
+					showPresetPanel(agentId);
+				}
+			}
 			);
 		}));
 

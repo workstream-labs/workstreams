@@ -678,5 +678,94 @@
 	display: flex;
 }
 
+/* -- Preset panel (right side of modal) -- */
+
+.add-worktree-preset-panel {
+	display: none;
+	position: absolute;
+	top: calc(100% + 4px);
+	left: calc(200px + 12px);
+	width: 280px;
+	background: var(--vscode-editorWidget-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	border-radius: 10px;
+	padding: 14px 16px;
+	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+	z-index: 10001;
+}
+
+.add-worktree-preset-panel.visible {
+	display: block;
+	animation: presetPanelIn 0.15s ease-out;
+}
+
+@keyframes presetPanelIn {
+	from { opacity: 0; transform: translateY(-4px); }
+	to   { opacity: 1; transform: translateY(0); }
+}
+
+.add-worktree-preset-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.add-worktree-preset-icon {
+	font-size: 14px;
+}
+
+.add-worktree-preset-title {
+	font-size: 13px;
+	font-weight: 600;
+	flex: 1;
+}
+
+.add-worktree-preset-close {
+	font-size: 14px;
+	cursor: pointer;
+	opacity: 0.4;
+	padding: 2px;
+	border-radius: 4px;
+	transition: opacity 0.1s ease, background-color 0.1s ease;
+}
+
+.add-worktree-preset-close:hover {
+	opacity: 1;
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.add-worktree-preset-label {
+	display: block;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 4px;
+}
+
+.add-worktree-preset-input {
+	width: 100%;
+	background: var(--vscode-input-background);
+	border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+	border-radius: 4px;
+	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	font-size: 12px;
+	font-family: var(--monaco-monospace-font);
+	padding: 5px 8px;
+	box-sizing: border-box;
+	outline: none;
+}
+
+.add-worktree-preset-input:focus {
+	border-color: var(--vscode-focusBorder) !important;
+}
+
+.add-worktree-preset-desc {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin-top: 6px;
+	opacity: 0.7;
+	line-height: 1.4;
+}
+
 /* -- Footer -- */
 

@@ -293,80 +293,83 @@ export class Menubar extends Disposable {
 			app.dock!.setMenu(dockMenu);
 		}
 
-		// File
-		if (this.shouldDrawMenu('File')) {
-			const fileMenu = new Menu();
-			const fileMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mFile', comment: ['&& denotes a mnemonic'] }, "&&File")), submenu: fileMenu });
-			this.setMenuById(fileMenu, 'File');
-			menubar.append(fileMenuItem);
-		}
+		// On macOS, only show the Application menu (Workstreams) — skip all other menus
+		if (!isMacintosh) {
+			// File
+			if (this.shouldDrawMenu('File')) {
+				const fileMenu = new Menu();
+				const fileMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mFile', comment: ['&& denotes a mnemonic'] }, "&&File")), submenu: fileMenu });
+				this.setMenuById(fileMenu, 'File');
+				menubar.append(fileMenuItem);
+			}
 
-		// Edit
-		if (this.shouldDrawMenu('Edit')) {
-			const editMenu = new Menu();
-			const editMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mEdit', comment: ['&& denotes a mnemonic'] }, "&&Edit")), submenu: editMenu });
-			this.setMenuById(editMenu, 'Edit');
-			menubar.append(editMenuItem);
-		}
+			// Edit
+			if (this.shouldDrawMenu('Edit')) {
+				const editMenu = new Menu();
+				const editMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mEdit', comment: ['&& denotes a mnemonic'] }, "&&Edit")), submenu: editMenu });
+				this.setMenuById(editMenu, 'Edit');
+				menubar.append(editMenuItem);
+			}
 
-		// Selection
-		if (this.shouldDrawMenu('Selection')) {
-			const selectionMenu = new Menu();
-			const selectionMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mSelection', comment: ['&& denotes a mnemonic'] }, "&&Selection")), submenu: selectionMenu });
-			this.setMenuById(selectionMenu, 'Selection');
-			menubar.append(selectionMenuItem);
-		}
+			// Selection
+			if (this.shouldDrawMenu('Selection')) {
+				const selectionMenu = new Menu();
+				const selectionMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mSelection', comment: ['&& denotes a mnemonic'] }, "&&Selection")), submenu: selectionMenu });
+				this.setMenuById(selectionMenu, 'Selection');
+				menubar.append(selectionMenuItem);
+			}
 
-		// View
-		if (this.shouldDrawMenu('View')) {
-			const viewMenu = new Menu();
-			const viewMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mView', comment: ['&& denotes a mnemonic'] }, "&&View")), submenu: viewMenu });
-			this.setMenuById(viewMenu, 'View');
-			menubar.append(viewMenuItem);
-		}
+			// View
+			if (this.shouldDrawMenu('View')) {
+				const viewMenu = new Menu();
+				const viewMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mView', comment: ['&& denotes a mnemonic'] }, "&&View")), submenu: viewMenu });
+				this.setMenuById(viewMenu, 'View');
+				menubar.append(viewMenuItem);
+			}
 
-		// Go
-		if (this.shouldDrawMenu('Go')) {
-			const gotoMenu = new Menu();
-			const gotoMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mGoto', comment: ['&& denotes a mnemonic'] }, "&&Go")), submenu: gotoMenu });
-			this.setMenuById(gotoMenu, 'Go');
-			menubar.append(gotoMenuItem);
-		}
+			// Go
+			if (this.shouldDrawMenu('Go')) {
+				const gotoMenu = new Menu();
+				const gotoMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mGoto', comment: ['&& denotes a mnemonic'] }, "&&Go")), submenu: gotoMenu });
+				this.setMenuById(gotoMenu, 'Go');
+				menubar.append(gotoMenuItem);
+			}
 
-		// Debug
-		if (this.shouldDrawMenu('Run')) {
-			const debugMenu = new Menu();
-			const debugMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mRun', comment: ['&& denotes a mnemonic'] }, "&&Run")), submenu: debugMenu });
-			this.setMenuById(debugMenu, 'Run');
-			menubar.append(debugMenuItem);
-		}
+			// Debug
+			if (this.shouldDrawMenu('Run')) {
+				const debugMenu = new Menu();
+				const debugMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mRun', comment: ['&& denotes a mnemonic'] }, "&&Run")), submenu: debugMenu });
+				this.setMenuById(debugMenu, 'Run');
+				menubar.append(debugMenuItem);
+			}
 
-		// Terminal
-		if (this.shouldDrawMenu('Terminal')) {
-			const terminalMenu = new Menu();
-			const terminalMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mTerminal', comment: ['&& denotes a mnemonic'] }, "&&Terminal")), submenu: terminalMenu });
-			this.setMenuById(terminalMenu, 'Terminal');
-			menubar.append(terminalMenuItem);
-		}
+			// Terminal
+			if (this.shouldDrawMenu('Terminal')) {
+				const terminalMenu = new Menu();
+				const terminalMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mTerminal', comment: ['&& denotes a mnemonic'] }, "&&Terminal")), submenu: terminalMenu });
+				this.setMenuById(terminalMenu, 'Terminal');
+				menubar.append(terminalMenuItem);
+			}
 
-		// Mac: Window
-		let macWindowMenuItem: MenuItem | undefined;
-		if (this.shouldDrawMenu('Window')) {
-			const windowMenu = new Menu();
-			macWindowMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize('mWindow', "Window")), submenu: windowMenu, role: 'window' });
-			this.setMacWindowMenu(windowMenu);
-		}
+			// Window
+			let macWindowMenuItem: MenuItem | undefined;
+			if (this.shouldDrawMenu('Window')) {
+				const windowMenu = new Menu();
+				macWindowMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize('mWindow', "Window")), submenu: windowMenu, role: 'window' });
+				this.setMacWindowMenu(windowMenu);
+			}
 
-		if (macWindowMenuItem) {
-			menubar.append(macWindowMenuItem);
-		}
+			if (macWindowMenuItem) {
+				menubar.append(macWindowMenuItem);
+			}
 
-		// Help
-		if (this.shouldDrawMenu('Help')) {
-			const helpMenu = new Menu();
-			const helpMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mHelp', comment: ['&& denotes a mnemonic'] }, "&&Help")), submenu: helpMenu, role: 'help' });
-			this.setMenuById(helpMenu, 'Help');
-			menubar.append(helpMenuItem);
+			// Help
+			if (this.shouldDrawMenu('Help')) {
+				const helpMenu = new Menu();
+				const helpMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mHelp', comment: ['&& denotes a mnemonic'] }, "&&Help")), submenu: helpMenu, role: 'help' });
+				this.setMenuById(helpMenu, 'Help');
+				menubar.append(helpMenuItem);
+			}
 		}
 
 		if (menubar.items && menubar.items.length > 0) {

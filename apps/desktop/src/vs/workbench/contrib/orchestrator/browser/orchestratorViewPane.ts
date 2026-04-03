@@ -26,7 +26,7 @@ import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
-import { showAddWorktreeModal, agentsFromIds, DroppedImage } from './addWorktreeModal.js';
+import { showAddWorktreeModal, agentsFromIds, DroppedImage, TERMINAL_AGENT_ID } from './addWorktreeModal.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
 export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
@@ -190,13 +190,22 @@ export class OrchestratorViewPane extends ViewPane {
 			this.orchestratorService.detectAgents(),
 		]);
 		const currentBranch = (activeBranch && branches.includes(activeBranch)) ? activeBranch : branches[0];
-		const agents = agentsFromIds([...detectedIds, 'terminal']);
+		const agents = agentsFromIds([...detectedIds, TERMINAL_AGENT_ID]);
+
+		const agentCommands: Record<string, string> = {};
+		for (const id of [...detectedIds, TERMINAL_AGENT_ID]) {
+			agentCommands[id] = this.orchestratorService.getAgentCommand(id);
+		}
 
 		const result = await showAddWorktreeModal({
 			branches,
 			agents,
 			defaultBranch: currentBranch,
 			defaultAgent: agents.length > 0 ? agents[0].id : '',
+			agentCommands,
+			onAgentCommandChange: (agentId, command) => {
+				this.orchestratorService.setAgentCommand(agentId, command);
+			},
 		});
 
 		if (result) {
@@ -215,8 +224,9 @@ export class OrchestratorViewPane extends ViewPane {
 				const terminal = await this.terminalService.createTerminal();
 				await this.terminalService.revealActiveTerminal();
 
-				if (result.agent !== 'terminal') {
-					terminal.sendText(result.agent, true);
+				if (result.agent !== TERMINAL_AGENT_ID) {
+					const command = this.orchestratorService.getAgentCommand(result.agent);
+					terminal.sendText(command, true);
 
 					await new Promise(resolve => setTimeout(resolve, 2000));
 					terminal.sendText(prompt, true);
