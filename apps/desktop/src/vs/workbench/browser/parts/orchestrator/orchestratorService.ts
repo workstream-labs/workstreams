@@ -26,9 +26,17 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 
 const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 
+interface IPersistedWorktreeState {
+	readonly branch: string;
+	readonly name: string;
+	readonly description?: string;
+	readonly baseBranch?: string;
+}
+
 interface IPersistedRepositoryState {
 	readonly path: string;
 	readonly isCollapsed: boolean;
+	readonly worktrees?: IPersistedWorktreeState[];
 }
 
 interface IPersistedOrchestratorState {
@@ -527,6 +535,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			repositories: this._repositories.map(r => ({
 				path: r.path,
 				isCollapsed: r.isCollapsed,
+				worktrees: r.worktrees.map(wt => ({
+					branch: wt.branch,
+					name: wt.name,
+					description: wt.description,
+					baseBranch: wt.baseBranch,
+				})),
 			})),
 			activeWorktreePath: this._activeWorktree?.path,
 		};
@@ -568,13 +582,25 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				const currentBranch = await this.gitService.getCurrentBranch(saved.path);
 				const gitWorktrees = await this.gitService.listWorktrees(saved.path);
 
+				const savedWorktreeMap = new Map<string, IPersistedWorktreeState>();
+				if (saved.worktrees) {
+					for (const sw of saved.worktrees) {
+						savedWorktreeMap.set(sw.branch, sw);
+					}
+				}
+
 				const nonBare = gitWorktrees.filter(w => !w.isBare);
-				const worktrees: IWorktreeEntry[] = nonBare.map(wt => ({
-					name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-					path: wt.path,
-					branch: wt.branch,
-					isActive: false,
-				}));
+				const worktrees: IWorktreeEntry[] = nonBare.map(wt => {
+					const persisted = savedWorktreeMap.get(wt.branch);
+					return {
+						name: persisted?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+						path: wt.path,
+						branch: wt.branch,
+						baseBranch: persisted?.baseBranch,
+						description: persisted?.description,
+						isActive: false,
+					};
+				});
 
 				if (worktrees.length === 0) {
 					worktrees.push({
