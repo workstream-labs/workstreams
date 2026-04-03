@@ -30,6 +30,11 @@ function mapEventType(raw: string): IHookNotificationEvent['eventType'] | undefi
 		case 'Stop':
 		case 'SessionEnd':
 		case 'Notification':
+		// Synthetic event sent by the hook script when PostToolUseFailure
+		// has is_interrupt: true (user pressed ESC to interrupt a tool).
+		// Stop hooks do not fire on user interrupts, so this is the only
+		// signal that the agent has stopped working.
+		case 'PostToolUseInterrupt':
 			return 'Stop';
 		case 'PermissionRequest':
 			return 'PermissionRequest';

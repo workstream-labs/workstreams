@@ -148,6 +148,13 @@ export class OrchestratorTerminalContribution extends Disposable {
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
 			}
+
+			// Detect ESC keypresses to transition Working/Permission → Idle.
+			// Claude Code's Stop hook does NOT fire on user interrupts, and
+			// pressing ESC during thinking (no tool running) fires no hook at all.
+			// Mirror superset's approach: observe ESC via xterm.onKey() and
+			// locally clear the spinner state.
+			this._attachEscHandler(instance);
 		}));
 
 		/**
@@ -158,6 +165,20 @@ export class OrchestratorTerminalContribution extends Disposable {
 			if (info) {
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}" — removing from ownership`);
 				this._ownership.delete(instance.instanceId);
+
+				// If this was the last terminal for a worktree still in Working/Permission
+				// state, reset to Idle — the session is gone and no more hook events will arrive.
+				const hasOtherTerminals = [...this._ownership.values()].some(o => o.worktreeKey === info.worktreeKey);
+				if (!hasOtherTerminals) {
+					const worktreePath = this._findWorktreePath(info.worktreeKey);
+					if (worktreePath) {
+						const worktreeState = this._findWorktreeSessionState(worktreePath);
+						if (worktreeState === WorktreeSessionState.Working || worktreeState === WorktreeSessionState.Permission) {
+							this._logService.info(`${TAG} Last terminal for "${info.worktreeKey}" disposed while ${worktreeState} — resetting to Idle`);
+							this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
+						}
+					}
+				}
 			} else {
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} (unmanaged)`);
 			}
@@ -393,6 +414,61 @@ export class OrchestratorTerminalContribution extends Disposable {
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Returns the current session state for a worktree, or undefined if not found.
+	 */
+	private _findWorktreeSessionState(worktreePath: string): WorktreeSessionState | undefined {
+		for (const repo of this._orchestratorService.repositories) {
+			for (const wt of repo.worktrees) {
+				if (wt.path === worktreePath) {
+					return wt.sessionState;
+				}
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Attaches an ESC key observer to a terminal instance.
+	 * When ESC is pressed while the owning worktree is in Working or Permission
+	 * state, transitions to Idle. This mirrors superset's xterm.onKey() approach
+	 * and covers the case where no Claude Code hook fires (ESC during thinking).
+	 */
+	private _attachEscHandler(instance: ITerminalInstance): void {
+		const attach = (xterm: { raw: { onKey: (listener: (e: { domEvent: KeyboardEvent }) => void) => { dispose: () => void } } }) => {
+			const disposable = xterm.raw.onKey(({ domEvent }) => {
+				if (domEvent.key !== 'Escape') {
+					return;
+				}
+				const info = this._ownership.get(instance.instanceId);
+				if (!info) {
+					return;
+				}
+				const worktreePath = this._findWorktreePath(info.worktreeKey);
+				if (!worktreePath) {
+					return;
+				}
+				const state = this._findWorktreeSessionState(worktreePath);
+				if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
+					this._logService.info(`${TAG} ESC pressed in terminal ${instance.instanceId} while ${state} — transitioning to Idle`);
+					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
+				}
+			});
+			this._register(disposable);
+		};
+
+		if (instance.xterm) {
+			attach(instance.xterm);
+		} else {
+			// xterm not ready yet — wait for it
+			instance.xtermReadyPromise.then(xterm => {
+				if (xterm && !instance.isDisposed) {
+					attach(xterm);
+				}
+			});
+		}
 	}
 
 	private _onWorktreeRemoved(worktreePath: string): void {

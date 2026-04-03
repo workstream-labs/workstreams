@@ -47,6 +47,17 @@ if [ -z "$EVENT_TYPE" ]; then
   exit 0
 fi
 
+# When the user presses ESC to interrupt a running tool, Claude Code fires
+# PostToolUseFailure with is_interrupt: true. Distinguish this from normal
+# tool failures so the server can transition Working → Idle instead of
+# keeping the spinner stuck.
+if [ "$EVENT_TYPE" = "PostToolUseFailure" ]; then
+  IS_INTERRUPT=$(echo "$HOOK_JSON" | grep -oE '"is_interrupt"[[:space:]]*:[[:space:]]*true' || true)
+  if [ -n "$IS_INTERRUPT" ]; then
+    EVENT_TYPE="PostToolUseInterrupt"
+  fi
+fi
+
 curl -sG "http://127.0.0.1:${port}/hook/complete" \\
   --connect-timeout 1 --max-time 2 \\
   --data-urlencode "worktreePath=$WORKSTREAMS_WORKTREE_PATH" \\
