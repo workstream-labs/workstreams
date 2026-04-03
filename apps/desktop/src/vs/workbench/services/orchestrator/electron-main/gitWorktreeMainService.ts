@@ -198,10 +198,26 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	private static readonly KNOWN_AGENTS = ['claude', 'codex'];
 
 	async detectAgents(): Promise<string[]> {
+		// When launched from DMG/Finder on macOS, process.env.PATH is minimal
+		// (e.g. /usr/bin:/bin:/usr/sbin:/sbin) and won't include paths like
+		// /opt/homebrew/bin where agents are typically installed.
+		// Augment PATH with common binary locations so `which` can find them.
+		const home = process.env.HOME || '';
+		const extraPaths = [
+			'/opt/homebrew/bin',
+			'/usr/local/bin',
+			`${home}/.local/bin`,
+			`${home}/.npm/bin`,
+			`${home}/.cargo/bin`,
+		];
+		const currentPath = process.env.PATH || '/usr/bin:/bin';
+		const augmentedPath = [...extraPaths, ...currentPath.split(':')].join(':');
+		const env = { ...process.env, PATH: augmentedPath };
+
 		const results = await Promise.all(
 			GitWorktreeMainService.KNOWN_AGENTS.map(async agent => {
 				try {
-					await execFile('which', [agent]);
+					await execFile('which', [agent], { env });
 					return agent;
 				} catch {
 					return null;
