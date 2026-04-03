@@ -340,7 +340,9 @@
 	align-items: flex-start;
 	justify-content: center;
 	padding-top: 15vh;
-	background: transparent;
+	background: rgba(0, 0, 0, 0.25);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
 	font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
 	font-size: var(--vscode-font-size, 13px);
 }
