@@ -3,8 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-const SLACK_WEBHOOK_URL = 'REDACTED_SLACK_WEBHOOK';
-const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzO_-j2fyvhzBnK6-ItltmbeKsg1ryOh09cka_N3PQJq-TI2d0lyD38ZUsPVc17thEmew/exec';
+// Azure Function proxy — forwards feedback to Slack + Google Sheets.
+// The actual webhook secrets live in Azure App Settings, never in source.
+const FEEDBACK_PROXY_URL = 'https://workstreams-feedback.azurewebsites.net/api/submitFeedback';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -62,52 +63,16 @@ const TYPE_EMOJI: Record<FeedbackType, string> = {
 
 export async function submitFeedback(feedback: IFeedbackResult): Promise<void> {
 	const payload = {
-		blocks: [
-			{
-				type: 'header',
-				text: {
-					type: 'plain_text',
-					text: `${TYPE_LABELS[feedback.type]} ${TYPE_EMOJI[feedback.type]}`,
-				},
-			},
-			{
-				type: 'section',
-				text: {
-					type: 'mrkdwn',
-					text: feedback.text,
-				},
-			},
-			{
-				type: 'context',
-				elements: [
-					{
-						type: 'mrkdwn',
-						text: `Submitted at <!date^${Math.floor(Date.now() / 1000)}^{date_short_pretty} {time}|${new Date().toISOString()}>`,
-					},
-				],
-			},
-		],
+		type: TYPE_LABELS[feedback.type],
+		emoji: TYPE_EMOJI[feedback.type],
+		text: feedback.text,
+		timestamp: Math.floor(Date.now() / 1000),
 	};
 
-	// Use application/x-www-form-urlencoded with payload= to avoid CORS preflight.
-	// Slack webhooks accept this format natively. Combined with no-cors mode,
-	// the request bypasses browser CORS restrictions entirely.
-	const body = 'payload=' + encodeURIComponent(JSON.stringify(payload));
-
-	await fetch(SLACK_WEBHOOK_URL, {
+	// The Azure Function handles Slack formatting + Google Sheets logging.
+	await fetch(FEEDBACK_PROXY_URL, {
 		method: 'POST',
-		mode: 'no-cors',
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body,
-	});
-
-	// Response is opaque in no-cors mode — we can't read the status.
-	// The request is fire-and-forget; errors throw from fetch itself (network failure).
-
-	// Also log to Google Sheets for durable record
-	await fetch(GOOGLE_SHEETS_URL, {
-		method: 'POST',
-		mode: 'no-cors',
-		body: JSON.stringify({ type: TYPE_LABELS[feedback.type], text: feedback.text }),
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(payload),
 	});
 }
