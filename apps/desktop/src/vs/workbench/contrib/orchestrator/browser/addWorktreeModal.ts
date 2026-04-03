@@ -341,7 +341,10 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		}
 
 		// --- Mount & focus ---
-		document.body.appendChild(overlay);
+		// Append inside .monaco-workbench so VS Code CSS variables resolve.
+		// document.body doesn't have --vscode-* vars, making backgrounds transparent.
+		const workbench = document.querySelector('.monaco-workbench') ?? document.body;
+		workbench.appendChild(overlay);
 		nameInput.focus();
 	});
 }
