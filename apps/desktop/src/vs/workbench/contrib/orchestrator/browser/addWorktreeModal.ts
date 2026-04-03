@@ -217,7 +217,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 			thumb.className = 'add-worktree-image-thumb';
 
 			const img = document.createElement('img');
-			const blob = new Blob([image.data], { type: image.mimeType });
+			const blob = new Blob([image.data.buffer], { type: image.mimeType });
 			img.src = URL.createObjectURL(blob);
 			img.alt = image.name;
 			disposables.add({ dispose: () => URL.revokeObjectURL(img.src) });
