@@ -31,7 +31,7 @@ export interface AddWorktreeModalOptions {
 	readonly defaultAgent: string;
 }
 
-export const KNOWN_AGENTS: ReadonlyMap<string, AgentOption> = new Map([
+const KNOWN_AGENTS: ReadonlyMap<string, AgentOption> = new Map([
 	['claude', { id: 'claude', label: 'Claude', icon: Codicon.claude }],
 	['codex', { id: 'codex', label: 'Codex', icon: Codicon.openai }],
 	['terminal', { id: 'terminal', label: 'Terminal', icon: Codicon.terminal }],
@@ -196,7 +196,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		footerRight.appendChild(hint);
 
 		// --- Dropdown helper ---
-		function showDropdown(container: HTMLElement, trigger: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
+		function showDropdown(container: HTMLElement, items: { id: string; label: string; icon?: ThemeIcon; selected: boolean }[], onSelect: (id: string) => void): void {
 			closeActiveDropdown();
 
 			const menu = document.createElement('div');
@@ -246,7 +246,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				return;
 			}
 			showDropdown(
-				agentContainer, agentBtn,
+				agentContainer,
 				options.agents.map(a => ({ id: a.id, label: a.label, icon: a.icon, selected: a.id === selectedAgent })),
 				(id) => { selectedAgent = id; updateAgentButton(); }
 			);
@@ -260,7 +260,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				return;
 			}
 			showDropdown(
-				branchContainer, branchBtn,
+				branchContainer,
 				options.branches.map(b => ({ id: b, label: b, selected: b === selectedBranch })),
 				(id) => { selectedBranch = id; updateBranchButton(); }
 			);

@@ -366,7 +366,6 @@
 .add-worktree-name-row {
 	display: flex;
 	align-items: center;
-	gap: 0;
 }
 
 .add-worktree-name-input {
@@ -432,15 +431,15 @@
 	line-height: 1.45;
 }
 
+.add-worktree-prompt::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
 /* Suppress VS Code's default focus border on all modal inputs */
 .add-worktree-card *:focus {
 	outline: none !important;
 	box-shadow: none !important;
 	border-color: inherit !important;
-}
-
-.add-worktree-prompt::placeholder {
-	color: var(--vscode-input-placeholderForeground);
 }
 
 .add-worktree-prompt.disabled {
