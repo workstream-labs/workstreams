@@ -181,9 +181,10 @@
 	left: 0;
 	width: 12px;
 	height: 50%;
-	border-left: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
-	border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+	border-left: 1px solid var(--vscode-descriptionForeground);
+	border-bottom: 1px solid var(--vscode-descriptionForeground);
 	border-bottom-left-radius: 4px;
+	opacity: 0.35;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:not(:last-child) .worktree-connector::after {
@@ -193,7 +194,8 @@
 	left: 0;
 	width: 1px;
 	height: 50%;
-	border-left: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+	border-left: 1px solid var(--vscode-descriptionForeground);
+	opacity: 0.35;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:hover {
