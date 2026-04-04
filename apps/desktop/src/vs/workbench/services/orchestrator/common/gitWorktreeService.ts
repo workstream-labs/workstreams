@@ -19,6 +19,14 @@ export interface IDiffStats {
 	readonly deletions: number;
 }
 
+export interface IWorktreeMeta {
+	readonly name: string;
+	readonly branch: string;
+	readonly baseBranch?: string;
+	readonly description?: string;
+	readonly createdAt: string;
+}
+
 export interface IGitWorktreeService {
 	readonly _serviceBrand: undefined;
 
@@ -32,6 +40,8 @@ export interface IGitWorktreeService {
 	removeWorktree(repoPath: string, worktreePath: string, branchName?: string, force?: boolean): Promise<void>;
 	getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats>;
 	detectAgents(): Promise<string[]>;
+	writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void>;
+	readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null>;
 }
 
 export function parseWorktreeList(output: string): IGitWorktreeInfo[] {

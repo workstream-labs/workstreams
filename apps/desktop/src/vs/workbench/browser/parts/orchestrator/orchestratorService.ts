@@ -11,7 +11,7 @@ import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSession
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { IGitWorktreeService, IDiffStats } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { IGitWorktreeService, IDiffStats, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
@@ -182,14 +182,22 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		const currentBranch = await this.gitService.getCurrentBranch(path);
 		const gitWorktrees = await this.gitService.listWorktrees(path);
 
-		// Build worktree entries from discovered worktrees
+		// Build worktree entries from discovered worktrees, using on-disk meta as fallback
 		const nonBare = gitWorktrees.filter(w => !w.isBare);
-		const worktrees: IWorktreeEntry[] = nonBare.map(wt => ({
-			name: wt.branch === currentBranch ? 'local' : friendlyName(wt.branch),
-			path: wt.path,
-			branch: wt.branch,
-			isActive: false,
-		}));
+		const metaResults = await Promise.all(
+			nonBare.map(wt => this.gitService.readWorktreeMeta(path, wt.branch).catch(() => null))
+		);
+		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
+			const diskMeta = metaResults[i];
+			return {
+				name: diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+				path: wt.path,
+				branch: wt.branch,
+				baseBranch: diskMeta?.baseBranch,
+				description: diskMeta?.description,
+				isActive: false,
+			};
+		});
 
 		// If no worktrees found (fresh init), add the main worktree
 		if (worktrees.length === 0) {
@@ -292,14 +300,28 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		// Create actual git worktree
 		const worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
 
+		const featureName = displayName || name;
+
 		const worktree: IWorktreeEntry = {
-			name: displayName || name,
+			name: featureName,
 			path: worktreePath,
 			branch: name,
 			baseBranch,
 			description,
 			isActive: false,
 		};
+
+		// Persist identity alongside the worktree so it survives app state resets
+		const meta: IWorktreeMeta = {
+			name: featureName,
+			branch: name,
+			baseBranch,
+			description,
+			createdAt: new Date().toISOString(),
+		};
+		this.gitService.writeWorktreeMeta(repoPath, name, meta).catch(err => {
+			this.logService.warn('[OrchestratorService] Failed to write worktree meta:', err);
+		});
 
 		this._repositories = this._repositories.map(r =>
 			r.path === repoPath ? { ...r, worktrees: [...r.worktrees, worktree] } : r
@@ -633,14 +655,23 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				}
 
 				const nonBare = gitWorktrees.filter(w => !w.isBare);
-				const worktrees: IWorktreeEntry[] = nonBare.map(wt => {
+
+				// Read on-disk meta for worktrees missing from persisted state
+				const metaResults = await Promise.all(
+					nonBare.map(wt => savedWorktreeMap.has(wt.branch)
+						? Promise.resolve(null)
+						: this.gitService.readWorktreeMeta(saved.path, wt.branch).catch(() => null))
+				);
+
+				const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
 					const persisted = savedWorktreeMap.get(wt.branch);
+					const diskMeta = metaResults[i];
 					return {
-						name: persisted?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+						name: persisted?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
 						path: wt.path,
 						branch: wt.branch,
-						baseBranch: persisted?.baseBranch,
-						description: persisted?.description,
+						baseBranch: persisted?.baseBranch ?? diskMeta?.baseBranch,
+						description: persisted?.description ?? diskMeta?.description,
 						isActive: false,
 					};
 				});

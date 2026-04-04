@@ -7,10 +7,11 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, parseWorktreeList } from '../common/gitWorktreeService.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IWorktreeMeta, parseWorktreeList } from '../common/gitWorktreeService.js';
 
 const execFile = promisify(cp.execFile);
 const readFile = promisify(fs.readFile);
+const rm = promisify(fs.rm);
 const stat = promisify(fs.stat);
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
@@ -110,6 +111,12 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		await execFile('git', args, { cwd: repoPath });
 		if (branchName) {
 			await execFile('git', ['branch', '-D', branchName], { cwd: repoPath });
+		}
+
+		// Clean up the parent .workstreams/<name>/ directory (workstream.json, etc.)
+		const worktreeDir = path.dirname(worktreePath);
+		if (worktreeDir.includes(WORKSTREAMS_DIR) && worktreeDir !== path.join(repoPath, WORKSTREAMS_DIR)) {
+			await rm(worktreeDir, { recursive: true, force: true }).catch(() => { });
 		}
 	}
 
@@ -227,6 +234,23 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			})
 		);
 		return results.filter((a): a is string => a !== null);
+	}
+
+	async writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void> {
+		const worktreeDir = path.join(repoPath, WORKSTREAMS_DIR, branchName);
+		const metaPath = path.join(worktreeDir, 'workstream.json');
+		await mkdir(worktreeDir, { recursive: true });
+		await writeFile(metaPath, JSON.stringify(meta, null, '\t') + '\n', 'utf8');
+	}
+
+	async readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null> {
+		const metaPath = path.join(repoPath, WORKSTREAMS_DIR, branchName, 'workstream.json');
+		try {
+			const content = await readFile(metaPath, 'utf8');
+			return JSON.parse(content);
+		} catch {
+			return null;
+		}
 	}
 
 	private async ensureGitignore(repoPath: string): Promise<void> {
