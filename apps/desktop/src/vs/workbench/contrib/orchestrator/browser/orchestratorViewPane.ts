@@ -87,6 +87,10 @@ export class OrchestratorViewPane extends ViewPane {
 
 		// Update banner — appended after repo-list so it pins to bottom of flex column
 		this.onUpdateStateChange(this.updateService.state);
+
+		// Copyright footer
+		const footer = append(container, $('.orchestrator-footer'));
+		footer.textContent = '\u00A9 Workstreams Labs';
 	}
 
 	private renderContent(): void {
@@ -394,7 +398,11 @@ export class OrchestratorViewPane extends ViewPane {
 				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			default:
-				el.classList.add('codicon', isMainWorktree ? 'codicon-git-branch' : 'codicon-worktree');
+				if (isMainWorktree) {
+					el.classList.add('icon-local-branch');
+				} else {
+					el.classList.add('codicon', 'codicon-worktree');
+				}
 				break;
 		}
 	}
