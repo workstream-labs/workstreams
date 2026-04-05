@@ -2,6 +2,7 @@
 	"nameShort": "Workstreams",
 	"nameLong": "Workstreams",
 	"applicationName": "workstreams",
+	"version": "1.104.0",
 	"quality": "stable",
 	"updateUrl": "https://api.github.com/repos/workstream-labs/workstreams",
 	"releaseNotesUrl": "https://github.com/workstream-labs/workstreams/releases",
@@ -12,6 +13,9 @@
 	"serverLicenseUrl": "https://github.com/microsoft/vscode/blob/main/LICENSE.txt",
 	"serverGreeting": [],
 	"serverLicense": [],
+
+
+	
 	"serverLicensePrompt": "",
 	"serverApplicationName": "code-server-oss",
 	"serverDataFolderName": ".vscode-server-oss",
