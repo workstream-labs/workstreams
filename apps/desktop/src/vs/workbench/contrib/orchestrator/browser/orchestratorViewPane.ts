@@ -27,6 +27,7 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { showAddWorktreeModal, agentsFromIds, DroppedImage, TERMINAL_AGENT_ID } from './addWorktreeModal.js';
+import { IUpdate, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
 export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
@@ -34,13 +35,16 @@ export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
 export class OrchestratorViewPane extends ViewPane {
 
 	private repoListElement: HTMLElement | undefined;
+	private updateBannerElement: HTMLElement | undefined;
 	private readonly renderDisposables = this._register(new DisposableStore());
+	private readonly bannerDisposables = this._register(new DisposableStore());
 
 	constructor(
 		options: IViewPaneOptions,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IFileService private readonly fileService: IFileService,
+		@IUpdateService private readonly updateService: IUpdateService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -54,6 +58,7 @@ export class OrchestratorViewPane extends ViewPane {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 		this.headerVisible = false;
 		this._register(this.orchestratorService.onDidChangeRepositories(() => this.renderContent()));
+		this._register(this.updateService.onStateChange(state => this.onUpdateStateChange(state)));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -79,6 +84,9 @@ export class OrchestratorViewPane extends ViewPane {
 		this.repoListElement = append(container, $('.repo-list'));
 
 		this.renderContent();
+
+		// Update banner — appended after repo-list so it pins to bottom of flex column
+		this.onUpdateStateChange(this.updateService.state);
 	}
 
 	private renderContent(): void {
@@ -181,6 +189,99 @@ export class OrchestratorViewPane extends ViewPane {
 		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
 			this.orchestratorService.switchTo(worktree);
 		}));
+	}
+
+	private onUpdateStateChange(state: State): void {
+		const container = this.repoListElement?.parentElement;
+		if (!container) {
+			return;
+		}
+
+		switch (state.type) {
+			case StateType.AvailableForDownload:
+				this.showUpdateBanner(container, state.update, 'available');
+				break;
+			case StateType.Downloading:
+				this.showUpdateBanner(container, state.update, 'downloading');
+				break;
+			case StateType.Downloaded:
+				this.showUpdateBanner(container, state.update, 'downloading');
+				break;
+			case StateType.Ready:
+				this.showUpdateBanner(container, state.update, 'ready');
+				break;
+			default:
+				this.hideUpdateBanner();
+				break;
+		}
+	}
+
+	private showUpdateBanner(container: HTMLElement, update: IUpdate | undefined, phase: 'available' | 'downloading' | 'ready'): void {
+		this.hideUpdateBanner();
+
+		const banner = append(container, $('.update-banner'));
+
+		const textRow = append(banner, $('.update-banner-text'));
+		const icon = append(textRow, $('span'));
+		icon.setAttribute('aria-hidden', 'true');
+
+		const label = append(textRow, $('span'));
+
+		if (phase === 'available') {
+			icon.className = 'update-banner-icon codicon codicon-arrow-up';
+			label.textContent = localize('updateAvailable', "Update available");
+		} else if (phase === 'downloading') {
+			icon.className = 'update-banner-icon codicon codicon-sync update-banner-spin';
+			label.textContent = localize('downloading', "Downloading update...");
+		} else {
+			icon.className = 'update-banner-icon codicon codicon-check';
+			label.textContent = localize('restartToUpdate', "Ready to update");
+		}
+
+		if (update?.productVersion) {
+			const version = append(textRow, $('.update-banner-version'));
+			version.textContent = `v${update.productVersion}`;
+		}
+
+		const actions = append(banner, $('.update-banner-actions'));
+
+		if (phase === 'available') {
+			const updateBtn = append(actions, $('button.update-banner-btn.primary'));
+			updateBtn.textContent = localize('update', "Update");
+			this.bannerDisposables.add(addDisposableListener(updateBtn, EventType.CLICK, () => {
+				this.updateService.downloadUpdate(true);
+			}));
+		} else if (phase === 'downloading') {
+			const downloadingBtn = append(actions, $('button.update-banner-btn.primary'));
+			downloadingBtn.textContent = localize('downloadingBtn', "Downloading...");
+			downloadingBtn.setAttribute('disabled', 'true');
+			downloadingBtn.style.opacity = '0.6';
+			downloadingBtn.style.cursor = 'default';
+		} else {
+			const restartBtn = append(actions, $('button.update-banner-btn.primary'));
+			restartBtn.textContent = localize('restartNow', "Restart");
+			this.bannerDisposables.add(addDisposableListener(restartBtn, EventType.CLICK, () => {
+				this.updateService.quitAndInstall();
+			}));
+		}
+
+		if (update?.changelogUrl) {
+			const changelogBtn = append(actions, $('button.update-banner-btn.secondary'));
+			changelogBtn.textContent = localize('changelog', "Changelog");
+			this.bannerDisposables.add(addDisposableListener(changelogBtn, EventType.CLICK, () => {
+				this.openerService.open(URI.parse(update.changelogUrl!));
+			}));
+		}
+
+		this.updateBannerElement = banner;
+	}
+
+	private hideUpdateBanner(): void {
+		this.bannerDisposables.clear();
+		if (this.updateBannerElement) {
+			this.updateBannerElement.remove();
+			this.updateBannerElement = undefined;
+		}
 	}
 
 	private async showAddWorktreeModal(repoPath: string): Promise<void> {
