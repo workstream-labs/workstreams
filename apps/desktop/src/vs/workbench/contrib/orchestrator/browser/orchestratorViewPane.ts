@@ -144,7 +144,8 @@ export class OrchestratorViewPane extends ViewPane {
 
 		append(item, $('.worktree-connector'));
 		const iconEl = append(item, $('.worktree-icon'));
-		this.applySessionStateIcon(iconEl, worktree);
+		const isMainWorktree = worktree.path === repo.path;
+		this.applySessionStateIcon(iconEl, worktree, isMainWorktree);
 
 		const info = append(item, $('.worktree-info'));
 
@@ -168,7 +169,6 @@ export class OrchestratorViewPane extends ViewPane {
 		const branchEl = append(info, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
 
-		const isMainWorktree = worktree.path === repo.path;
 		if (!isMainWorktree) {
 			const deleteBtn = append(item, $('.worktree-delete.codicon.codicon-trash'));
 			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
@@ -272,7 +272,7 @@ export class OrchestratorViewPane extends ViewPane {
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 	private static readonly BRAILLE_INTERVAL_MS = 80;
 
-	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
+	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry, isMainWorktree: boolean): void {
 		el.className = 'worktree-icon';
 		switch (worktree.sessionState) {
 			case WorktreeSessionState.Working: {
@@ -293,7 +293,7 @@ export class OrchestratorViewPane extends ViewPane {
 				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			default:
-				el.classList.add('codicon', 'codicon-worktree');
+				el.classList.add('codicon', isMainWorktree ? 'codicon-git-branch' : 'codicon-worktree');
 				break;
 		}
 	}
