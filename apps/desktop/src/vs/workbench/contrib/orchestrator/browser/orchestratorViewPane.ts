@@ -394,7 +394,11 @@ export class OrchestratorViewPane extends ViewPane {
 				el.classList.add('codicon', 'codicon-check', 'state-done');
 				break;
 			default:
-				el.classList.add('codicon', isMainWorktree ? 'codicon-git-branch' : 'codicon-worktree');
+				if (isMainWorktree) {
+					el.classList.add('icon-local-branch');
+				} else {
+					el.classList.add('codicon', 'codicon-worktree');
+				}
 				break;
 		}
 	}

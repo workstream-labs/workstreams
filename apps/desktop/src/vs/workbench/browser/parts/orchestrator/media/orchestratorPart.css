@@ -224,6 +224,21 @@
 	opacity: 0.7;
 }
 
+.monaco-workbench .orchestrator-content .worktree-icon.icon-local-branch {
+	width: 14px;
+	height: 14px;
+	display: inline-block;
+	-webkit-mask-image: url('./git-branch.png');
+	-webkit-mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-image: url('./git-branch.png');
+	mask-size: contain;
+	mask-repeat: no-repeat;
+	mask-position: center;
+	background-color: currentColor;
+}
+
 .monaco-workbench .orchestrator-content .worktree-item.active .worktree-icon {
 	opacity: 1;
 }
