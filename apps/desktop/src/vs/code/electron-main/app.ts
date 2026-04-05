@@ -1263,8 +1263,10 @@ export class CodeApplication extends Disposable {
 		const hookNotificationChannel = ProxyChannel.fromService(hookNotificationServer, disposables);
 		mainProcessElectronServer.registerChannel('hookNotification', hookNotificationChannel);
 
-		// Register Claude Code hooks (idempotent)
-		setupClaudeHooks(accessor.get(ILogService));
+		// Register Claude Code hooks after the server is ready (needs dynamic port)
+		hookNotificationServer.whenReady.then(() => {
+			setupClaudeHooks(accessor.get(ILogService));
+		});
 
 		// Encryption
 		const encryptionChannel = ProxyChannel.fromService(accessor.get(IEncryptionMainService), disposables);

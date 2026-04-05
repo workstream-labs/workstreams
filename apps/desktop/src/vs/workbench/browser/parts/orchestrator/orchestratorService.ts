@@ -7,7 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState, VALID_TRANSITIONS } from '../../../services/orchestrator/common/orchestratorService.js';
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
@@ -509,7 +509,21 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}, OrchestratorServiceImpl.RETRY_DELAY_MS);
 	}
 
-	setSessionState(worktreePath: string, state: WorktreeSessionState): void {
+	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
+		const current = this._findCurrentState(worktreePath);
+
+		// Self-transition: already in the target state — no-op
+		if (current === state) {
+			return true;
+		}
+
+		// Validate against the transition table
+		const allowed = VALID_TRANSITIONS.get(current);
+		if (allowed && !allowed.has(state)) {
+			this.logService.warn(`[OrchestratorService] Invalid transition ${current ?? 'undefined'} → ${state} for "${worktreePath}" — ignoring`);
+			return false;
+		}
+
 		this._repositories = this._repositories.map(r => ({
 			...r,
 			worktrees: r.worktrees.map(w =>
@@ -518,6 +532,18 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}));
 		this._onDidChangeRepositories.fire();
 		this._onDidChangeSessionState.fire({ worktreePath, state });
+		return true;
+	}
+
+	private _findCurrentState(worktreePath: string): WorktreeSessionState | undefined {
+		for (const repo of this._repositories) {
+			for (const wt of repo.worktrees) {
+				if (wt.path === worktreePath) {
+					return wt.sessionState;
+				}
+			}
+		}
+		return undefined;
 	}
 
 	//#region Diff stats

@@ -17,4 +17,9 @@ export interface IHookNotificationService {
 	readonly _serviceBrand: undefined;
 	readonly onDidReceiveNotification: Event<IHookNotificationEvent>;
 	readonly port: number;
+	readonly token: string;
+	/**
+	 * Resolves when the HTTP server is listening and `port`/`token` are available.
+	 */
+	readonly whenReady: Promise<void>;
 }

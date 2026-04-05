@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { localize } from '../../../../nls.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
@@ -56,6 +57,28 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 */
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
 
+	/**
+	 * Records when ESC was last pressed per worktree path. Used to suppress
+	 * stale `Start` events that arrive shortly after the user interrupts.
+	 */
+	private readonly _escTimestamps = new Map<string, number>();
+	private static readonly ESC_DEBOUNCE_MS = 500;
+
+	/**
+	 * Tracks worktrees where the user explicitly interrupted via ESC.
+	 * When a `Stop` event arrives for a worktree in this set, we show
+	 * "interrupted" instead of "completed turn".
+	 */
+	private readonly _stopIntents = new Set<string>();
+
+	/**
+	 * Heartbeat timers per worktree. If no hook event arrives within the
+	 * timeout period while a worktree is in Working state, the state is
+	 * reset to Idle as a crash-recovery fallback.
+	 */
+	private readonly _heartbeats = new Map<string, RunOnceScheduler>();
+	private static readonly HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 	constructor(
 		@IOrchestratorService private readonly _orchestratorService: IOrchestratorService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
@@ -80,30 +103,60 @@ export class OrchestratorTerminalContribution extends Disposable {
 			const worktreeName = this._resolveWorktreeName(event.worktreePath);
 
 			switch (event.eventType) {
-				case 'Start':
+				case 'Start': {
+					// ESC debounce: suppress stale Start events that arrive
+					// shortly after the user pressed ESC.
+					const lastEsc = this._escTimestamps.get(event.worktreePath) ?? 0;
+					if (Date.now() - lastEsc < OrchestratorTerminalContribution.ESC_DEBOUNCE_MS) {
+						this._logService.info(`${TAG} Suppressing Start event within ESC debounce window for "${event.worktreePath}"`);
+						break;
+					}
+					this._escTimestamps.delete(event.worktreePath);
+					this._stopIntents.delete(event.worktreePath);
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Working);
+					this._resetHeartbeat(event.worktreePath);
 					break;
+				}
 				case 'Stop': {
+					this._cancelHeartbeat(event.worktreePath);
 					const isActive = this._orchestratorService.activeWorktree?.path === event.worktreePath;
-					this._orchestratorService.setSessionState(
+					const accepted = this._orchestratorService.setSessionState(
 						event.worktreePath,
 						isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review
 					);
-					this._notificationService.notify({
-						severity: Severity.Info,
-						message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
-						});
-					this._signalService.playSignal(AccessibilitySignal.taskCompleted);
+
+					// Only notify if the transition was actually accepted
+					if (accepted) {
+						if (this._stopIntents.has(event.worktreePath)) {
+							// User interrupted via ESC — show "interrupted"
+							this._stopIntents.delete(event.worktreePath);
+							this._notificationService.notify({
+								severity: Severity.Info,
+								message: localize('worktreeInterrupted', "{0} — interrupted", worktreeName),
+							});
+						} else {
+							// Natural completion
+							this._notificationService.notify({
+								severity: Severity.Info,
+								message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
+							});
+							this._signalService.playSignal(AccessibilitySignal.taskCompleted);
+						}
+					}
 					break;
 				}
-				case 'PermissionRequest':
-					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Permission);
-					this._notificationService.notify({
-						severity: Severity.Warning,
-						message: localize('worktreePermission', "{0} — asking permission", worktreeName),
+				case 'PermissionRequest': {
+					this._cancelHeartbeat(event.worktreePath);
+					const accepted = this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Permission);
+					if (accepted) {
+						this._notificationService.notify({
+							severity: Severity.Warning,
+							message: localize('worktreePermission', "{0} — asking permission", worktreeName),
 						});
-					this._signalService.playSignal(AccessibilitySignal.errorAtPosition);
+						this._signalService.playSignal(AccessibilitySignal.errorAtPosition);
+					}
 					break;
+				}
 			}
 		}));
 
@@ -138,13 +191,18 @@ export class OrchestratorTerminalContribution extends Disposable {
 				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0 });
 				this._logService.trace(`${TAG} Claimed terminal ${instance.instanceId} → "${this._activeKey}"`);
 
-				// Inject worktree path so Claude hooks can identify which worktree this session belongs to.
-				// Set via shellLaunchConfig.env so it's inherited silently by the shell process
-				// (instead of sendText which visibly runs an export command).
+				// Inject worktree path, hook port, and auth token so Claude hooks
+				// can identify which worktree this session belongs to and reach
+				// the notification server.
 				const worktreePath = this._findWorktreePath(this._activeKey);
 				if (worktreePath) {
 					const slc = instance.shellLaunchConfig;
-					slc.env = { ...slc.env, WORKSTREAMS_WORKTREE_PATH: worktreePath };
+					slc.env = {
+						...slc.env,
+						WORKSTREAMS_WORKTREE_PATH: worktreePath,
+						WORKSTREAMS_HOOK_PORT: String(this._hookNotificationService.port),
+						WORKSTREAMS_HOOK_TOKEN: this._hookNotificationService.token,
+					};
 				}
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
@@ -228,16 +286,45 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * Listen for command completions on a terminal instance.
 	 * If shell integration is already active, hooks immediately; otherwise
 	 * waits for the CommandDetection capability to be added.
+	 *
+	 * Serves two purposes:
+	 * 1. Refreshes git state (branches, diff stats) after terminal commands
+	 * 2. Crash recovery: if the `claude` command exits while the worktree is
+	 *    still in Working/Permission state, resets to Idle.
 	 */
 	private _listenForCommandFinished(instance: ITerminalInstance): void {
+		const handleCommandFinished = () => {
+			this._orchestratorService.scheduleRefresh();
+
+			// Crash recovery: if a command finished in a terminal whose
+			// worktree is still in Working/Permission, the agent process
+			// has exited (crashed, killed, or finished without a Stop hook).
+			const info = this._ownership.get(instance.instanceId);
+			if (info) {
+				const worktreePath = this._findWorktreePath(info.worktreeKey);
+				if (worktreePath) {
+					const state = this._findWorktreeSessionState(worktreePath);
+					if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
+						const isActive = this._orchestratorService.activeWorktree?.path === worktreePath;
+						this._logService.info(`${TAG} Command finished in terminal ${instance.instanceId} while ${state} — resetting to ${isActive ? 'Idle' : 'Review'}`);
+						this._cancelHeartbeat(worktreePath);
+						this._orchestratorService.setSessionState(
+							worktreePath,
+							isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review
+						);
+					}
+				}
+			}
+		};
+
 		const cap = instance.capabilities.get(TerminalCapability.CommandDetection);
 		if (cap) {
-			this._register(cap.onCommandFinished(() => this._orchestratorService.scheduleRefresh()));
+			this._register(cap.onCommandFinished(handleCommandFinished));
 			return;
 		}
 		const listener = instance.capabilities.onDidAddCapability(e => {
 			if (e.id === TerminalCapability.CommandDetection) {
-				this._register(e.capability.onCommandFinished(() => this._orchestratorService.scheduleRefresh()));
+				this._register(e.capability.onCommandFinished(handleCommandFinished));
 				listener.dispose();
 			}
 		});
@@ -484,6 +571,12 @@ export class OrchestratorTerminalContribution extends Disposable {
 				if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
 					this._logService.info(`${TAG} ESC pressed in terminal ${instance.instanceId} while ${state} — transitioning to Idle`);
 					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
+					// Record ESC timestamp for debouncing stale Start events
+					this._escTimestamps.set(worktreePath, Date.now());
+					// Record stop intent so Stop handler shows "interrupted"
+					this._stopIntents.add(worktreePath);
+					// Cancel heartbeat — user explicitly stopped
+					this._cancelHeartbeat(worktreePath);
 				}
 			});
 			this._register(disposable);
@@ -501,10 +594,48 @@ export class OrchestratorTerminalContribution extends Disposable {
 		}
 	}
 
+	/**
+	 * Resets or creates a heartbeat timer for a worktree.
+	 * If no hook event arrives within the timeout while the worktree
+	 * is in Working state, the heartbeat fires and resets to Idle.
+	 */
+	private _resetHeartbeat(worktreePath: string): void {
+		let scheduler = this._heartbeats.get(worktreePath);
+		if (!scheduler) {
+			scheduler = new RunOnceScheduler(() => {
+				const state = this._findWorktreeSessionState(worktreePath);
+				if (state === WorktreeSessionState.Working) {
+					this._logService.warn(`${TAG} Heartbeat timeout for "${worktreePath}" — resetting to Idle`);
+					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
+					const worktreeName = this._resolveWorktreeName(worktreePath);
+					this._notificationService.notify({
+						severity: Severity.Warning,
+						message: localize('worktreeHeartbeatTimeout', "{0} — session may have stopped", worktreeName),
+					});
+				}
+			}, OrchestratorTerminalContribution.HEARTBEAT_TIMEOUT_MS);
+			this._heartbeats.set(worktreePath, scheduler);
+			this._register(scheduler);
+		}
+		scheduler.schedule();
+	}
+
+	/**
+	 * Cancels the heartbeat timer for a worktree.
+	 */
+	private _cancelHeartbeat(worktreePath: string): void {
+		const scheduler = this._heartbeats.get(worktreePath);
+		if (scheduler) {
+			scheduler.cancel();
+		}
+	}
+
 	private _onWorktreeRemoved(worktreePath: string): void {
 		const key = worktreePath.toLowerCase();
 		this._logService.trace(`${TAG} Worktree removed: "${key}"`);
-
+		this._cancelHeartbeat(worktreePath);
+		this._escTimestamps.delete(worktreePath);
+		this._stopIntents.delete(worktreePath);
 		for (const instance of [...this._terminalService.instances]) {
 			if (this._ownership.get(instance.instanceId)?.worktreeKey === key) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);

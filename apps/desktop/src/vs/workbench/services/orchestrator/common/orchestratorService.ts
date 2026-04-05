@@ -13,6 +13,21 @@ export const enum WorktreeSessionState {
 	Review = 'review',
 }
 
+/**
+ * Valid state transitions for worktree sessions.
+ * Used by `setSessionState` to reject stale or invalid events.
+ *
+ * Self-transitions (e.g., Working → Working) are handled as no-ops
+ * in the implementation and do not need to appear here.
+ */
+export const VALID_TRANSITIONS: ReadonlyMap<WorktreeSessionState | undefined, ReadonlySet<WorktreeSessionState>> = new Map([
+	[undefined, new Set([WorktreeSessionState.Idle, WorktreeSessionState.Working])],
+	[WorktreeSessionState.Idle, new Set([WorktreeSessionState.Working])],
+	[WorktreeSessionState.Working, new Set([WorktreeSessionState.Idle, WorktreeSessionState.Permission, WorktreeSessionState.Review])],
+	[WorktreeSessionState.Permission, new Set([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
+	[WorktreeSessionState.Review, new Set([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
+]);
+
 export interface IWorktreeEntry {
 	readonly name: string;
 	readonly path: string;
@@ -59,7 +74,12 @@ export interface IOrchestratorService {
 
 	readonly onDidChangeSessionState: Event<{ worktreePath: string; state: WorktreeSessionState }>;
 
-	setSessionState(worktreePath: string, state: WorktreeSessionState): void;
+	/**
+	 * Update the session state for a worktree. Returns `true` if the
+	 * transition was accepted, `false` if it was rejected (invalid or
+	 * no-op self-transition).
+	 */
+	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean;
 	pickAndAddRepository(): Promise<void>;
 	pickAndAddWorktree(repoPath: string): Promise<void>;
 	addRepository(path: string): Promise<void>;
