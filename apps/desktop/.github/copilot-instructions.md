@@ -204,6 +204,33 @@ The editor empty state (`editorGroupWatermark.ts`) shows a workstreams-branded o
 ### Workspace dialog
 When the orchestrator is active (has repos in storage), the "Save untitled workspace?" dialog on close is suppressed — the untitled workspace is silently discarded. See `workspaceEditingService.ts` `saveUntitledBeforeShutdown`.
 
+### Diff stats (+N / -N in the sidebar)
+
+Each worktree entry in the orchestrator sidebar shows green `+additions` and red `-deletions` counts. This is computed by `getDiffStats()` in `src/vs/workbench/services/orchestrator/electron-main/gitWorktreeMainService.ts`.
+
+**Calculation strategy** (single diff from base to working tree):
+
+1. **Determine base ref**: prefers `origin/<defaultBranch>`, falls back to local `<defaultBranch>`
+2. **Collect files to diff**:
+   - If branch has commits ahead (`git rev-list --left-right --count`): find branch-touched files via `git diff --name-only <baseRef>...HEAD` (three-dot)
+   - Find locally modified tracked files: `git diff --cached --name-only` (staged) + `git diff --name-only` (unstaged)
+   - Union both sets
+3. **Single diff**: `git diff --numstat <baseRef> -- <files>` — compares baseRef directly to the working tree (no second treeish), capturing committed + staged + unstaged changes in one accurate numstat without double-counting
+4. **Untracked files**: `git ls-files --others --exclude-standard` + line count per file (skips files > 256 KB, excludes `.claude/`)
+
+The file-scoping handles squash merges: if the branch was squash-merged, tree content for branch-touched files matches base, producing an empty diff.
+
+**Numstat parsing**: `parseNumstat()` (same file, top-level export) splits `git diff --numstat` output on tabs. Binary files report `-` for additions/deletions and are treated as 0. Inspired by Superset's `parseDiffNumstat` in `apps/desktop/src/lib/trpc/routers/changes/utils/parse-status.ts` but simplified (no rename handling).
+
+**Refresh triggers** (via `scheduleRefresh()` → `_doRefreshGitState()` in `orchestratorService.ts`):
+- File changes in any worktree (`fileService.onDidFilesChange`)
+- Claude session ends (`WorktreeSessionState.Idle` or `Review`)
+- Window regains focus
+
+**UI rendering**: `orchestratorViewPane.ts` `renderWorktree()` renders `.diff-stat-add` (green) and `.diff-stat-del` (red) spans. Styled in `orchestratorPart.css` with monospace font at 10px.
+
+**Tests**: `src/vs/workbench/services/orchestrator/test/electron-main/gitWorktreeMainService.test.ts` covers clean branches, committed changes, staged/unstaged/untracked, squash merges, and fallback behavior.
+
 ## Claude Session State via Hooks
 
 The app tracks Claude Code lifecycle events in each worktree via a hook-based notification system.

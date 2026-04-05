@@ -166,52 +166,66 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			}
 
 			/**
-			 * Against-base diff — only when there are commits ahead.
-			 * Uses a scoped two-dot approach: find which files the branch
-			 * touched (three-dot --name-only), then compare tree content
-			 * for only those files (two-dot). Handles squash merges
-			 * (tree content is identical → empty diff) while ignoring
-			 * unrelated changes main picked up after the merge.
+			 * Build the set of files to diff against the base ref.
+			 *
+			 * When the branch has commits ahead, find files the branch
+			 * touched (three-dot --name-only). Also include any locally
+			 * modified tracked files (staged + unstaged). The union
+			 * ensures both committed and uncommitted changes are counted.
+			 *
+			 * Scoping to specific files handles squash merges: if the
+			 * branch was squash-merged, tree content for branch-touched
+			 * files is identical to base → empty diff.
 			 */
-			let againstBase: Map<string, { add: number; del: number }> | null = null;
+			const filesToDiff = new Set<string>();
+
 			if (ahead > 0) {
 				const nameResult = await execFile('git', [
 					'diff', '--name-only', `${baseRef}...HEAD`
 				], { cwd: worktreePath }).catch(() => null);
 
-				const branchFiles = nameResult
-					? nameResult.stdout.trim().split('\n').filter(f => f)
-					: [];
-
-				if (branchFiles.length > 0) {
-					const result = await execFile('git', [
-						'diff', '--numstat', baseRef, 'HEAD', '--', ...branchFiles
-					], { cwd: worktreePath }).catch(() => null);
-					if (result) {
-						againstBase = parseNumstat(result.stdout);
+				if (nameResult) {
+					for (const f of nameResult.stdout.trim().split('\n')) {
+						if (f) {
+							filesToDiff.add(f);
+						}
 					}
 				}
 			}
 
-			// Local working-tree changes: staged + unstaged + untracked
-			const [stagedResult, unstagedResult, untrackedResult] = await Promise.all([
-				execFile('git', ['diff', '--cached', '--numstat'], { cwd: worktreePath }).catch(() => null),
-				execFile('git', ['diff', '--numstat'], { cwd: worktreePath }).catch(() => null),
+			// Find locally modified tracked files (staged + unstaged)
+			const [stagedNamesResult, unstagedNamesResult, untrackedResult] = await Promise.all([
+				execFile('git', ['diff', '--cached', '--name-only'], { cwd: worktreePath }).catch(() => null),
+				execFile('git', ['diff', '--name-only'], { cwd: worktreePath }).catch(() => null),
 				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
 			]);
 
-			const localFiles = new Map<string, { add: number; del: number }>();
-			for (const result of [stagedResult, unstagedResult]) {
-				if (!result) {
-					continue;
+			for (const result of [stagedNamesResult, unstagedNamesResult]) {
+				if (result) {
+					for (const f of result.stdout.trim().split('\n')) {
+						if (f) {
+							filesToDiff.add(f);
+						}
+					}
 				}
-				for (const [file, stats] of parseNumstat(result.stdout)) {
-					const existing = localFiles.get(file);
-					if (existing) {
-						existing.add += stats.add;
-						existing.del += stats.del;
-					} else {
-						localFiles.set(file, { ...stats });
+			}
+
+			/**
+			 * Single diff from baseRef to the working tree, scoped to
+			 * the files we care about. `git diff <ref>` (no second
+			 * treeish) compares the ref directly to the working tree,
+			 * so committed + staged + unstaged changes are all captured
+			 * in one accurate numstat — no double-counting.
+			 */
+			const files = new Map<string, { add: number; del: number }>();
+
+			if (filesToDiff.size > 0) {
+				const result = await execFile('git', [
+					'diff', '--numstat', baseRef, '--', ...filesToDiff
+				], { cwd: worktreePath }).catch(() => null);
+				if (result) {
+					for (const [file, stats] of parseNumstat(result.stdout)) {
+						files.set(file, stats);
 					}
 				}
 			}
@@ -219,7 +233,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			// Untracked new files — git diff misses these entirely
 			if (untrackedResult) {
 				const untrackedFiles = untrackedResult.stdout.trim().split('\n')
-					.filter(f => f && !f.startsWith('.claude/') && !localFiles.has(f));
+					.filter(f => f && !f.startsWith('.claude/') && !files.has(f));
 
 				const lineCountResults = await Promise.all(untrackedFiles.map(async file => {
 					try {
@@ -237,15 +251,9 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				}));
 
 				for (const { file, add } of lineCountResults) {
-					localFiles.set(file, { add, del: 0 });
+					files.set(file, { add, del: 0 });
 				}
 			}
-
-			/**
-			 * Pick which stat set to show: committed changes against
-			 * base when available, otherwise local working-tree changes.
-			 */
-			const files = againstBase && againstBase.size > 0 ? againstBase : localFiles;
 
 			let additions = 0;
 			let deletions = 0;
