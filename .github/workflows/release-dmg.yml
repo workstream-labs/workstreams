@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
         arch: [arm64, x64]
