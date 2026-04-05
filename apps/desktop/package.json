@@ -1,11 +1,11 @@
 {
   "name": "code-oss-dev",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "distro": "d48ce3e61fa56a702d13bb450ceb3532620dbd46",
   "author": {
-    "name": "Microsoft Corporation"
+    "name": "Workstream Labs"
   },
-  "license": "MIT",
+  "license": "Elastic-2.0",
   "main": "./out/main.js",
   "type": "module",
   "private": true,
