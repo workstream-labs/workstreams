@@ -90,7 +90,7 @@ export class OrchestratorViewPane extends ViewPane {
 
 		// Copyright footer
 		const footer = append(container, $('.orchestrator-footer'));
-		footer.textContent = '\u00A9 Workstream Labs Pvt. Ltd.';
+		footer.textContent = '\u00A9 Workstreams Labs';
 	}
 
 	private renderContent(): void {
