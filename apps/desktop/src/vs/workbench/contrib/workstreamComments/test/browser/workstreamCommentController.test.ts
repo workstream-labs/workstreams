@@ -15,7 +15,7 @@ import { LineRange } from '../../../../../editor/common/core/ranges/lineRange.js
 import { DetailedLineRangeMapping } from '../../../../../editor/common/diff/rangeMapping.js';
 import { ICommentController, ICommentService } from '../../../comments/browser/commentService.js';
 import { WorkstreamCommentController } from '../../browser/workstreamCommentController.js';
-import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread, CommentSide } from '../../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread } from '../../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IWorktreeEntry, WorktreeSessionState } from '../../../../services/orchestrator/common/orchestratorService.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
@@ -23,7 +23,7 @@ import { Emitter } from '../../../../../base/common/event.js';
 
 // --- Mocks -------------------------------------------------------------------
 
-function createMocks(ds: DisposableStore) {
+function createMocks(ds: Pick<DisposableStore, 'add'>) {
 
 	const commentService = {
 		registerCommentController(_id: string, _controller: ICommentController): void { },
@@ -35,7 +35,7 @@ function createMocks(ds: DisposableStore) {
 	const workstreamCommentService = {
 		onDidChangeComments: onDidChangeComments.event,
 		async getComments(): Promise<IWorkstreamComment[]> { return []; },
-		async getThread(workstream: string): Promise<IWorkstreamCommentThread> { return { workstream, comments: [] }; },
+		async getThread(workstream: string): Promise<IWorkstreamCommentThread> { return { workstream, comments: [], updatedAt: new Date().toISOString() }; },
 		async addComment(): Promise<IWorkstreamComment> { throw new Error('not implemented'); },
 		async updateComment(): Promise<void> { },
 		async deleteComment(): Promise<void> { },
