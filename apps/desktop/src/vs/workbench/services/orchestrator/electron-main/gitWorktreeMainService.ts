@@ -153,7 +153,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				baseRef = defaultBranch;
 			}
 
-			// 1) Ahead count — how many commits this branch has over the base
+			// Ahead count — how many commits this branch has over the base
 			let ahead = 0;
 			try {
 				const { stdout: tracking } = await execFile('git', [
@@ -165,12 +165,14 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				// If rev-list fails (e.g. unrelated histories), fall through
 			}
 
-			// 2) Against-base diff — only when there are commits ahead.
-			//    Use a scoped two-dot approach: first find which files the branch
-			//    touched (three-dot --name-only), then compare actual tree content
-			//    for only those files (two-dot). This handles squash merges
-			//    (tree content is identical → empty diff) while ignoring unrelated
-			//    changes main picked up after the merge.
+			/**
+			 * Against-base diff — only when there are commits ahead.
+			 * Uses a scoped two-dot approach: find which files the branch
+			 * touched (three-dot --name-only), then compare tree content
+			 * for only those files (two-dot). Handles squash merges
+			 * (tree content is identical → empty diff) while ignoring
+			 * unrelated changes main picked up after the merge.
+			 */
 			let againstBase: Map<string, { add: number; del: number }> | null = null;
 			if (ahead > 0) {
 				const nameResult = await execFile('git', [
@@ -191,7 +193,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				}
 			}
 
-			// 4) Local working-tree changes: staged + unstaged + untracked
+			// Local working-tree changes: staged + unstaged + untracked
 			const [stagedResult, unstagedResult, untrackedResult] = await Promise.all([
 				execFile('git', ['diff', '--cached', '--numstat'], { cwd: worktreePath }).catch(() => null),
 				execFile('git', ['diff', '--numstat'], { cwd: worktreePath }).catch(() => null),
@@ -239,9 +241,10 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				}
 			}
 
-			// 5) Pick which stat set to show (Superset-style either/or):
-			//    - If there are committed changes against base, show those
-			//    - Otherwise show local working-tree changes
+			/**
+			 * Pick which stat set to show: committed changes against
+			 * base when available, otherwise local working-tree changes.
+			 */
 			const files = againstBase && againstBase.size > 0 ? againstBase : localFiles;
 
 			let additions = 0;
