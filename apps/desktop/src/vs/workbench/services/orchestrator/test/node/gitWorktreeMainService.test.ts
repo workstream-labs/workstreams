@@ -13,7 +13,6 @@ import { GitWorktreeMainService, parseNumstat } from '../../electron-main/gitWor
 
 const execFile = promisify(cp.execFile);
 const writeFile = promisify(fs.writeFile);
-const mkdir = promisify(fs.mkdir);
 const mkdtemp = promisify(fs.mkdtemp);
 const rm = promisify(fs.rm);
 
