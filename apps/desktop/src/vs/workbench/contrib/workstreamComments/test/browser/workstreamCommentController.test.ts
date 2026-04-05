@@ -15,7 +15,7 @@ import { LineRange } from '../../../../../editor/common/core/ranges/lineRange.js
 import { DetailedLineRangeMapping } from '../../../../../editor/common/diff/rangeMapping.js';
 import { ICommentController, ICommentService } from '../../../comments/browser/commentService.js';
 import { WorkstreamCommentController } from '../../browser/workstreamCommentController.js';
-import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread, CommentSide } from '../../../../services/workstreamComments/common/workstreamCommentService.js';
+import { IWorkstreamCommentService, IWorkstreamComment, IWorkstreamCommentThread } from '../../../../services/workstreamComments/common/workstreamCommentService.js';
 import { IWorktreeEntry, WorktreeSessionState } from '../../../../services/orchestrator/common/orchestratorService.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
