@@ -1,10 +1,34 @@
-# ws
+# Workstreams
 
-Parallel AI coding agents in isolated git worktrees.
+A VS Code-based IDE for parallel AI coding agents in isolated git worktrees.
 
-![Dashboard](docs/public/dashboard.png)
+## Desktop App
 
-## Install
+The main application is a VS Code fork (`apps/desktop`) with built-in support for orchestrating multiple AI coding agents, each running in its own git worktree. It includes a worktree sidebar, inline review comments, and a sessions layer for agentic workflows.
+
+### Setup
+
+A single script handles everything — nvm, Node 22, npm install, Electron, and compilation:
+
+```bash
+cd apps/desktop
+bash install.sh
+./scripts/code.sh   # launch the app
+```
+
+## CLI (CLR)
+
+The CLI (`apps/cli`) was the original interface for workstreams. It provides the `ws` command for creating and running workstreams from the terminal:
+
+```bash
+ws init                                        # set up in any git repo
+ws create add-tests -p "Add unit tests"        # define tasks
+ws create dark-mode -p "Implement dark mode"
+ws run                                         # run all in parallel
+ws dashboard                                   # review diffs, leave comments, resume
+```
+
+### Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/workstream-labs/workstreams/main/install.sh | bash
@@ -18,38 +42,10 @@ cd workstreams
 bun install && bun link
 ```
 
-### Desktop App (dev setup)
-
-A single script handles everything — nvm, Node 22, npm install, Electron, and compilation:
-
-```bash
-cd apps/desktop
-bash install.sh
-./scripts/code.sh   # launch the app
-```
-
-## Quick Start
-
-```bash
-ws init                                        # set up in any git repo
-ws create add-tests -p "Add unit tests"        # define tasks
-ws create dark-mode -p "Implement dark mode"
-ws run                                         # run all in parallel
-ws dashboard                                   # review diffs, leave comments, resume
-```
-
-Each workstream runs in its own git worktree on a `ws/` branch. When you're happy with the result, merge the branch and clean up with `ws destroy`.
-
-See the [docs](https://runws.dev/) for configuration, commands, and guides.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE)
-
----
-
-If this is useful to you, a [star](https://github.com/workstream-labs/workstreams) helps others find it.
+[Elastic License 2.0 (ELv2)](LICENSE)
