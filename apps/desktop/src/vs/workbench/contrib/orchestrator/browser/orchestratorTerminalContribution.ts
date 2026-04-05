@@ -290,21 +290,26 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * Serves two purposes:
 	 * 1. Refreshes git state (branches, diff stats) after terminal commands
 	 * 2. Crash recovery: if the `claude` command exits while the worktree is
-	 *    still in Working/Permission state, resets to Idle.
+	 *    still in Working state, resets to Idle.
+	 *    Permission state is NOT reset here — permission waits are indefinite
+	 *    and shell integration can misfire during long pauses.
 	 */
 	private _listenForCommandFinished(instance: ITerminalInstance): void {
 		const handleCommandFinished = () => {
 			this._orchestratorService.scheduleRefresh();
 
 			// Crash recovery: if a command finished in a terminal whose
-			// worktree is still in Working/Permission, the agent process
-			// has exited (crashed, killed, or finished without a Stop hook).
+			// worktree is still in Working, the agent process has exited
+			// (crashed, killed, or finished without a Stop hook).
+			// Permission state is excluded — the user may take arbitrarily
+			// long to respond, and shell integration can misdetect command
+			// boundaries during idle periods.
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
 				const worktreePath = this._findWorktreePath(info.worktreeKey);
 				if (worktreePath) {
 					const state = this._findWorktreeSessionState(worktreePath);
-					if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
+					if (state === WorktreeSessionState.Working) {
 						const isActive = this._orchestratorService.activeWorktree?.path === worktreePath;
 						this._logService.info(`${TAG} Command finished in terminal ${instance.instanceId} while ${state} — resetting to ${isActive ? 'Idle' : 'Review'}`);
 						this._cancelHeartbeat(worktreePath);
