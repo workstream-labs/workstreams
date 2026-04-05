@@ -15,10 +15,9 @@ export const HOOK_NOTIFICATION_PORT = 51742;
 
 /**
  * Maps raw Claude Code hook event names to normalized states.
- */
-/**
- * Maps raw Claude Code hook event names to normalized states.
  * See: https://code.claude.com/docs/en/hooks.md
+ *
+ * Returns `undefined` for unknown/unmapped events (forward compatible — ignored).
  */
 function mapEventType(raw: string): IHookNotificationEvent['eventType'] | undefined {
 	switch (raw) {
@@ -29,15 +28,16 @@ function mapEventType(raw: string): IHookNotificationEvent['eventType'] | undefi
 			return 'Start';
 		case 'Stop':
 		case 'SessionEnd':
-		case 'Notification':
 		// Synthetic event sent by the hook script when PostToolUseFailure
 		// has is_interrupt: true (user pressed ESC to interrupt a tool).
-		// Stop hooks do not fire on user interrupts, so this is the only
-		// signal that the agent has stopped working.
 		case 'PostToolUseInterrupt':
 			return 'Stop';
 		case 'PermissionRequest':
 			return 'PermissionRequest';
+		// 'Notification' is deliberately unmapped — it fires for informational
+		// events like "Session auto-compacted" that do not indicate a state
+		// change. Real permission requests fire 'PermissionRequest'; real
+		// stops fire 'Stop'.
 		default:
 			return undefined;
 	}
@@ -72,6 +72,7 @@ export class HookNotificationServer extends Disposable implements IHookNotificat
 				const rawEventType = typeof query['eventType'] === 'string' ? query['eventType'] : '';
 
 				const eventType = mapEventType(rawEventType);
+				console.warn(`[LIFECYCLE DEBUG SERVER] raw="${rawEventType}" mapped="${eventType ?? 'IGNORED'}" path="${worktreePath}"`);
 
 				if (eventType && worktreePath) {
 					this.logService.info(`[HookNotification] ${eventType} for "${worktreePath}"`);

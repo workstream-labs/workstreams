@@ -7,7 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
+import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSessionState, VALID_TRANSITIONS } from '../../../services/orchestrator/common/orchestratorService.js';
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
@@ -74,6 +74,13 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private readonly _onDidChangeSessionState = this._register(new Emitter<{ worktreePath: string; state: WorktreeSessionState }>());
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
+
+	/**
+	 * Authoritative source of truth for session state, separate from
+	 * `_repositories`. This map is never affected by async operations
+	 * that recreate worktree entries (_doRefreshGitState, switchTo, etc.).
+	 */
+	private readonly _sessionStates = new Map<string, WorktreeSessionState>();
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
 	private readonly _refreshScheduler: RunOnceScheduler;
@@ -509,7 +516,27 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}, OrchestratorServiceImpl.RETRY_DELAY_MS);
 	}
 
-	setSessionState(worktreePath: string, state: WorktreeSessionState): void {
+	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
+		const current = this._sessionStates.get(worktreePath);
+		console.warn(`[LIFECYCLE DEBUG] setSessionState: "${worktreePath}" ${current ?? 'undefined'} → ${state}`, new Error().stack?.split('\n').slice(1, 4).join(' | '));
+
+		// Self-transition: already in the target state — no-op
+		if (current === state) {
+			console.warn(`[LIFECYCLE DEBUG] setSessionState: self-transition, no-op`);
+			return true;
+		}
+
+		// Validate against the transition table
+		const allowed = VALID_TRANSITIONS.get(current);
+		if (allowed && !allowed.has(state)) {
+			this.logService.warn(`[OrchestratorService] Invalid transition ${current ?? 'undefined'} → ${state} for "${worktreePath}" — ignoring`);
+			return false;
+		}
+
+		// Update the authoritative map
+		this._sessionStates.set(worktreePath, state);
+
+		// Mirror onto _repositories for rendering
 		this._repositories = this._repositories.map(r => ({
 			...r,
 			worktrees: r.worktrees.map(w =>
@@ -518,6 +545,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}));
 		this._onDidChangeRepositories.fire();
 		this._onDidChangeSessionState.fire({ worktreePath, state });
+		return true;
+	}
+
+	getSessionState(worktreePath: string): WorktreeSessionState | undefined {
+		return this._sessionStates.get(worktreePath);
 	}
 
 	//#region Diff stats
@@ -565,7 +597,17 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				return { ...repo, worktrees };
 			}));
 			if (changed) {
-				this._repositories = updated;
+				// Re-apply session states from the authoritative map.
+				// The async git operations above used a stale snapshot of
+				// _repositories, so any setSessionState() calls during the
+				// await would be lost without this merge.
+				this._repositories = updated.map(repo => ({
+					...repo,
+					worktrees: repo.worktrees.map(wt => {
+						const liveState = this._sessionStates.get(wt.path);
+						return liveState !== undefined ? { ...wt, sessionState: liveState } : wt;
+					})
+				}));
 				this._onDidChangeRepositories.fire();
 			}
 		} finally {
