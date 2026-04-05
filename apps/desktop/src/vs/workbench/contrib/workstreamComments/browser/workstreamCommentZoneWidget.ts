@@ -52,6 +52,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		private readonly _workstreamCommentService: IWorkstreamCommentService,
 		private readonly _orchestratorService: IOrchestratorService,
 		private readonly _side: CommentSide = 'new',
+		private readonly _lineLabel?: string,
 	) {
 		super(editor, {
 			showFrame: true,
@@ -83,13 +84,11 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private _renderDisplayMode(): void {
 		clearNode(this._root);
 
-		const sideLabel = this._side === 'old'
-			? localize("comment.side.original", "original")
-			: localize("comment.side.modified", "modified");
+		const lineRef = this._lineLabel ?? (this._side === 'old' ? `L${this._lineNumber}` : `R${this._lineNumber}`);
 
 		const header = document.createElement('div');
 		header.className = 'ws-comment-header';
-		header.textContent = localize("comment.header.display", "Comment on line {0} ({1})", this._lineNumber, sideLabel);
+		header.textContent = localize("comment.header.display.labeled", "Comment on line {0}", lineRef);
 		this._root.appendChild(header);
 
 		const body = document.createElement('div');
@@ -120,15 +119,13 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private _renderEditMode(): void {
 		clearNode(this._root);
 
-		const sideLabel = this._side === 'old'
-			? localize("comment.side.original", "original")
-			: localize("comment.side.modified", "modified");
+		const lineRef = this._lineLabel ?? (this._side === 'old' ? `L${this._lineNumber}` : `R${this._lineNumber}`);
 
 		const header = document.createElement('div');
 		header.className = 'ws-comment-header';
 		header.textContent = this._savedComment
-			? localize("comment.header.edit", "Edit comment on line {0} ({1})", this._lineNumber, sideLabel)
-			: localize("comment.header.add", "Add a comment on line {0} ({1})", this._lineNumber, sideLabel);
+			? localize("comment.header.edit.labeled", "Edit comment on line {0}", lineRef)
+			: localize("comment.header.add.labeled", "Add a comment on line {0}", lineRef);
 		this._root.appendChild(header);
 
 		const textarea = document.createElement('textarea');

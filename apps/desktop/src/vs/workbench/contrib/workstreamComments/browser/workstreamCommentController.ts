@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { IRange } from '../../../../editor/common/core/range.js';
-import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
+import { ICodeEditor, IDiffEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import * as languages from '../../../../editor/common/languages.js';
@@ -58,9 +58,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	) {
 		super();
 
-		// Force split diff mode — inline diff is not supported for comments
-		this.configurationService.updateValue('diffEditor.renderSideBySide', true);
-
 		// Register with VS Code's comment system (provides "+" hover glyph)
 		this.commentService.registerCommentController(OWNER_ID, this);
 		this._register({ dispose: () => this.commentService.unregisterCommentController(OWNER_ID) });
@@ -76,12 +73,12 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}));
 		}));
 
-		// Prevent inline diff mode — force back to split if user toggles it
+		// Refresh all widgets when the user toggles between split and inline diff mode.
+		// Labels and side assignments depend on the current view mode.
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('diffEditor.renderSideBySide')) {
-				if (!this.configurationService.getValue<boolean>('diffEditor.renderSideBySide')) {
-					this.configurationService.updateValue('diffEditor.renderSideBySide', true);
-				}
+				this._disposeAllWidgets();
+				this._showSavedCommentsOnAllEditors();
 			}
 		}));
 
@@ -111,11 +108,14 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		if (resource.scheme === 'git') {
 			// Left side of diff — always a diff context, proceed
 		} else if (resource.scheme === 'file') {
-			const isInDiff = this.codeEditorService.listDiffEditors().some(diff => {
-				const modified = diff.getModifiedEditor().getModel()?.uri;
-				const original = diff.getOriginalEditor().getModel()?.uri;
-				return modified?.toString() === resource.toString() || original?.toString() === resource.toString();
-			});
+			// Check if this file URI belongs to any diff editor.
+			// Uses two strategies to handle the race where listDiffEditors()
+			// may not yet include a newly-opened diff editor:
+			// 1. Check listDiffEditors() for URI match
+			// 2. Check EditorOption.inDiffEditor on code editors (may briefly
+			//    return true on a stale editor during teardown — harmless since
+			//    we only provide commenting ranges, not render widgets)
+			const isInDiff = this._isResourceInDiff(resource);
 			if (!isInDiff) {
 				return this._emptyCommentInfo(resource);
 			}
@@ -167,8 +167,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			return;
 		}
 
-		const side = this._isOriginalSideOfDiff(editor) ? 'old' : 'new';
-		this._openWidget(editor, range.startLineNumber, side);
+		const { side, label } = this._getCommentSideAndLabel(editor, range.startLineNumber);
+		this._openWidget(editor, range.startLineNumber, side, label);
 	}
 
 	async updateCommentThreadTemplate(_threadHandle: number, _range: IRange): Promise<void> {
@@ -260,21 +260,28 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 				}
 			}
 
+			const diffEditor = this._findDiffEditorForCodeEditor(editor);
+			const isInline = diffEditor ? !diffEditor.renderSideBySide : false;
 			const isOriginal = this._isOriginalSideOfDiff(editor);
-			const editorSide: CommentSide = isOriginal ? 'old' : 'new';
+
+			// In inline mode, only the modified editor is visible — show comments
+			// from both sides on it. In split mode, show only the matching side.
+			const editorSide: CommentSide | 'both' = isInline ? 'both' : (isOriginal ? 'old' : 'new');
 
 			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
 			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
 
 			for (const comment of comments) {
-				if (comment.side !== editorSide) {
+				if (editorSide !== 'both' && comment.side !== editorSide) {
 					continue;
 				}
 
-				const widgetKey = `${editor.getId()}:${comment.line}`;
+				const widgetKey = `${editor.getId()}:${comment.side}:${comment.line}`;
 				if (this._activeWidgets.has(widgetKey)) {
 					continue;
 				}
+
+				const lineLabel = this._buildLineLabel(diffEditor, comment.line, comment.side);
 
 				const widget = new WorkstreamCommentZoneWidget(
 					editor,
@@ -283,6 +290,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 					this.workstreamCommentService,
 					this.orchestratorService,
 					comment.side,
+					lineLabel,
 				);
 
 				this._activeWidgets.set(widgetKey, widget);
@@ -298,12 +306,15 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 	}
 
-	private _openWidget(editor: ICodeEditor, lineNumber: number, side: CommentSide = 'new'): void {
-		const widgetKey = `${editor.getId()}:${lineNumber}`;
+	private _openWidget(editor: ICodeEditor, lineNumber: number, side: CommentSide = 'new', lineLabel?: string): void {
+		const widgetKey = `${editor.getId()}:${side}:${lineNumber}`;
 
 		if (this._activeWidgets.has(widgetKey)) {
 			return;
 		}
+
+		const diffEditor = this._findDiffEditorForCodeEditor(editor);
+		const label = lineLabel ?? this._buildLineLabel(diffEditor, lineNumber, side);
 
 		const widget = new WorkstreamCommentZoneWidget(
 			editor,
@@ -312,6 +323,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			this.workstreamCommentService,
 			this.orchestratorService,
 			side,
+			label,
 		);
 
 		this._activeWidgets.set(widgetKey, widget);
@@ -320,6 +332,132 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		});
 
 		widget.display();
+	}
+
+	// --- Diff / side detection ---
+
+	/**
+	 * Check if a file:// resource is part of any diff editor.
+	 */
+	private _isResourceInDiff(resource: URI): boolean {
+		const resourceStr = resource.toString();
+
+		// Strategy 1: check registered diff editors
+		for (const diff of this.codeEditorService.listDiffEditors()) {
+			const modified = diff.getModifiedEditor().getModel()?.uri;
+			const original = diff.getOriginalEditor().getModel()?.uri;
+			if (modified?.toString() === resourceStr || original?.toString() === resourceStr) {
+				return true;
+			}
+		}
+
+		// Strategy 2: check EditorOption.inDiffEditor on code editors (handles race)
+		for (const editor of this.codeEditorService.listCodeEditors()) {
+			if (editor.getModel()?.uri.toString() === resourceStr && editor.getOption(EditorOption.inDiffEditor)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Find the diff editor that contains a given code editor.
+	 */
+	private _findDiffEditorForCodeEditor(editor: ICodeEditor): IDiffEditor | undefined {
+		for (const diff of this.codeEditorService.listDiffEditors()) {
+			if (diff.getOriginalEditor() === editor || diff.getModifiedEditor() === editor) {
+				return diff;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Determine the comment side and a GitHub-style line label for a given
+	 * editor and line number.
+	 *
+	 * Split view:  L{n} for original/left, R{n} for modified/right
+	 * Inline view:  R{n} for pure additions, L{n} for everything else
+	 *               (matches GitHub unified view convention)
+	 */
+	private _getCommentSideAndLabel(editor: ICodeEditor, lineNumber: number): { side: CommentSide; label: string } {
+		const diffEditor = this._findDiffEditorForCodeEditor(editor);
+
+		if (!diffEditor) {
+			// Not in a diff editor at all — treat as modified
+			return { side: 'new', label: `R${lineNumber}` };
+		}
+
+		const isInline = !diffEditor.renderSideBySide;
+
+		if (!isInline) {
+			// Split view: left editor = original, right editor = modified
+			const isOriginal = diffEditor.getOriginalEditor() === editor;
+			if (isOriginal) {
+				return { side: 'old', label: `L${lineNumber}` };
+			} else {
+				return { side: 'new', label: `R${lineNumber}` };
+			}
+		}
+
+		// Inline/unified view: determine side from the diff computation.
+		// In inline mode, the visible editor is the modified editor.
+		// Deleted lines appear as view zones (not real lines in the model),
+		// so the "+" glyph can only be clicked on lines that exist in the
+		// modified model. We classify based on the diff mapping:
+		//   - Lines inside a mapping where original is empty → added → R{n}
+		//   - All other lines (context or changed) → L{n} (GitHub convention)
+		const diffResult = diffEditor.getDiffComputationResult();
+		if (diffResult) {
+			for (const mapping of diffResult.changes2) {
+				if (lineNumber >= mapping.modified.startLineNumber && lineNumber < mapping.modified.endLineNumberExclusive) {
+					if (mapping.original.isEmpty) {
+						// Pure addition — no corresponding original line
+						return { side: 'new', label: `R${lineNumber}` };
+					}
+					// Changed line — treat as modified side, label as L per GitHub convention
+					return { side: 'new', label: `L${lineNumber}` };
+				}
+			}
+		}
+
+		// Context line (unchanged) — use L prefix like GitHub unified view
+		return { side: 'new', label: `L${lineNumber}` };
+	}
+
+	/**
+	 * Build a GitHub-style line label for a saved comment.
+	 * Uses the same diff computation logic as _getCommentSideAndLabel
+	 * to ensure labels are consistent between creation and restoration.
+	 */
+	private _buildLineLabel(diffEditor: IDiffEditor | undefined, lineNumber: number, side: CommentSide): string {
+		if (!diffEditor) {
+			return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
+		}
+
+		const isInline = !diffEditor.renderSideBySide;
+
+		if (!isInline) {
+			// Split view: L for original, R for modified
+			return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
+		}
+
+		// Inline view: use diff computation to match creation-time labeling
+		const diffResult = diffEditor.getDiffComputationResult();
+		if (diffResult && side === 'new') {
+			for (const mapping of diffResult.changes2) {
+				if (lineNumber >= mapping.modified.startLineNumber && lineNumber < mapping.modified.endLineNumberExclusive) {
+					if (mapping.original.isEmpty) {
+						return `R${lineNumber}`;
+					}
+					return `L${lineNumber}`;
+				}
+			}
+		}
+
+		// 'old' side comments in inline view, or context lines
+		return `L${lineNumber}`;
 	}
 
 	private _isOriginalSideOfDiff(editor: ICodeEditor): boolean {
