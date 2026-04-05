@@ -13,8 +13,10 @@ import { GitWorktreeMainService, parseNumstat } from '../../electron-main/gitWor
 
 const execFile = promisify(cp.execFile);
 const writeFile = promisify(fs.writeFile);
+const mkdir = promisify(fs.mkdir);
 const mkdtemp = promisify(fs.mkdtemp);
 const rm = promisify(fs.rm);
+const unlink = promisify(fs.unlink);
 
 /**
  * Helper to run git commands in a directory.
@@ -163,7 +165,7 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		assert.strictEqual(stats.filesChanged, 1);
 	});
 
-	test('prefers against-base stats when commits are ahead', async () => {
+	test('combines committed and local changes', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'mixed', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'mixed', wtPath);
 
@@ -172,14 +174,15 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		await git(wtPath, 'add', '.');
 		await git(wtPath, 'commit', '-m', 'committed change');
 
-		// Also make an unstaged change (local)
+		// Also make an unstaged change (local) to a different file
 		await writeFile(path.join(wtPath, 'README.md'), '# Modified\n');
 
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
-		// Should show against-base stats (committed.ts: +1), NOT local changes
-		assert.strictEqual(stats.additions, 1);
-		assert.strictEqual(stats.filesChanged, 1);
+		// Should show both: committed.ts (+1) and README.md (+1 -1)
+		assert.strictEqual(stats.filesChanged, 2);
+		assert.strictEqual(stats.additions, 2);
+		assert.strictEqual(stats.deletions, 1);
 	});
 
 	test('returns zeros for a squash-merged branch', async () => {
@@ -292,6 +295,194 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
 		assert.strictEqual(stats.additions, 1);
+		assert.strictEqual(stats.filesChanged, 1);
+	});
+
+	test('combines committed + untracked files', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'commit-untracked', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'commit-untracked', wtPath);
+
+		// Commit a file
+		await writeFile(path.join(wtPath, 'committed.ts'), 'line1\nline2\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'add committed file');
+
+		// Add an untracked file (not staged, not committed)
+		await writeFile(path.join(wtPath, 'brand-new.ts'), 'a\nb\nc\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// committed.ts: +2, brand-new.ts: +3 (untracked)
+		assert.strictEqual(stats.additions, 5);
+		assert.strictEqual(stats.deletions, 0);
+		assert.strictEqual(stats.filesChanged, 2);
+	});
+
+	test('committed + staged edits to same file are not double-counted', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'same-file', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'same-file', wtPath);
+
+		// Commit a new file with 3 lines
+		await writeFile(path.join(wtPath, 'feature.ts'), 'line1\nline2\nline3\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'add feature');
+
+		// Now stage a change to the SAME file (modify one line)
+		await writeFile(path.join(wtPath, 'feature.ts'), 'line1\nmodified\nline3\n');
+		await git(wtPath, 'add', 'feature.ts');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// Single diff from base to working tree: still 3 lines added, 0 deleted
+		// (the file doesn't exist on base, so all 3 lines are additions)
+		// NOT 3 + 1 + 1 from summing committed + local diffs
+		assert.strictEqual(stats.additions, 3);
+		assert.strictEqual(stats.deletions, 0);
+		assert.strictEqual(stats.filesChanged, 1);
+	});
+
+	test('committed + unstaged edits to existing file are not double-counted', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'existing-edit', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'existing-edit', wtPath);
+
+		// Commit a change to README (replace content)
+		await writeFile(path.join(wtPath, 'README.md'), 'new title\nnew body\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'rewrite readme');
+
+		// Now make an unstaged change to README (modify again)
+		await writeFile(path.join(wtPath, 'README.md'), 'new title\nchanged body\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// Base README was "# Test\n" (1 line). Working tree is "new title\nchanged body\n" (2 lines).
+		// True diff from base: +2 -1. NOT committed (+2 -1) + local (+1 -1) = +3 -2.
+		assert.strictEqual(stats.additions, 2);
+		assert.strictEqual(stats.deletions, 1);
+		assert.strictEqual(stats.filesChanged, 1);
+	});
+
+	test('excludes untracked files in .claude/ directory', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'claude-excl', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'claude-excl', wtPath);
+
+		// Create an untracked file inside .claude/
+		await mkdir(path.join(wtPath, '.claude'), { recursive: true });
+		await writeFile(path.join(wtPath, '.claude', 'settings.json'), '{"key":"value"}\n');
+
+		// Create a normal untracked file
+		await writeFile(path.join(wtPath, 'real-file.ts'), 'code\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// Only real-file.ts should be counted, not .claude/settings.json
+		assert.strictEqual(stats.filesChanged, 1);
+		assert.strictEqual(stats.additions, 1);
+	});
+
+	test('counts large untracked file as 1 addition', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'large-file', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'large-file', wtPath);
+
+		// Create a file larger than 256KB
+		const largeContent = 'x'.repeat(257 * 1024) + '\n';
+		await writeFile(path.join(wtPath, 'big-binary.dat'), largeContent);
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// Large file should count as 1 addition, not line count
+		assert.strictEqual(stats.filesChanged, 1);
+		assert.strictEqual(stats.additions, 1);
+	});
+
+	test('counts committed file deletion', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'delete-file', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'delete-file', wtPath);
+
+		// Delete the README that exists on base
+		await unlink(path.join(wtPath, 'README.md'));
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'delete readme');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// README.md was "# Test\n" → 1 deletion
+		assert.strictEqual(stats.additions, 0);
+		assert.strictEqual(stats.deletions, 1);
+		assert.strictEqual(stats.filesChanged, 1);
+	});
+
+	test('staged + unstaged changes to same file without commits ahead', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'stage-unstage', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'stage-unstage', wtPath);
+
+		// Stage a change to README
+		await writeFile(path.join(wtPath, 'README.md'), '# Staged\n');
+		await git(wtPath, 'add', 'README.md');
+
+		// Then make a further unstaged change
+		await writeFile(path.join(wtPath, 'README.md'), '# Staged\nUnstaged line\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// Base was "# Test\n", working tree is "# Staged\nUnstaged line\n"
+		// True diff: +2 -1
+		assert.strictEqual(stats.additions, 2);
+		assert.strictEqual(stats.deletions, 1);
+		assert.strictEqual(stats.filesChanged, 1);
+	});
+
+	test('committed + staged + unstaged all at once', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'triple', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'triple', wtPath);
+
+		// Committed change: new file
+		await writeFile(path.join(wtPath, 'committed.ts'), 'line1\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'commit');
+
+		// Staged change: modify README
+		await writeFile(path.join(wtPath, 'README.md'), '# New Title\n');
+		await git(wtPath, 'add', 'README.md');
+
+		// Unstaged change: edit the committed file further
+		await writeFile(path.join(wtPath, 'committed.ts'), 'line1\nline2\n');
+
+		// Also an untracked file
+		await writeFile(path.join(wtPath, 'untracked.txt'), 'hello\nworld\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// committed.ts: base→working tree = +2 (new file, 2 lines)
+		// README.md: base→working tree = +1 -1 (title changed)
+		// untracked.txt: +2
+		assert.strictEqual(stats.filesChanged, 3);
+		assert.strictEqual(stats.additions, 5);
+		assert.strictEqual(stats.deletions, 1);
+	});
+
+	test('squash-merged branch with local edits shows only local edits', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'squash-local', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'squash-local', wtPath);
+
+		// Commit a feature
+		await writeFile(path.join(wtPath, 'feature.ts'), 'export const x = 1;\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'add feature');
+
+		// Squash-merge into main
+		await git(repoPath, 'merge', '--squash', 'squash-local');
+		await git(repoPath, 'commit', '-m', 'squash merge');
+
+		// Now make a new unstaged edit in the worktree
+		await writeFile(path.join(wtPath, 'README.md'), '# Changed\n');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		// feature.ts was squash-merged (tree matches) → 0 diff for that file.
+		// README.md changed from "# Test\n" to "# Changed\n" → +1 -1.
+		assert.strictEqual(stats.additions, 1);
+		assert.strictEqual(stats.deletions, 1);
 		assert.strictEqual(stats.filesChanged, 1);
 	});
 });
