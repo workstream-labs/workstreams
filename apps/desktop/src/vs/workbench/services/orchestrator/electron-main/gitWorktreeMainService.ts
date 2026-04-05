@@ -22,6 +22,23 @@ const WORKSTREAMS_DIR = '.workstreams';
 const WORKTREE_SUBDIR = 'tree';
 const GITIGNORE_ENTRY = '.workstreams/';
 
+export function parseNumstat(stdout: string): Map<string, { add: number; del: number }> {
+	const files = new Map<string, { add: number; del: number }>();
+	for (const line of stdout.trim().split('\n')) {
+		if (!line) {
+			continue;
+		}
+		const [a, d, file] = line.split('\t');
+		if (!file) {
+			continue;
+		}
+		const add = a === '-' ? 0 : (parseInt(a, 10) || 0);
+		const del = d === '-' ? 0 : (parseInt(d, 10) || 0);
+		files.set(file, { add, del });
+	}
+	return files;
+}
+
 export class GitWorktreeMainService implements IGitWorktreeService {
 
 	declare readonly _serviceBrand: undefined;
@@ -123,52 +140,86 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	async getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats> {
 		const empty: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 		try {
-			const { stdout: branchOut } = await execFile('git', ['branch', '--show-current'], { cwd: worktreePath });
-			const branch = branchOut.trim();
-			if (!branch) {
-				return empty;
+			// Resolve the default branch from the main repo
+			const { stdout: defaultBranchOut } = await execFile('git', ['branch', '--show-current'], { cwd: repoPath });
+			const defaultBranch = defaultBranchOut.trim() || 'main';
+
+			// Determine the base ref — prefer origin/<branch> so stats reflect
+			// remote state; fall back to local branch for repos without a remote.
+			let baseRef = `origin/${defaultBranch}`;
+			try {
+				await execFile('git', ['rev-parse', '--verify', baseRef], { cwd: worktreePath });
+			} catch {
+				baseRef = defaultBranch;
 			}
 
-			// 1) Committed changes: diff from merge-base to branch tip
-			// 2) Uncommitted changes: staged + unstaged in the worktree
-			const [committedResult, uncommittedResult, untrackedResult] = await Promise.all([
-				execFile('git', ['diff', '--numstat', `HEAD...${branch}`], { cwd: repoPath }).catch(() => null),
-				execFile('git', ['diff', '--numstat', 'HEAD'], { cwd: worktreePath }).catch(() => null),
+			// Ahead count — how many commits this branch has over the base
+			let ahead = 0;
+			try {
+				const { stdout: tracking } = await execFile('git', [
+					'rev-list', '--left-right', '--count', `${baseRef}...HEAD`
+				], { cwd: worktreePath });
+				const [, aheadStr] = tracking.trim().split(/\s+/);
+				ahead = parseInt(aheadStr || '0', 10);
+			} catch {
+				// If rev-list fails (e.g. unrelated histories), fall through
+			}
+
+			/**
+			 * Against-base diff — only when there are commits ahead.
+			 * Uses a scoped two-dot approach: find which files the branch
+			 * touched (three-dot --name-only), then compare tree content
+			 * for only those files (two-dot). Handles squash merges
+			 * (tree content is identical → empty diff) while ignoring
+			 * unrelated changes main picked up after the merge.
+			 */
+			let againstBase: Map<string, { add: number; del: number }> | null = null;
+			if (ahead > 0) {
+				const nameResult = await execFile('git', [
+					'diff', '--name-only', `${baseRef}...HEAD`
+				], { cwd: worktreePath }).catch(() => null);
+
+				const branchFiles = nameResult
+					? nameResult.stdout.trim().split('\n').filter(f => f)
+					: [];
+
+				if (branchFiles.length > 0) {
+					const result = await execFile('git', [
+						'diff', '--numstat', baseRef, 'HEAD', '--', ...branchFiles
+					], { cwd: worktreePath }).catch(() => null);
+					if (result) {
+						againstBase = parseNumstat(result.stdout);
+					}
+				}
+			}
+
+			// Local working-tree changes: staged + unstaged + untracked
+			const [stagedResult, unstagedResult, untrackedResult] = await Promise.all([
+				execFile('git', ['diff', '--cached', '--numstat'], { cwd: worktreePath }).catch(() => null),
+				execFile('git', ['diff', '--numstat'], { cwd: worktreePath }).catch(() => null),
 				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
 			]);
 
-			// Accumulate by file path — committed diff (merge-base → branch tip) and
-			// uncommitted diff (branch tip → working tree) are additive, not overlapping
-			const files = new Map<string, { add: number; del: number }>();
-
-			for (const result of [committedResult, uncommittedResult]) {
+			const localFiles = new Map<string, { add: number; del: number }>();
+			for (const result of [stagedResult, unstagedResult]) {
 				if (!result) {
 					continue;
 				}
-				for (const line of result.stdout.trim().split('\n')) {
-					if (!line) {
-						continue;
-					}
-					const [a, d, file] = line.split('\t');
-					if (!file) {
-						continue;
-					}
-					const add = a === '-' ? 0 : (parseInt(a, 10) || 0);
-					const del = d === '-' ? 0 : (parseInt(d, 10) || 0);
-					const existing = files.get(file);
+				for (const [file, stats] of parseNumstat(result.stdout)) {
+					const existing = localFiles.get(file);
 					if (existing) {
-						existing.add += add;
-						existing.del += del;
+						existing.add += stats.add;
+						existing.del += stats.del;
 					} else {
-						files.set(file, { add, del });
+						localFiles.set(file, { ...stats });
 					}
 				}
 			}
 
-			// 3) Untracked new files — git diff HEAD misses these entirely
+			// Untracked new files — git diff misses these entirely
 			if (untrackedResult) {
 				const untrackedFiles = untrackedResult.stdout.trim().split('\n')
-					.filter(f => f && !f.startsWith('.claude/') && !files.has(f));
+					.filter(f => f && !f.startsWith('.claude/') && !localFiles.has(f));
 
 				const lineCountResults = await Promise.all(untrackedFiles.map(async file => {
 					try {
@@ -186,9 +237,15 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				}));
 
 				for (const { file, add } of lineCountResults) {
-					files.set(file, { add, del: 0 });
+					localFiles.set(file, { add, del: 0 });
 				}
 			}
+
+			/**
+			 * Pick which stat set to show: committed changes against
+			 * base when available, otherwise local working-tree changes.
+			 */
+			const files = againstBase && againstBase.size > 0 ? againstBase : localFiles;
 
 			let additions = 0;
 			let deletions = 0;
