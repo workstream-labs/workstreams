@@ -868,3 +868,12 @@
 
 /* -- Footer -- */
 
+.monaco-workbench .orchestrator-content .orchestrator-footer {
+	flex-shrink: 0;
+	padding: 10px 12px;
+	font-size: 10px;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.4;
+	text-align: center;
+}
+

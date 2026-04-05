@@ -87,6 +87,10 @@ export class OrchestratorViewPane extends ViewPane {
 
 		// Update banner — appended after repo-list so it pins to bottom of flex column
 		this.onUpdateStateChange(this.updateService.state);
+
+		// Copyright footer
+		const footer = append(container, $('.orchestrator-footer'));
+		footer.textContent = '\u00A9 Workstream Labs Pvt. Ltd.';
 	}
 
 	private renderContent(): void {
