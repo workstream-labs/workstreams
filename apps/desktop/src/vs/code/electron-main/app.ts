@@ -85,10 +85,10 @@ import { ITelemetryServiceConfig, TelemetryService } from '../../platform/teleme
 import { getPiiPathsFromEnvironment, getTelemetryLevel, isInternalTelemetry, NullTelemetryService, supportsTelemetry } from '../../platform/telemetry/common/telemetryUtils.js';
 import { IUpdateService } from '../../platform/update/common/update.js';
 import { UpdateChannel } from '../../platform/update/common/updateIpc.js';
-import { DarwinUpdateService } from '../../platform/update/electron-main/updateService.darwin.js';
 import { LinuxUpdateService } from '../../platform/update/electron-main/updateService.linux.js';
 import { SnapUpdateService } from '../../platform/update/electron-main/updateService.snap.js';
 import { Win32UpdateService } from '../../platform/update/electron-main/updateService.win32.js';
+import { WorkstreamsUpdateService } from '../../platform/update/electron-main/workstreamsUpdateService.js';
 import { IOpenURLOptions, IURLService } from '../../platform/url/common/url.js';
 import { URLHandlerChannelClient, URLHandlerRouter } from '../../platform/url/common/urlIpc.js';
 import { NativeURLService } from '../../platform/url/common/urlService.js';
@@ -1071,7 +1071,7 @@ export class CodeApplication extends Disposable {
 				break;
 
 			case 'darwin':
-				services.set(IUpdateService, new SyncDescriptor(DarwinUpdateService));
+				services.set(IUpdateService, new SyncDescriptor(WorkstreamsUpdateService));
 				break;
 		}
 
