@@ -1,0 +1,135 @@
+name: Build & Publish Release
+
+on:
+  push:
+    branches:
+      - 'release'
+      - 'release/*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: 'apps/desktop/.nvmrc'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Download Electron
+        working-directory: apps/desktop
+        run: npm run electron
+
+      - name: Compile for production
+        working-directory: apps/desktop
+        run: NODE_OPTIONS="--max-old-space-size=8192" npx gulp compile-build-without-mangling
+
+      - name: Minify
+        working-directory: apps/desktop
+        run: npx gulp minify-vscode
+
+      - name: Package Electron app
+        working-directory: apps/desktop
+        run: npx gulp vscode-darwin-${{ matrix.arch }}-min
+
+      - name: Create DMG (for fresh installs)
+        working-directory: apps/desktop
+        run: |
+          mkdir -p release-output
+          VSCODE_ARCH=${{ matrix.arch }} VSCODE_QUALITY=stable npx tsx build/darwin/create-dmg.ts ../ release-output
+
+      - name: Create update zip (for auto-update)
+        working-directory: apps
+        run: |
+          cd Workstreams-darwin-${{ matrix.arch }}
+          zip -ryq ../desktop/release-output/Workstreams-darwin-${{ matrix.arch }}.zip Workstreams.app
+
+      - name: Extract version info
+        id: version
+        working-directory: apps/desktop
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          COMMIT=$(git rev-parse HEAD)
+          TIMESTAMP=$(date +%s)000
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Generate update manifest
+        working-directory: apps/desktop
+        run: |
+          DMG_SHA256=$(shasum -a 256 release-output/Workstreams-darwin-${{ matrix.arch }}.dmg | cut -d' ' -f1)
+          ZIP_SHA256=$(shasum -a 256 release-output/Workstreams-darwin-${{ matrix.arch }}.zip | cut -d' ' -f1)
+          cat > release-output/update-manifest-${{ matrix.arch }}.json << EOF
+          {
+            "version": "${{ steps.version.outputs.commit }}",
+            "productVersion": "${{ steps.version.outputs.version }}",
+            "timestamp": ${{ steps.version.outputs.timestamp }},
+            "url": "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Workstreams-darwin-${{ matrix.arch }}.zip",
+            "sha256hash": "$ZIP_SHA256"
+          }
+          EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: apps/desktop/release-output/
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        working-directory: apps/desktop
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            git log ${LAST_TAG}..HEAD --pretty=format:"- %s" > CHANGELOG.md
+          else
+            git log --oneline -30 --pretty=format:"- %s" > CHANGELOG.md
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Workstreams v${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: |
+            artifacts/Workstreams-darwin-arm64.dmg
+            artifacts/Workstreams-darwin-x64.dmg
+            artifacts/Workstreams-darwin-arm64.zip
+            artifacts/Workstreams-darwin-x64.zip
+            artifacts/update-manifest-arm64.json
+            artifacts/update-manifest-x64.json
