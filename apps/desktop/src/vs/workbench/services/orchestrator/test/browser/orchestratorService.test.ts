@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { IWorktreeEntry } from '../../common/orchestratorService.js';
+import { IWorktreeEntry, WorktreeSessionState, VALID_TRANSITIONS } from '../../common/orchestratorService.js';
 import { OrchestratorServiceImpl, validateWorktreeName, friendlyName } from '../../../../browser/parts/orchestrator/orchestratorService.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
 import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IWorktreeMeta, parseWorktreeList } from '../../common/gitWorktreeService.js';
@@ -527,5 +527,109 @@ suite('friendlyName', () => {
 	test('returns with hyphens replaced when no slash', () => {
 		assert.strictEqual(friendlyName('tmux-integration'), 'tmux integration');
 		assert.strictEqual(friendlyName('main'), 'main');
+	});
+});
+
+suite('setSessionState validation', () => {
+	let service: OrchestratorServiceImpl;
+
+	const ds = ensureNoDisposablesAreLeakedInTestSuite();
+
+	setup(async () => {
+		const instantiationService = ds.add(workbenchInstantiationService(undefined, ds));
+		instantiationService.stub(IGitWorktreeService, new MockGitWorktreeService());
+		instantiationService.stub(IWorkspaceEditingService, { addFolders: async () => { }, updateFolders: async () => { } });
+
+		const editorGroupsService = instantiationService.get(IEditorGroupsService);
+		let nextId = 0;
+		editorGroupsService.saveWorkingSet = (name: string) => ({ id: `ws-${nextId++}`, name });
+		editorGroupsService.applyWorkingSet = async () => true;
+
+		service = ds.add(instantiationService.createInstance(OrchestratorServiceImpl));
+		await service.whenReady;
+		await service.addRepository('/path/to/repo');
+	});
+
+	test('accepts valid transition: undefined → Working', () => {
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		assert.strictEqual(result, true);
+	});
+
+	test('accepts valid transition: Working → Idle', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Idle);
+		assert.strictEqual(result, true);
+	});
+
+	test('accepts valid transition: Working → Permission', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Permission);
+		assert.strictEqual(result, true);
+	});
+
+	test('accepts valid transition: Working → Review', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Review);
+		assert.strictEqual(result, true);
+	});
+
+	test('accepts valid transition: Permission → Working', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Permission);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		assert.strictEqual(result, true);
+	});
+
+	test('accepts valid transition: Review → Working', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Review);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		assert.strictEqual(result, true);
+	});
+
+	test('rejects invalid transition: Idle → Review', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Idle);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Review);
+		assert.strictEqual(result, false);
+	});
+
+	test('rejects invalid transition: Idle → Permission', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Idle);
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Permission);
+		assert.strictEqual(result, false);
+	});
+
+	test('self-transition Working → Working returns true (no-op)', () => {
+		service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+
+		let eventFired = false;
+		ds.add(service.onDidChangeSessionState(() => { eventFired = true; }));
+
+		const result = service.setSessionState('/path/to/repo', WorktreeSessionState.Working);
+		assert.strictEqual(result, true);
+		assert.strictEqual(eventFired, false, 'self-transition should not fire event');
+	});
+
+	test('VALID_TRANSITIONS covers all enum values', () => {
+		const allStates = [
+			WorktreeSessionState.Idle,
+			WorktreeSessionState.Working,
+			WorktreeSessionState.Permission,
+			WorktreeSessionState.Review,
+		];
+
+		for (const state of allStates) {
+			assert.ok(VALID_TRANSITIONS.has(state), `VALID_TRANSITIONS should have entry for ${state}`);
+		}
+		assert.ok(VALID_TRANSITIONS.has(undefined), 'VALID_TRANSITIONS should have entry for undefined');
 	});
 });
