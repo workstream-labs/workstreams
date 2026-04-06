@@ -10,6 +10,7 @@ import { IRange } from '../../../../editor/common/core/range.js';
 import { ICodeEditor, IDiffEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
+import { DetailedLineRangeMapping } from '../../../../editor/common/diff/rangeMapping.js';
 import * as languages from '../../../../editor/common/languages.js';
 import { ICommentController, ICommentInfo, ICommentService, INotebookCommentInfo } from '../../comments/browser/commentService.js';
 import { IWorkstreamCommentService, CommentSide } from '../../../services/workstreamComments/common/workstreamCommentService.js';
@@ -167,8 +168,8 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			return;
 		}
 
-		const { side, label } = this._getCommentSideAndLabel(editor, range.startLineNumber);
-		this._openWidget(editor, range.startLineNumber, side, label);
+		const { side, label, storedLine } = this._getCommentSideAndLabel(editor, range.startLineNumber);
+		this._openWidget(editor, range.startLineNumber, side, label, storedLine);
 	}
 
 	async updateCommentThreadTemplate(_threadHandle: number, _range: IRange): Promise<void> {
@@ -260,7 +261,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 				}
 			}
 
-			const diffEditor = this._findDiffEditorForCodeEditor(editor);
 			const isInline = this._isInlineDiffMode();
 
 			// git: scheme URIs are always the original (left) side of a diff,
@@ -291,7 +291,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 					continue;
 				}
 
-				const lineLabel = this._buildLineLabel(diffEditor, comment.line, comment.side);
+				const lineLabel = this._buildLineLabel(comment.line, comment.side);
 
 				const widget = new WorkstreamCommentZoneWidget(
 					editor,
@@ -316,15 +316,14 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		}
 	}
 
-	private _openWidget(editor: ICodeEditor, lineNumber: number, side: CommentSide = 'new', lineLabel?: string): void {
+	private _openWidget(editor: ICodeEditor, lineNumber: number, side: CommentSide = 'new', lineLabel?: string, storedLine?: number): void {
 		const widgetKey = `${editor.getId()}:${side}:${lineNumber}`;
 
 		if (this._activeWidgets.has(widgetKey)) {
 			return;
 		}
 
-		const diffEditor = this._findDiffEditorForCodeEditor(editor);
-		const label = lineLabel ?? this._buildLineLabel(diffEditor, lineNumber, side);
+		const label = lineLabel ?? this._buildLineLabel(lineNumber, side);
 
 		const widget = new WorkstreamCommentZoneWidget(
 			editor,
@@ -334,6 +333,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			this.orchestratorService,
 			side,
 			label,
+			storedLine ?? lineNumber,
 		);
 
 		this._activeWidgets.set(widgetKey, widget);
@@ -402,83 +402,86 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	 * Inline view:  R{n} for pure additions, L{n} for everything else
 	 *               (matches GitHub unified view convention)
 	 */
-	private _getCommentSideAndLabel(editor: ICodeEditor, lineNumber: number): { side: CommentSide; label: string } {
+	/**
+	 * Determine the comment side, display label, and persisted line number for a
+	 * click at `lineNumber` in `editor`.
+	 *
+	 * GitHub convention (which we match):
+	 *   Split view:
+	 *     - Right editor (any line)   → side:'new',  label:R{n}, storedLine:n
+	 *     - Left editor, deleted line → side:'old',  label:L{n}, storedLine:n
+	 *     - Left editor, context line → side:'new',  label:R{right-n}, storedLine:right-n
+	 *       (context lines are always anchored to the right-side line number)
+	 *   Inline/unified view:
+	 *     - All clickable lines       → side:'new',  label:R{n}, storedLine:n
+	 *       (deleted lines are view zones — not clickable)
+	 */
+	private _getCommentSideAndLabel(editor: ICodeEditor, lineNumber: number): { side: CommentSide; label: string; storedLine: number } {
 		const diffEditor = this._findDiffEditorForCodeEditor(editor);
 
 		if (!diffEditor) {
-			// Not in a diff editor at all — treat as modified
-			return { side: 'new', label: `R${lineNumber}` };
+			return { side: 'new', label: `R${lineNumber}`, storedLine: lineNumber };
 		}
 
 		const isInline = this._isInlineDiffMode();
 
 		if (!isInline) {
-			// Split view: left editor = original, right editor = modified
-			const isOriginal = diffEditor.getOriginalEditor() === editor;
-			if (isOriginal) {
-				return { side: 'old', label: `L${lineNumber}` };
-			} else {
-				return { side: 'new', label: `R${lineNumber}` };
+			// Split view — right editor is always the 'new' side
+			if (diffEditor.getModifiedEditor() === editor) {
+				return { side: 'new', label: `R${lineNumber}`, storedLine: lineNumber };
 			}
-		}
 
-		// Inline/unified view: determine side from the diff computation.
-		// In inline mode, the visible editor is the modified editor.
-		// Deleted lines appear as view zones (not real lines in the model),
-		// so the "+" glyph can only be clicked on lines that exist in the
-		// modified model. We classify based on the diff mapping:
-		//   - Lines inside a mapping where original is empty → added → R{n}
-		//   - All other lines (context or changed) → L{n} (GitHub convention)
-		const diffResult = diffEditor.getDiffComputationResult();
-		if (diffResult) {
-			for (const mapping of diffResult.changes2) {
-				if (lineNumber >= mapping.modified.startLineNumber && lineNumber < mapping.modified.endLineNumberExclusive) {
-					if (mapping.original.isEmpty) {
-						// Pure addition — no corresponding original line
-						return { side: 'new', label: `R${lineNumber}` };
+			// Left (original) editor: distinguish deleted lines from context lines.
+			// Lines within a diff mapping's original range are deleted/changed (L side).
+			// Lines outside all mappings are context lines — map to the right-side number.
+			const diffResult = diffEditor.getDiffComputationResult();
+			if (diffResult) {
+				for (const mapping of diffResult.changes2) {
+					if (lineNumber >= mapping.original.startLineNumber && lineNumber < mapping.original.endLineNumberExclusive) {
+						// Deleted / changed line on the left — stays L side
+						return { side: 'old', label: `L${lineNumber}`, storedLine: lineNumber };
 					}
-					// Changed line — treat as modified side, label as L per GitHub convention
-					return { side: 'new', label: `L${lineNumber}` };
 				}
+				// Context line: compute the corresponding right-side line number
+				const rightLine = this._toRightLineNumber(lineNumber, diffResult.changes2);
+				return { side: 'new', label: `R${rightLine}`, storedLine: rightLine };
 			}
+
+			// No diff result yet — right side is the safe default
+			return { side: 'new', label: `R${lineNumber}`, storedLine: lineNumber };
 		}
 
-		// Context line (unchanged) — use L prefix like GitHub unified view
-		return { side: 'new', label: `L${lineNumber}` };
+		// Inline/unified view: the only visible editor is the modified editor.
+		// Deleted lines are view zones (not real model lines) so the "+" glyph
+		// only appears on modified-side lines. All of them use R{n}.
+		return { side: 'new', label: `R${lineNumber}`, storedLine: lineNumber };
 	}
 
 	/**
-	 * Build a GitHub-style line label for a saved comment.
-	 * Uses the same diff computation logic as _getCommentSideAndLabel
-	 * to ensure labels are consistent between creation and restoration.
+	 * Build a display label for a saved comment when restoring it into a widget.
+	 * side:'old' → L{n} (deletion/change on the original file)
+	 * side:'new' → R{n} (addition, change, or context on the modified file)
+	 *
+	 * `lineNumber` is always the persisted line (right-side for 'new' comments,
+	 * left-side for 'old' comments), so the label is just a prefix + number.
 	 */
-	private _buildLineLabel(diffEditor: IDiffEditor | undefined, lineNumber: number, side: CommentSide): string {
-		if (!diffEditor) {
-			return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
-		}
+	private _buildLineLabel(lineNumber: number, side: CommentSide): string {
+		return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
+	}
 
-		const isInline = this._isInlineDiffMode();
-
-		if (!isInline) {
-			// Split view: L for original, R for modified
-			return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
-		}
-
-		// Inline view: use diff computation to match creation-time labeling
-		const diffResult = diffEditor.getDiffComputationResult();
-		if (diffResult && side === 'new') {
-			for (const mapping of diffResult.changes2) {
-				if (lineNumber >= mapping.modified.startLineNumber && lineNumber < mapping.modified.endLineNumberExclusive) {
-					if (mapping.original.isEmpty) {
-						return `R${lineNumber}`;
-					}
-					return `L${lineNumber}`;
-				}
+	/**
+	 * Given a line number in the original (left) file and the diff mappings,
+	 * compute the corresponding line number in the modified (right) file.
+	 * Used to anchor context-line comments to the right-side coordinate.
+	 */
+	private _toRightLineNumber(leftLine: number, mappings: readonly DetailedLineRangeMapping[]): number {
+		let delta = 0;
+		for (const mapping of mappings) {
+			if (mapping.original.endLineNumberExclusive <= leftLine) {
+				delta += mapping.modified.length - mapping.original.length;
 			}
 		}
-
-		// 'old' side comments in inline view, or context lines
-		return `L${lineNumber}`;
+		return leftLine + delta;
 	}
 
 	private _isOriginalSideOfDiff(editor: ICodeEditor): boolean {
