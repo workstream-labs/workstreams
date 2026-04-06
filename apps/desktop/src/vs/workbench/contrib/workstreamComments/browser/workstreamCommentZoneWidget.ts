@@ -223,23 +223,31 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 	private async _submitFromTextarea(textarea: HTMLTextAreaElement): Promise<void> {
 		const text = textarea.value.trim();
 		if (!text) {
+			console.warn('[WSComments] submit: empty text, bailing');
 			return;
 		}
 
 		const worktree = this._orchestratorService.activeWorktree;
 		if (!worktree) {
+			console.warn('[WSComments] submit: no active worktree, bailing');
 			return;
 		}
 
 		const resource = this.editor.getModel()?.uri;
 		if (!resource) {
+			console.warn('[WSComments] submit: no editor model URI, bailing');
 			return;
 		}
 
+		console.log('[WSComments] submit: resource scheme=%s fsPath=%s worktreePath=%s', resource.scheme, resource.fsPath, worktree.path);
+
 		const relativePath = this._getRelativePath(resource, worktree.path);
 		if (!relativePath) {
+			console.warn('[WSComments] submit: _getRelativePath returned undefined — fsPath does not start with worktree prefix');
 			return;
 		}
+
+		console.log('[WSComments] submit: relativePath=%s storedLine=%d side=%s', relativePath, this._storedLine, this._side);
 
 		if (this._savedComment) {
 			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
