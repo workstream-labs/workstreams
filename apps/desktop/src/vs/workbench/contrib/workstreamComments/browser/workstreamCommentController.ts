@@ -286,7 +286,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 					continue;
 				}
 
-				const widgetKey = `${editor.getId()}:${comment.side}:${comment.line}`;
+				const widgetKey = `${editor.getId()}:${comment.side}:${comment.line}:${comment.id}`;
 				if (this._activeWidgets.has(widgetKey)) {
 					continue;
 				}
