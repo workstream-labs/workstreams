@@ -591,7 +591,25 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				return { ...repo, worktrees };
 			}));
 			if (changed) {
-				this._repositories = updated;
+				// Session state may have been updated by setSessionState() while
+				// the async git operations were in flight. Read the CURRENT
+				// session state (not the stale snapshot) before overwriting.
+				const currentStates = new Map<string, WorktreeSessionState | undefined>();
+				for (const repo of this._repositories) {
+					for (const wt of repo.worktrees) {
+						if (wt.sessionState !== undefined) {
+							currentStates.set(wt.path, wt.sessionState);
+						}
+					}
+				}
+
+				this._repositories = updated.map(repo => ({
+					...repo,
+					worktrees: repo.worktrees.map(wt => {
+						const liveState = currentStates.get(wt.path);
+						return liveState !== undefined ? { ...wt, sessionState: liveState } : wt;
+					})
+				}));
 				this._onDidChangeRepositories.fire();
 			}
 		} finally {

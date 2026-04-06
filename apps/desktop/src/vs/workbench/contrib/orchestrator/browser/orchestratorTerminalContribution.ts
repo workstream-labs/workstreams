@@ -119,6 +119,19 @@ export class OrchestratorTerminalContribution extends Disposable {
 				}
 				case 'Stop': {
 					this._cancelHeartbeat(event.worktreePath);
+
+					// Don't clear Permission state on Stop events — permission
+					// waits are indefinite and should only be cleared by user
+					// action (approve/deny → Start, ESC → Idle) or process
+					// termination (terminal disposal). Claude Code fires Stop
+					// at end-of-turn, which includes the turn where it asked
+					// for permission.
+					const currentState = this._findWorktreeSessionState(event.worktreePath);
+					if (currentState === WorktreeSessionState.Permission) {
+						this._logService.info(`${TAG} Ignoring Stop event while in Permission state for "${event.worktreePath}"`);
+						break;
+					}
+
 					const isActive = this._orchestratorService.activeWorktree?.path === event.worktreePath;
 					const accepted = this._orchestratorService.setSessionState(
 						event.worktreePath,
