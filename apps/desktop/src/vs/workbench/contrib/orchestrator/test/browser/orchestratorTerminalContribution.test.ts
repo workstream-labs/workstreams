@@ -558,9 +558,8 @@ suite('OrchestratorTerminalContribution', () => {
 
 	test('terminal gets WORKSTREAMS_HOOK_PORT and WORKSTREAMS_HOOK_TOKEN env vars', () => {
 		switchToWorktree(makeWorktree('/repo/wt-a'));
-		const t1 = createTerminal(1);
+		createTerminal(1);
 
-		const env = (t1 as any).shellLaunchConfig?.env;
 		// The mock doesn't have shellLaunchConfig, so we verify the contribution
 		// doesn't crash when injecting env vars (no error thrown = pass)
 		assert.ok(true, 'env var injection did not throw');

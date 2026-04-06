@@ -548,10 +548,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		return true;
 	}
 
-	private _findCurrentState(worktreePath: string): WorktreeSessionState | undefined {
-		return this._sessionStates.get(worktreePath);
-	}
-
 	getSessionState(worktreePath: string): WorktreeSessionState | undefined {
 		return this._sessionStates.get(worktreePath);
 	}

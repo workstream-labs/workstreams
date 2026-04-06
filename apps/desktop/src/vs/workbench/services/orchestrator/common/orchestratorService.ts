@@ -20,12 +20,12 @@ export const enum WorktreeSessionState {
  * Self-transitions (e.g., Working → Working) are handled as no-ops
  * in the implementation and do not need to appear here.
  */
-export const VALID_TRANSITIONS: ReadonlyMap<WorktreeSessionState | undefined, ReadonlySet<WorktreeSessionState>> = new Map([
-	[undefined, new Set([WorktreeSessionState.Idle, WorktreeSessionState.Working])],
-	[WorktreeSessionState.Idle, new Set([WorktreeSessionState.Working])],
-	[WorktreeSessionState.Working, new Set([WorktreeSessionState.Idle, WorktreeSessionState.Permission, WorktreeSessionState.Review])],
-	[WorktreeSessionState.Permission, new Set([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
-	[WorktreeSessionState.Review, new Set([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
+export const VALID_TRANSITIONS = new Map<WorktreeSessionState | undefined, Set<WorktreeSessionState>>([
+	[undefined, new Set<WorktreeSessionState>([WorktreeSessionState.Idle, WorktreeSessionState.Working])],
+	[WorktreeSessionState.Idle, new Set<WorktreeSessionState>([WorktreeSessionState.Working])],
+	[WorktreeSessionState.Working, new Set<WorktreeSessionState>([WorktreeSessionState.Idle, WorktreeSessionState.Permission, WorktreeSessionState.Review])],
+	[WorktreeSessionState.Permission, new Set<WorktreeSessionState>([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
+	[WorktreeSessionState.Review, new Set<WorktreeSessionState>([WorktreeSessionState.Working, WorktreeSessionState.Idle])],
 ]);
 
 export interface IWorktreeEntry {
