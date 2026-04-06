@@ -156,12 +156,7 @@ registerAction2(class AskFeedbackAction extends Action2 {
 			id: 'workbench.action.askFeedback',
 			title: localize2('askFeedback', "Send Feedback"),
 			icon: Codicon.comment,
-			menu: [{
-				id: MenuId.LayoutControlMenu,
-				group: '2_pane_toggles',
-				order: -1, // Before Terminal (0)
-				when: IsAuxiliaryWindowContext.negate(),
-			}]
+			menu: []
 		});
 	}
 
