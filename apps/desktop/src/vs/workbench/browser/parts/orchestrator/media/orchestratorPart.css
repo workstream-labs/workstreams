@@ -224,7 +224,8 @@
 	opacity: 0.7;
 }
 
-.monaco-workbench .orchestrator-content .worktree-icon.icon-local-branch {
+.monaco-workbench .orchestrator-content .worktree-icon.icon-local-branch,
+.icon-git-branch-png {
 	width: 14px;
 	height: 14px;
 	display: inline-block;
