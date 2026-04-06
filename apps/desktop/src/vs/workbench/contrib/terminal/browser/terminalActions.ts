@@ -315,6 +315,7 @@ export function registerTerminalActions() {
 	registerTerminalAction({
 		id: TerminalCommandId.CreateTerminalEditor,
 		title: localize2('workbench.action.terminal.createTerminalEditor', 'Create New Terminal in Editor Area'),
+		keybinding: { primary: KeyMod.CtrlCmd | KeyCode.KeyJ, weight: KeybindingWeight.WorkbenchContrib },
 		run: async (c, _, args) => {
 			function isCreateTerminalOptions(obj: unknown): obj is ICreateTerminalOptions {
 				return isObject(obj) && 'location' in obj;
