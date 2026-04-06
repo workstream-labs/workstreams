@@ -274,7 +274,10 @@ export class OrchestratorViewPane extends ViewPane {
 
 	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
 		el.className = 'worktree-icon';
-		switch (worktree.sessionState) {
+		// Read session state from the authoritative map, not from the
+		// worktree entry which may be stale after async _repositories mutations.
+		const sessionState = this.orchestratorService.getSessionState(worktree.path);
+		switch (sessionState) {
 			case WorktreeSessionState.Working: {
 				el.classList.add('state-running', 'braille-spinner');
 				let frame = 0;

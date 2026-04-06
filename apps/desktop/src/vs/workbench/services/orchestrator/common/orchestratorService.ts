@@ -80,6 +80,13 @@ export interface IOrchestratorService {
 	 * no-op self-transition).
 	 */
 	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean;
+
+	/**
+	 * Read the current session state for a worktree directly from the
+	 * authoritative state map (not from the worktree entry, which may
+	 * be stale after async operations).
+	 */
+	getSessionState(worktreePath: string): WorktreeSessionState | undefined;
 	pickAndAddRepository(): Promise<void>;
 	pickAndAddWorktree(repoPath: string): Promise<void>;
 	addRepository(path: string): Promise<void>;

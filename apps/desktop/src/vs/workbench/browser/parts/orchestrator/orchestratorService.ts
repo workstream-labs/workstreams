@@ -75,6 +75,13 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	private readonly _onDidChangeSessionState = this._register(new Emitter<{ worktreePath: string; state: WorktreeSessionState }>());
 	readonly onDidChangeSessionState = this._onDidChangeSessionState.event;
 
+	/**
+	 * Authoritative source of truth for session state, separate from
+	 * `_repositories`. This map is never affected by async operations
+	 * that recreate worktree entries (_doRefreshGitState, switchTo, etc.).
+	 */
+	private readonly _sessionStates = new Map<string, WorktreeSessionState>();
+
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
 	private readonly _refreshScheduler: RunOnceScheduler;
 	private _refreshInFlight = false;
@@ -510,7 +517,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	}
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
-		const current = this._findCurrentState(worktreePath);
+		const current = this._sessionStates.get(worktreePath);
 
 		// Self-transition: already in the target state — no-op
 		if (current === state) {
@@ -524,6 +531,10 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			return false;
 		}
 
+		// Update the authoritative map
+		this._sessionStates.set(worktreePath, state);
+
+		// Mirror onto _repositories for rendering
 		this._repositories = this._repositories.map(r => ({
 			...r,
 			worktrees: r.worktrees.map(w =>
@@ -536,14 +547,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	}
 
 	private _findCurrentState(worktreePath: string): WorktreeSessionState | undefined {
-		for (const repo of this._repositories) {
-			for (const wt of repo.worktrees) {
-				if (wt.path === worktreePath) {
-					return wt.sessionState;
-				}
-			}
-		}
-		return undefined;
+		return this._sessionStates.get(worktreePath);
+	}
+
+	getSessionState(worktreePath: string): WorktreeSessionState | undefined {
+		return this._sessionStates.get(worktreePath);
 	}
 
 	//#region Diff stats
@@ -591,22 +599,14 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				return { ...repo, worktrees };
 			}));
 			if (changed) {
-				// Session state may have been updated by setSessionState() while
-				// the async git operations were in flight. Read the CURRENT
-				// session state (not the stale snapshot) before overwriting.
-				const currentStates = new Map<string, WorktreeSessionState | undefined>();
-				for (const repo of this._repositories) {
-					for (const wt of repo.worktrees) {
-						if (wt.sessionState !== undefined) {
-							currentStates.set(wt.path, wt.sessionState);
-						}
-					}
-				}
-
+				// Re-apply session states from the authoritative map.
+				// The async git operations above used a stale snapshot of
+				// _repositories, so any setSessionState() calls during the
+				// await would be lost without this merge.
 				this._repositories = updated.map(repo => ({
 					...repo,
 					worktrees: repo.worktrees.map(wt => {
-						const liveState = currentStates.get(wt.path);
+						const liveState = this._sessionStates.get(wt.path);
 						return liveState !== undefined ? { ...wt, sessionState: liveState } : wt;
 					})
 				}));

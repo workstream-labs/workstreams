@@ -552,17 +552,11 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
-	 * Returns the current session state for a worktree, or undefined if not found.
+	 * Returns the current session state for a worktree from the
+	 * authoritative state map on the orchestrator service.
 	 */
 	private _findWorktreeSessionState(worktreePath: string): WorktreeSessionState | undefined {
-		for (const repo of this._orchestratorService.repositories) {
-			for (const wt of repo.worktrees) {
-				if (wt.path === worktreePath) {
-					return wt.sessionState;
-				}
-			}
-		}
-		return undefined;
+		return this._orchestratorService.getSessionState(worktreePath);
 	}
 
 	/**
