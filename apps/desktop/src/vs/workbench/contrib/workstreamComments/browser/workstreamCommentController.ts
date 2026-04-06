@@ -261,11 +261,21 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}
 
 			const diffEditor = this._findDiffEditorForCodeEditor(editor);
-			const isInline = diffEditor ? !diffEditor.renderSideBySide : false;
-			const isOriginal = this._isOriginalSideOfDiff(editor);
+			const isInline = this._isInlineDiffMode();
 
-			// In inline mode, only the modified editor is visible — show comments
-			// from both sides on it. In split mode, show only the matching side.
+			// git: scheme URIs are always the original (left) side of a diff,
+			// even during races where _findDiffEditorForCodeEditor returns undefined.
+			const isOriginal = model.uri.scheme === 'git' || this._isOriginalSideOfDiff(editor);
+
+			// In inline mode, only the modified editor is visible — skip the
+			// hidden original editor entirely to prevent invisible widgets that
+			// persist incorrectly through view mode switches.
+			if (isInline && isOriginal) {
+				return;
+			}
+
+			// In inline mode, show comments from both sides on the modified editor.
+			// In split mode, show only the matching side.
 			const editorSide: CommentSide | 'both' = isInline ? 'both' : (isOriginal ? 'old' : 'new');
 
 			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
@@ -337,6 +347,17 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	// --- Diff / side detection ---
 
 	/**
+	 * Read the current diff view mode from the configuration service rather
+	 * than from `diffEditor.renderSideBySide`. The config service always has
+	 * the latest value, whereas the diff editor object may update its own
+	 * property asynchronously — creating a stale-state window during view
+	 * mode switches that can cause comments to appear on the wrong editor.
+	 */
+	private _isInlineDiffMode(): boolean {
+		return !(this.configurationService.getValue<boolean>('diffEditor.renderSideBySide') ?? true);
+	}
+
+	/**
 	 * Check if a file:// resource is part of any diff editor.
 	 */
 	private _isResourceInDiff(resource: URI): boolean {
@@ -389,7 +410,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			return { side: 'new', label: `R${lineNumber}` };
 		}
 
-		const isInline = !diffEditor.renderSideBySide;
+		const isInline = this._isInlineDiffMode();
 
 		if (!isInline) {
 			// Split view: left editor = original, right editor = modified
@@ -436,7 +457,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			return side === 'old' ? `L${lineNumber}` : `R${lineNumber}`;
 		}
 
-		const isInline = !diffEditor.renderSideBySide;
+		const isInline = this._isInlineDiffMode();
 
 		if (!isInline) {
 			// Split view: L for original, R for modified

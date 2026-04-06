@@ -259,7 +259,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual(result.label, 'R42');
 		});
 
-		test('inline view: pure addition → side new, label R{n}', () => {
+		test('inline view: pure addition → side new, label R{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -289,7 +291,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual(result.label, 'R11');
 		});
 
-		test('inline view: changed line → side new, label L{n}', () => {
+		test('inline view: changed line → side new, label L{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -319,7 +323,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual(result.label, 'L11');
 		});
 
-		test('inline view: context line → side new, label L{n}', () => {
+		test('inline view: context line → side new, label L{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -383,7 +389,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 42, 'new'), 'R42');
 		});
 
-		test('inline view: addition line uses R{n} consistent with creation', () => {
+		test('inline view: addition line uses R{n} consistent with creation', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const additionMapping = new DetailedLineRangeMapping(
 				new LineRange(10, 10),
 				new LineRange(10, 13),
@@ -400,7 +408,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 11, 'new'), 'R11');
 		});
 
-		test('inline view: old side comment → L{n}', () => {
+		test('inline view: old side comment → L{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const diffEditor = makeMockDiffEditor({
 				originalEditor: makeMockCodeEditor({ id: 'orig', uri: URI.from({ scheme: 'git', path: '/foo' }), inDiffEditor: true }),
 				modifiedEditor: makeMockCodeEditor({ id: 'mod', uri: URI.file('/foo'), inDiffEditor: true }),
