@@ -147,9 +147,7 @@ suite('OrchestratorTerminalContribution', () => {
 
 		instantiationService.stub(IHookNotificationService, new class extends mock<IHookNotificationService>() {
 			override onDidReceiveNotification = onDidReceiveNotification.event;
-			override get port() { return 12345; }
-			override get token() { return 'test-token-uuid'; }
-			override whenReady = Promise.resolve();
+			override get port() { return 51742; }
 		});
 
 		instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
@@ -556,7 +554,7 @@ suite('OrchestratorTerminalContribution', () => {
 
 	// --- Env var injection ---
 
-	test('terminal gets WORKSTREAMS_HOOK_PORT and WORKSTREAMS_HOOK_TOKEN env vars', () => {
+	test('terminal gets WORKSTREAMS_WORKTREE_PATH env var', () => {
 		switchToWorktree(makeWorktree('/repo/wt-a'));
 		createTerminal(1);
 
