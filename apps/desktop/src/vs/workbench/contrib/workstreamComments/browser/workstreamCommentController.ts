@@ -17,6 +17,7 @@ import { IWorkstreamCommentService, CommentSide } from '../../../services/workst
 import { IOrchestratorService } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { ISCMService } from '../../scm/common/scm.js';
 import { WorkstreamCommentZoneWidget } from './workstreamCommentZoneWidget.js';
 import { localize } from '../../../../nls.js';
 
@@ -56,6 +57,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		private readonly codeEditorService: ICodeEditorService,
 		private readonly configurationService: IConfigurationService,
 		private readonly logService: ILogService,
+		private readonly scmService: ISCMService,
 	) {
 		super();
 
@@ -103,22 +105,19 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	async getDocumentComments(resource: URI, _token: CancellationToken): Promise<ICommentInfo<IRange>> {
 		const worktree = this.orchestratorService.activeWorktree;
 
-		// Only enable commenting in diff editors, not regular file editors.
+		// Enable commenting on diff editors and untracked/new files.
 		// git:// URIs are always the left side of a diff.
-		// file:// URIs need a check: only if they're inside a diff editor.
+		// file:// URIs: check if inside a diff editor OR in SCM changes (untracked files).
 		if (resource.scheme === 'git') {
 			// Left side of diff — always a diff context, proceed
 		} else if (resource.scheme === 'file') {
-			// Check if this file URI belongs to any diff editor.
-			// Uses two strategies to handle the race where listDiffEditors()
-			// may not yet include a newly-opened diff editor:
-			// 1. Check listDiffEditors() for URI match
-			// 2. Check EditorOption.inDiffEditor on code editors (may briefly
-			//    return true on a stale editor during teardown — harmless since
-			//    we only provide commenting ranges, not render widgets)
 			const isInDiff = this._isResourceInDiff(resource);
 			if (!isInDiff) {
-				return this._emptyCommentInfo(resource);
+				// Not in a diff — allow if the file appears in SCM changes
+				// (covers untracked/new files opened as plain editors)
+				if (!this._isResourceInSCMChanges(resource)) {
+					return this._emptyCommentInfo(resource);
+				}
 			}
 		} else {
 			return this._emptyCommentInfo(resource);
@@ -355,6 +354,25 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 	 */
 	private _isInlineDiffMode(): boolean {
 		return !(this.configurationService.getValue<boolean>('diffEditor.renderSideBySide') ?? true);
+	}
+
+	/**
+	 * Check if a file URI appears in any SCM resource group (untracked, staged,
+	 * working tree changes, etc.). Used to enable commenting on new/untracked
+	 * files that open as plain editors instead of diff editors.
+	 */
+	private _isResourceInSCMChanges(resource: URI): boolean {
+		const resourceStr = resource.toString();
+		for (const repo of this.scmService.repositories) {
+			for (const group of repo.provider.groups) {
+				for (const scmResource of group.resources) {
+					if (scmResource.sourceUri.toString() === resourceStr) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

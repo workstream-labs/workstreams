@@ -75,6 +75,7 @@ function createMocks(ds: Pick<DisposableStore, 'add'>) {
 	const configurationService = configurationServiceInstance;
 	ds.add({ dispose() { configurationServiceInstance.onDidChangeConfigurationEmitter.dispose(); } });
 	const logService = new NullLogService();
+	const scmService = { repositories: [] };
 
 	return {
 		commentService,
@@ -83,6 +84,7 @@ function createMocks(ds: Pick<DisposableStore, 'add'>) {
 		codeEditorService,
 		configurationService,
 		logService,
+		scmService,
 		setEditors,
 		setDiffEditors,
 	};
@@ -143,6 +145,7 @@ suite('WorkstreamCommentController', () => {
 			mocks.codeEditorService as any,
 			mocks.configurationService,
 			mocks.logService,
+			mocks.scmService as any,
 		));
 	});
 
