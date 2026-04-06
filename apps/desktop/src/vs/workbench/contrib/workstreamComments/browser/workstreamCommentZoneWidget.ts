@@ -53,6 +53,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		private readonly _orchestratorService: IOrchestratorService,
 		private readonly _side: CommentSide = 'new',
 		private readonly _lineLabel?: string,
+		private readonly _storedLine: number = _lineNumber,
 	) {
 		super(editor, {
 			showFrame: true,
@@ -244,7 +245,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
 		} else {
 			await this._workstreamCommentService.addComment(
-				worktree.name, relativePath, this._lineNumber, text, this._side
+				worktree.name, relativePath, this._storedLine, text, this._side
 			);
 		}
 		// Close — onDidChangeComments will recreate from saved data
