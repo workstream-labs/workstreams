@@ -59,9 +59,6 @@ export class UpdateTooltip extends Disposable {
 	private readonly markdownContainer: HTMLElement;
 	private readonly markdown = this._register(new MutableDisposable());
 
-	// Action buttons
-	private readonly actionsContainer: HTMLElement;
-
 	// State-specific message
 	private readonly messageNode: HTMLElement;
 
@@ -93,12 +90,6 @@ export class UpdateTooltip extends Disposable {
 			label: localize('updateTooltip.settingsTooltip', "Update Settings"),
 			class: ThemeIcon.asClassName(Codicon.gear),
 			run: () => this.runCommandAndClose('workbench.action.openSettings', '@id:update*'),
-		}), { icon: true, label: false });
-		actionBar.push(toAction({
-			id: 'update.dismiss',
-			label: localize('updateTooltip.dismiss', "Dismiss"),
-			class: ThemeIcon.asClassName(Codicon.close),
-			run: () => this.hoverService.hideHover(true),
 		}), { icon: true, label: false });
 
 		// Product info section
@@ -153,9 +144,6 @@ export class UpdateTooltip extends Disposable {
 		// State-specific message
 		this.messageNode = dom.append(this.domNode, dom.$('.state-message'));
 
-		// Action buttons
-		this.actionsContainer = dom.append(this.domNode, dom.$('.update-actions'));
-
 		// Populate static product info
 		this.updateCurrentVersion();
 	}
@@ -182,8 +170,6 @@ export class UpdateTooltip extends Disposable {
 		this.messageNode.style.display = 'none';
 		this.markdownContainer.style.display = 'none';
 		this.markdown.clear();
-		this.actionsContainer.style.display = 'none';
-		dom.clearNode(this.actionsContainer);
 	}
 
 	public renderState(state: State) {
@@ -310,9 +296,6 @@ export class UpdateTooltip extends Disposable {
 				}
 				break;
 		}
-		this.renderActions(
-			{ label: localize('updateTooltip.checkForUpdates', "Check for Updates"), commandId: 'update.check', primary: true },
-		);
 	}
 
 	private renderCheckingForUpdates() {
@@ -322,11 +305,9 @@ export class UpdateTooltip extends Disposable {
 
 	private renderAvailableForDownload({ update }: AvailableForDownload) {
 		this.renderTitleAndInfo(localize('updateTooltip.updateAvailableTitle', "Update Available"), update);
-		this.renderMessage(localize('updateTooltip.newVersionReady', "A new version is available to download."));
-		this.renderActions(
-			{ label: localize('updateTooltip.downloadNow', "Download Update"), commandId: 'update.downloadNow', primary: true },
-			{ label: localize('updateTooltip.notNow', "Not Now"), dismiss: true },
-		);
+		if (this.hostedByTitleBar) {
+			this.renderMessage(localize('updateTooltip.clickToDownload', "Click the Update button to download."));
+		}
 	}
 
 	private renderDownloading(state: Downloading) {
@@ -358,11 +339,9 @@ export class UpdateTooltip extends Disposable {
 
 	private renderDownloaded({ update }: Downloaded) {
 		this.renderTitleAndInfo(localize('updateTooltip.updateReadyTitle', "Update is Ready to Install"), update);
-		this.renderMessage(localize('updateTooltip.readyToInstall', "The update has been downloaded and is ready to install."));
-		this.renderActions(
-			{ label: localize('updateTooltip.installNow', "Install Update"), commandId: 'update.install', primary: true },
-			{ label: localize('updateTooltip.notNow', "Not Now"), dismiss: true },
-		);
+		if (this.hostedByTitleBar) {
+			this.renderMessage(localize('updateTooltip.clickToInstall', "Click the Update button to install."));
+		}
 	}
 
 	private renderUpdating({ update, currentProgress, maxProgress }: Updating) {
@@ -381,11 +360,9 @@ export class UpdateTooltip extends Disposable {
 
 	private renderReady({ update }: Ready) {
 		this.renderTitleAndInfo(localize('updateTooltip.updateInstalledTitle', "Update Installed"), update);
-		this.renderMessage(localize('updateTooltip.restartToApply', "Restart to apply the latest update."));
-		this.renderActions(
-			{ label: localize('updateTooltip.restartNow', "Restart to Update"), commandId: 'update.restart', primary: true },
-			{ label: localize('updateTooltip.later', "Later"), dismiss: true },
-		);
+		if (this.hostedByTitleBar) {
+			this.renderMessage(localize('updateTooltip.clickToRestart', "Click the Update button to restart and apply."));
+		}
 	}
 
 	private renderOverwriting({ update }: Overwriting) {
@@ -497,26 +474,6 @@ export class UpdateTooltip extends Disposable {
 		}));
 
 		return { label, copyValue };
-	}
-
-	private renderActions(...actions: { label: string; commandId?: string; dismiss?: boolean; primary?: boolean }[]) {
-		dom.clearNode(this.actionsContainer);
-		for (const action of actions) {
-			const button = dom.append(this.actionsContainer, dom.$('button.update-action-button'));
-			if (action.primary) {
-				button.classList.add('primary');
-			}
-			button.textContent = action.label;
-			this._register(dom.addDisposableListener(button, 'click', (e) => {
-				e.preventDefault();
-				if (action.dismiss) {
-					this.hoverService.hideHover(true);
-				} else if (action.commandId) {
-					this.runCommandAndClose(action.commandId);
-				}
-			}));
-		}
-		this.actionsContainer.style.display = '';
 	}
 
 	private runCommandAndClose(command: string, ...args: unknown[]) {
