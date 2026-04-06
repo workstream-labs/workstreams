@@ -94,7 +94,7 @@ configurationRegistry.registerConfiguration({
 		'update.titleBar': {
 			type: 'string',
 			enum: ['none', 'actionable', 'detailed', 'always'],
-			default: product.quality !== 'stable' ? 'actionable' : 'none',
+			default: 'always',
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental'],
 			experiment: { mode: 'startup' },

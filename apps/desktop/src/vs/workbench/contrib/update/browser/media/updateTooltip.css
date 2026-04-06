@@ -157,3 +157,37 @@
 	font-size: 16px;
 	vertical-align: text-top;
 }
+
+/* Action buttons */
+.update-tooltip .update-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.update-tooltip .update-action-button {
+	flex: 1;
+	padding: 6px 12px;
+	border-radius: var(--vscode-cornerRadius-medium);
+	border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	font-size: var(--vscode-bodyFontSize-small);
+	font-family: inherit;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.update-tooltip .update-action-button:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.update-tooltip .update-action-button.primary {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: var(--vscode-button-background);
+}
+
+.update-tooltip .update-action-button.primary:hover {
+	background-color: var(--vscode-button-hoverBackground);
+	border-color: var(--vscode-button-hoverBackground);
+}
