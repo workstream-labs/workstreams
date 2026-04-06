@@ -96,6 +96,7 @@ export class HookNotificationServer extends Disposable implements IHookNotificat
 					const rawEventType = typeof query['eventType'] === 'string' ? query['eventType'] : '';
 
 					const eventType = mapEventType(rawEventType);
+					console.warn(`[LIFECYCLE DEBUG SERVER] raw="${rawEventType}" mapped="${eventType ?? 'IGNORED'}" path="${worktreePath}"`);
 
 					if (eventType && worktreePath) {
 						this.logService.info(`[HookNotification] ${eventType} for "${worktreePath}"`);

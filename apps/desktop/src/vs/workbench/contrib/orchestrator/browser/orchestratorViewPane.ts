@@ -277,6 +277,7 @@ export class OrchestratorViewPane extends ViewPane {
 		// Read session state from the authoritative map, not from the
 		// worktree entry which may be stale after async _repositories mutations.
 		const sessionState = this.orchestratorService.getSessionState(worktree.path);
+		console.warn(`[LIFECYCLE DEBUG] applySessionStateIcon: "${worktree.path}" state=${sessionState ?? 'undefined'} (entry.sessionState=${worktree.sessionState ?? 'undefined'})`);
 		switch (sessionState) {
 			case WorktreeSessionState.Working: {
 				el.classList.add('state-running', 'braille-spinner');

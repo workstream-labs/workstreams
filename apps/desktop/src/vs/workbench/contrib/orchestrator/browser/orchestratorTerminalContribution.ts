@@ -98,6 +98,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		 * from the main-process HTTP server and updates session state.
 		 */
 		this._register(this._hookNotificationService.onDidReceiveNotification(event => {
+			console.warn(`[LIFECYCLE DEBUG] Hook event: ${event.eventType} for "${event.worktreePath}" | current state: ${this._findWorktreeSessionState(event.worktreePath) ?? 'undefined'}`);
 			this._logService.info(`${TAG} Hook notification: ${event.eventType} for "${event.worktreePath}"`);
 
 			const worktreeName = this._resolveWorktreeName(event.worktreePath);
@@ -244,6 +245,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._terminalService.onDidDisposeInstance(instance => {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
+				console.warn(`[LIFECYCLE DEBUG] onDidDisposeInstance: terminal ${instance.instanceId} owner="${info.worktreeKey}"`);
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}" — removing from ownership`);
 				this._ownership.delete(instance.instanceId);
 
@@ -309,6 +311,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 */
 	private _listenForCommandFinished(instance: ITerminalInstance): void {
 		const handleCommandFinished = () => {
+			console.warn(`[LIFECYCLE DEBUG] onCommandFinished: terminal ${instance.instanceId}`);
 			this._orchestratorService.scheduleRefresh();
 
 			// Crash recovery: if a command finished in a terminal whose
@@ -581,6 +584,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 				}
 				const state = this._findWorktreeSessionState(worktreePath);
 				if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
+					console.warn(`[LIFECYCLE DEBUG] ESC handler: terminal ${instance.instanceId}, state=${state} → Idle`);
 					this._logService.info(`${TAG} ESC pressed in terminal ${instance.instanceId} while ${state} — transitioning to Idle`);
 					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
 					// Record ESC timestamp for debouncing stale Start events
@@ -617,6 +621,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 			scheduler = new RunOnceScheduler(() => {
 				const state = this._findWorktreeSessionState(worktreePath);
 				if (state === WorktreeSessionState.Working) {
+					console.warn(`[LIFECYCLE DEBUG] Heartbeat timeout: "${worktreePath}" state=${state} → Idle`);
 					this._logService.warn(`${TAG} Heartbeat timeout for "${worktreePath}" — resetting to Idle`);
 					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
 					const worktreeName = this._resolveWorktreeName(worktreePath);

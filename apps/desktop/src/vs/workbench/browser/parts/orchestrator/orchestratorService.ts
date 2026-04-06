@@ -518,9 +518,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
 		const current = this._sessionStates.get(worktreePath);
+		console.warn(`[LIFECYCLE DEBUG] setSessionState: "${worktreePath}" ${current ?? 'undefined'} → ${state}`, new Error().stack?.split('\n').slice(1, 4).join(' | '));
 
 		// Self-transition: already in the target state — no-op
 		if (current === state) {
+			console.warn(`[LIFECYCLE DEBUG] setSessionState: self-transition, no-op`);
 			return true;
 		}
 
