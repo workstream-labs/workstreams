@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { IRange } from '../../../../editor/common/core/range.js';
-import { ICodeEditor, IDiffEditor, IMouseTargetViewZone, MouseTargetType } from '../../../../editor/browser/editorBrowser.js';
+import { ICodeEditor, IDiffEditor } from '../../../../editor/browser/editorBrowser.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOption } from '../../../../editor/common/config/editorOptions.js';
 import { DetailedLineRangeMapping } from '../../../../editor/common/diff/rangeMapping.js';
@@ -49,9 +49,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 
 	/** Track active zone widgets by editor+line to avoid duplicates. */
 	private readonly _activeWidgets = new Map<string, WorkstreamCommentZoneWidget>();
-
-	/** Editors that already have the view zone click handler installed. */
-	private readonly _viewZoneHandlerEditors = new WeakSet<ICodeEditor>();
 
 	constructor(
 		private readonly commentService: ICommentService,
@@ -198,52 +195,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		for (const delay of RANGE_RETRY_DELAYS_MS) {
 			setTimeout(() => this._refreshCommentingRanges(), delay);
 		}
-		this._installViewZoneCommentHandler(editor);
-	}
-
-	/**
-	 * In inline diff mode, deletion lines are view zones — not real model lines —
-	 * so the standard ICommentController "+" glyph cannot appear on them.
-	 * This handler listens for gutter clicks on deletion view zones and opens
-	 * the comment widget manually, enabling commenting on "-" lines.
-	 */
-	private _installViewZoneCommentHandler(editor: ICodeEditor): void {
-		if (this._viewZoneHandlerEditors.has(editor)) {
-			return;
-		}
-		this._viewZoneHandlerEditors.add(editor);
-
-		this._register(editor.onMouseDown(e => {
-			if (e.target.type !== MouseTargetType.GUTTER_VIEW_ZONE && e.target.type !== MouseTargetType.GUTTER_GLYPH_MARGIN) {
-				return;
-			}
-
-			if (!this._isInlineDiffMode()) {
-				return;
-			}
-			const diffEditor = this._findDiffEditorForCodeEditor(editor);
-			if (!diffEditor || diffEditor.getModifiedEditor() !== editor) {
-				return;
-			}
-
-			const afterLineNumber = (e.target as IMouseTargetViewZone).detail?.afterLineNumber;
-			if (afterLineNumber === undefined) {
-				return;
-			}
-
-			const diffResult = diffEditor.getDiffComputationResult();
-			if (!diffResult) {
-				return;
-			}
-
-			const originalLine = this._mapViewZoneToOriginalLine(afterLineNumber, diffResult.changes2);
-			if (originalLine === undefined) {
-				return;
-			}
-
-			const displayLine = Math.max(1, afterLineNumber);
-			this._openWidget(editor, displayLine, 'old', this._buildLineLabel(originalLine, 'old'), originalLine);
-		}));
 	}
 
 	private _disposeAllWidgets(): void {
@@ -310,11 +261,10 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			}
 
 			const isInline = this._isInlineDiffMode();
-			const diffEditor = this._findDiffEditorForCodeEditor(editor);
 
 			// git: scheme URIs are always the original (left) side of a diff,
 			// even during races where _findDiffEditorForCodeEditor returns undefined.
-			const isOriginal = model.uri.scheme === 'git' || (diffEditor ? diffEditor.getOriginalEditor() === editor : false);
+			const isOriginal = model.uri.scheme === 'git' || this._isOriginalSideOfDiff(editor);
 
 			// In inline mode, only the modified editor is visible — skip the
 			// hidden original editor entirely to prevent invisible widgets that
@@ -330,10 +280,6 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
 			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
 
-			// In inline mode, old-side comments need their line number mapped
-			// from original coordinates to the modified editor for display.
-			const diffMappings = isInline ? diffEditor?.getDiffComputationResult()?.changes2 : undefined;
-
 			for (const comment of comments) {
 				if (editorSide !== 'both' && comment.side !== editorSide) {
 					continue;
@@ -344,17 +290,11 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 					continue;
 				}
 
-				// Map old-side line numbers to modified-editor coordinates in inline mode
-				let displayLine = comment.line;
-				if (isInline && comment.side === 'old' && diffMappings) {
-					displayLine = this._mapOldLineToModifiedEditor(comment.line, diffMappings);
-				}
-
 				const lineLabel = this._buildLineLabel(comment.line, comment.side);
 
 				const widget = new WorkstreamCommentZoneWidget(
 					editor,
-					displayLine,
+					comment.line,
 					comment,
 					this.workstreamCommentService,
 					this.orchestratorService,
@@ -562,39 +502,16 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 		return leftLine + delta;
 	}
 
-	/**
-	 * Given a view zone's afterLineNumber in the modified editor, find the
-	 * corresponding original (left) line number. Returns undefined if the
-	 * view zone doesn't correspond to a deletion mapping.
-	 */
-	private _mapViewZoneToOriginalLine(afterLineNumber: number, mappings: readonly DetailedLineRangeMapping[]): number | undefined {
-		for (const mapping of mappings) {
-			if (mapping.original.length === 0) {
-				continue; // Pure insertion — no deleted lines
-			}
-			// Deletion view zones appear after (modified.startLineNumber - 1)
-			const expectedAfterLine = mapping.modified.startLineNumber - 1;
-			// Allow a range: afterLineNumber can be expectedAfterLine or within modified range
-			if (afterLineNumber >= expectedAfterLine && afterLineNumber < mapping.modified.endLineNumberExclusive) {
-				return mapping.original.startLineNumber;
+	private _isOriginalSideOfDiff(editor: ICodeEditor): boolean {
+		if (!editor.getOption(EditorOption.inDiffEditor)) {
+			return false;
+		}
+		for (const diffEditor of this.codeEditorService.listDiffEditors()) {
+			if (diffEditor.getOriginalEditor() === editor) {
+				return true;
 			}
 		}
-		return undefined;
-	}
-
-	/**
-	 * Map an original-side line number to the nearest modified-editor line for
-	 * widget display in inline mode. The widget appears after the view zone
-	 * containing the deleted lines.
-	 */
-	private _mapOldLineToModifiedEditor(originalLine: number, mappings: readonly DetailedLineRangeMapping[]): number {
-		for (const mapping of mappings) {
-			if (originalLine >= mapping.original.startLineNumber && originalLine < mapping.original.endLineNumberExclusive) {
-				return Math.max(1, mapping.modified.startLineNumber);
-			}
-		}
-		// Fallback: map as context line
-		return this._toRightLineNumber(originalLine, mappings);
+		return false;
 	}
 
 	private _findEditor(resource: URI, editorId?: string): ICodeEditor | undefined {
