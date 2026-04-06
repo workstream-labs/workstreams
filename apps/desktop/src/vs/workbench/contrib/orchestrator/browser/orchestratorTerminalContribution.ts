@@ -58,20 +58,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
 
 	/**
-	 * Records when ESC was last pressed per worktree path. Used to suppress
-	 * stale `Start` events that arrive shortly after the user interrupts.
-	 */
-	private readonly _escTimestamps = new Map<string, number>();
-	private static readonly ESC_DEBOUNCE_MS = 500;
-
-	/**
-	 * Tracks worktrees where the user explicitly interrupted via ESC.
-	 * When a `Stop` event arrives for a worktree in this set, we show
-	 * "interrupted" instead of "completed turn".
-	 */
-	private readonly _stopIntents = new Set<string>();
-
-	/**
 	 * Heartbeat timers per worktree. If no hook event arrives within the
 	 * timeout period while a worktree is in Working state, the state is
 	 * reset to Idle as a crash-recovery fallback.
@@ -105,15 +91,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 
 			switch (event.eventType) {
 				case 'Start': {
-					// ESC debounce: suppress stale Start events that arrive
-					// shortly after the user pressed ESC.
-					const lastEsc = this._escTimestamps.get(event.worktreePath) ?? 0;
-					if (Date.now() - lastEsc < OrchestratorTerminalContribution.ESC_DEBOUNCE_MS) {
-						this._logService.info(`${TAG} Suppressing Start event within ESC debounce window for "${event.worktreePath}"`);
-						break;
-					}
-					this._escTimestamps.delete(event.worktreePath);
-					this._stopIntents.delete(event.worktreePath);
 					this._orchestratorService.setSessionState(event.worktreePath, WorktreeSessionState.Working);
 					this._resetHeartbeat(event.worktreePath);
 					break;
@@ -122,11 +99,8 @@ export class OrchestratorTerminalContribution extends Disposable {
 					this._cancelHeartbeat(event.worktreePath);
 
 					// Don't clear Permission state on Stop events — permission
-					// waits are indefinite and should only be cleared by user
-					// action (approve/deny → Start, ESC → Idle) or process
-					// termination (terminal disposal). Claude Code fires Stop
-					// at end-of-turn, which includes the turn where it asked
-					// for permission.
+					// waits are indefinite. Claude Code fires Stop at end-of-turn,
+					// which includes the turn where it asked for permission.
 					const currentState = this._findWorktreeSessionState(event.worktreePath);
 					if (currentState === WorktreeSessionState.Permission) {
 						this._logService.info(`${TAG} Ignoring Stop event while in Permission state for "${event.worktreePath}"`);
@@ -139,23 +113,12 @@ export class OrchestratorTerminalContribution extends Disposable {
 						isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review
 					);
 
-					// Only notify if the transition was actually accepted
 					if (accepted) {
-						if (this._stopIntents.has(event.worktreePath)) {
-							// User interrupted via ESC — show "interrupted"
-							this._stopIntents.delete(event.worktreePath);
-							this._notificationService.notify({
-								severity: Severity.Info,
-								message: localize('worktreeInterrupted', "{0} — interrupted", worktreeName),
-							});
-						} else {
-							// Natural completion
-							this._notificationService.notify({
-								severity: Severity.Info,
-								message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
-							});
-							this._signalService.playSignal(AccessibilitySignal.taskCompleted);
-						}
+						this._notificationService.notify({
+							severity: Severity.Info,
+							message: localize('worktreeCompleted', "{0} — completed turn", worktreeName),
+						});
+						this._signalService.playSignal(AccessibilitySignal.taskCompleted);
 					}
 					break;
 				}
@@ -215,13 +178,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
 			}
-
-			// Detect ESC keypresses to transition Working/Permission → Idle.
-			// Claude Code's Stop hook does NOT fire on user interrupts, and
-			// pressing ESC during thinking (no tool running) fires no hook at all.
-			// Mirror superset's approach: observe ESC via xterm.onKey() and
-			// locally clear the spinner state.
-			this._attachEscHandler(instance);
 		}));
 
 		/**
@@ -557,54 +513,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
-	 * Attaches an ESC key observer to a terminal instance.
-	 * When ESC is pressed while the owning worktree is in Working or Permission
-	 * state, transitions to Idle. This mirrors superset's xterm.onKey() approach
-	 * and covers the case where no Claude Code hook fires (ESC during thinking).
-	 */
-	private _attachEscHandler(instance: ITerminalInstance): void {
-		const attach = (xterm: { raw: { onKey: (listener: (e: { domEvent: KeyboardEvent }) => void) => { dispose: () => void } } }) => {
-			const disposable = xterm.raw.onKey(({ domEvent }) => {
-				if (domEvent.key !== 'Escape') {
-					return;
-				}
-				const info = this._ownership.get(instance.instanceId);
-				if (!info) {
-					return;
-				}
-				const worktreePath = this._findWorktreePath(info.worktreeKey);
-				if (!worktreePath) {
-					return;
-				}
-				const state = this._findWorktreeSessionState(worktreePath);
-				if (state === WorktreeSessionState.Working || state === WorktreeSessionState.Permission) {
-					console.warn(`[LIFECYCLE DEBUG] ESC handler: terminal ${instance.instanceId}, state=${state} → Idle`);
-					this._logService.info(`${TAG} ESC pressed in terminal ${instance.instanceId} while ${state} — transitioning to Idle`);
-					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
-					// Record ESC timestamp for debouncing stale Start events
-					this._escTimestamps.set(worktreePath, Date.now());
-					// Record stop intent so Stop handler shows "interrupted"
-					this._stopIntents.add(worktreePath);
-					// Cancel heartbeat — user explicitly stopped
-					this._cancelHeartbeat(worktreePath);
-				}
-			});
-			this._register(disposable);
-		};
-
-		if (instance.xterm) {
-			attach(instance.xterm);
-		} else {
-			// xterm not ready yet — wait for it
-			instance.xtermReadyPromise.then(xterm => {
-				if (xterm && !instance.isDisposed) {
-					attach(xterm);
-				}
-			});
-		}
-	}
-
-	/**
 	 * Resets or creates a heartbeat timer for a worktree.
 	 * If no hook event arrives within the timeout while the worktree
 	 * is in Working state, the heartbeat fires and resets to Idle.
@@ -645,8 +553,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 		const key = worktreePath.toLowerCase();
 		this._logService.trace(`${TAG} Worktree removed: "${key}"`);
 		this._cancelHeartbeat(worktreePath);
-		this._escTimestamps.delete(worktreePath);
-		this._stopIntents.delete(worktreePath);
 		for (const instance of [...this._terminalService.instances]) {
 			if (this._ownership.get(instance.instanceId)?.worktreeKey === key) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);
