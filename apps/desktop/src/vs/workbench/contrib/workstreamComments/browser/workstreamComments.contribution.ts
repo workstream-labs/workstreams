@@ -26,7 +26,7 @@ import { IGitWorktreeService } from '../../../services/orchestrator/common/gitWo
 import { basename } from '../../../../base/common/path.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry } from '../../../common/views.js';
-import { VIEWLET_ID } from '../../scm/common/scm.js';
+import { ISCMService, VIEWLET_ID } from '../../scm/common/scm.js';
 import { WorkstreamCommentsViewRegistration } from './workstreamCommentsView.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 
@@ -48,6 +48,7 @@ class WorkstreamCommentsContribution extends Disposable {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INotificationService _notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
+		@ISCMService private readonly scmService: ISCMService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
@@ -68,6 +69,7 @@ class WorkstreamCommentsContribution extends Disposable {
 			this.codeEditorService,
 			this.configurationService,
 			this.logService,
+			this.scmService,
 		);
 
 		// Update base path when active worktree changes
