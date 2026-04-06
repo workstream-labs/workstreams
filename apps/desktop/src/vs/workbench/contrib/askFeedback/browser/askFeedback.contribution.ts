@@ -10,11 +10,10 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
 import { type FeedbackType, type IFeedbackResult, submitFeedback, tryAcquireFeedback } from './feedbackService.js';
 
 function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | undefined> {
