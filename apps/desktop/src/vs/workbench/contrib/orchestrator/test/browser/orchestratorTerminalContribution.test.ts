@@ -18,17 +18,101 @@ import { IHookNotificationEvent, IHookNotificationService } from '../../../../se
 import { INotificationHandle, INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { IEditorOptions } from '../../../../../platform/editor/common/editor.js';
 import { OrchestratorTerminalContribution } from '../../browser/orchestratorTerminalContribution.js';
 
 // --- Test helpers ---
 
-function makeTerminalInstance(id: number): ITerminalInstance {
+function makeTerminalInstance(id: number, disposables?: DisposableStore): ITerminalInstance {
+	const capEmitter = disposables ? disposables.add(new Emitter<any>()) : new Emitter<any>();
 	return {
 		instanceId: id,
 		isDisposed: false,
 		target: TerminalLocation.Editor,
 		resource: URI.from({ scheme: 'vscode-terminal', path: `/terminal-${id}` }),
+		shellLaunchConfig: { env: {} },
+		capabilities: {
+			get(_cap: unknown) { return undefined; },
+			onDidAddCapability: capEmitter.event,
+		},
 	} as unknown as ITerminalInstance;
+}
+
+/** Lightweight stand-in for EditorInput — just needs a resource URI. */
+interface IMockEditor {
+	readonly resource: URI;
+}
+
+function makeFileEditor(name: string): IMockEditor {
+	return { resource: URI.from({ scheme: 'file', path: `/${name}` }) };
+}
+
+function makeTerminalEditor(instance: ITerminalInstance): IMockEditor {
+	return { resource: instance.resource };
+}
+
+/**
+ * A stateful mock editor group that tracks tab ordering and active editor.
+ * Used by the tab-order tests to verify reordering logic.
+ */
+class MockEditorGroup {
+	readonly editors: IMockEditor[] = [];
+	activeEditor: IMockEditor | null = null;
+	isLocked = false;
+	focusCalled = false;
+
+	constructor(readonly id: number) { }
+
+	get isEmpty() { return this.editors.length === 0; }
+
+	addEditor(editor: IMockEditor, index?: number): void {
+		if (index !== undefined && index < this.editors.length) {
+			this.editors.splice(index, 0, editor);
+		} else {
+			this.editors.push(editor);
+		}
+		if (!this.activeEditor) {
+			this.activeEditor = editor;
+		}
+	}
+
+	findEditors(resource: URI): IMockEditor[] {
+		return this.editors.filter(e => e.resource.toString() === resource.toString());
+	}
+
+	getIndexOfEditor(editor: IMockEditor): number {
+		return this.editors.indexOf(editor);
+	}
+
+	moveEditor(editor: IMockEditor, target: MockEditorGroup, options?: IEditorOptions): boolean {
+		if (target === this && options?.index !== undefined) {
+			const current = this.editors.indexOf(editor);
+			if (current < 0) { return false; }
+			this.editors.splice(current, 1);
+			this.editors.splice(options.index, 0, editor);
+			return true;
+		}
+		return false;
+	}
+
+	async openEditor(editor: IMockEditor, options?: IEditorOptions): Promise<undefined> {
+		const existing = this.findEditors(editor.resource);
+		if (existing.length === 0) {
+			this.addEditor(editor, options?.index);
+		}
+		if (!options?.inactive) {
+			this.activeEditor = existing[0] ?? editor;
+		}
+		return undefined;
+	}
+
+	lock(locked: boolean) { this.isLocked = locked; }
+	focus() { this.focusCalled = true; }
+
+	/** Helper: return resource paths in current tab order. */
+	tabOrder(): string[] {
+		return this.editors.map(e => e.resource.path);
+	}
 }
 
 function makeWorktree(path: string, branch?: string): IWorktreeEntry {
@@ -70,7 +154,7 @@ suite('OrchestratorTerminalContribution', () => {
 
 	/** Simulate creating a terminal (adds to instances + fires event) */
 	function createTerminal(id: number): ITerminalInstance {
-		const inst = makeTerminalInstance(id);
+		const inst = makeTerminalInstance(id, store);
 		terminalInstances.set(id, inst);
 		onDidCreateInstance.fire(inst);
 		return inst;
@@ -142,6 +226,9 @@ suite('OrchestratorTerminalContribution', () => {
 				sessionStates.set(worktreePath, state);
 				onDidChangeSessionState.fire({ worktreePath, state });
 				return true;
+			}
+			override getSessionState(worktreePath: string): WorktreeSessionState | undefined {
+				return sessionStates.get(worktreePath);
 			}
 		});
 
@@ -260,7 +347,7 @@ suite('OrchestratorTerminalContribution', () => {
 
 	test('adopts unclaimed foreground terminals when switching away', () => {
 		// Pre-existing terminal (created before any worktree activation)
-		const t1 = makeTerminalInstance(1);
+		const t1 = makeTerminalInstance(1, store);
 		terminalInstances.set(1, t1);
 
 		// Activate wt-a — t1 is foreground, unclaimed
@@ -561,5 +648,312 @@ suite('OrchestratorTerminalContribution', () => {
 		// The mock doesn't have shellLaunchConfig, so we verify the contribution
 		// doesn't crash when injecting env vars (no error thrown = pass)
 		assert.ok(true, 'env var injection did not throw');
+	});
+});
+
+suite('OrchestratorTerminalContribution — Tab Order & Focus', () => {
+	const store = new DisposableStore();
+
+	let onDidChangeActiveWorktree: Emitter<IWorktreeEntry>;
+	let onDidApplyWorktreeEditorState: Emitter<IWorktreeEntry>;
+	let onDidRemoveWorktree: Emitter<{ repoPath: string; worktreePath: string }>;
+	let onDidCreateInstance: Emitter<ITerminalInstance>;
+	let onDidDisposeInstance: Emitter<ITerminalInstance>;
+	let onDidReceiveNotification: Emitter<IHookNotificationEvent>;
+	let onDidChangeSessionState: Emitter<{ worktreePath: string; state: WorktreeSessionState }>;
+
+	let terminalInstances: Map<number, ITerminalInstance>;
+	let backgroundedInstances: Set<number>;
+	let sessionStates: Map<string, WorktreeSessionState>;
+	let activeWorktreePath: string | undefined;
+
+	let group0: MockEditorGroup;
+	let activeGroupRef: MockEditorGroup;
+
+	function createTerminal(id: number): ITerminalInstance {
+		const inst = makeTerminalInstance(id, store);
+		terminalInstances.set(id, inst);
+		onDidCreateInstance.fire(inst);
+		return inst;
+	}
+
+	function switchToWorktree(wt: IWorktreeEntry): void {
+		activeWorktreePath = wt.path;
+		onDidChangeActiveWorktree.fire(wt);
+		onDidApplyWorktreeEditorState.fire(wt);
+	}
+
+	setup(() => {
+		terminalInstances = new Map();
+		backgroundedInstances = new Set();
+		sessionStates = new Map();
+		activeWorktreePath = undefined;
+
+		group0 = new MockEditorGroup(1);
+		activeGroupRef = group0;
+
+		const instantiationService = store.add(new TestInstantiationService());
+
+		onDidChangeActiveWorktree = store.add(new Emitter<IWorktreeEntry>());
+		onDidApplyWorktreeEditorState = store.add(new Emitter<IWorktreeEntry>());
+		onDidRemoveWorktree = store.add(new Emitter<{ repoPath: string; worktreePath: string }>());
+		onDidCreateInstance = store.add(new Emitter<ITerminalInstance>());
+		onDidDisposeInstance = store.add(new Emitter<ITerminalInstance>());
+		onDidReceiveNotification = store.add(new Emitter<IHookNotificationEvent>());
+		onDidChangeSessionState = store.add(new Emitter<{ worktreePath: string; state: WorktreeSessionState }>());
+
+		instantiationService.stub(ILogService, new NullLogService());
+
+		instantiationService.stub(IOrchestratorService, new class extends mock<IOrchestratorService>() {
+			override onDidChangeActiveWorktree = onDidChangeActiveWorktree.event;
+			override onDidApplyWorktreeEditorState = onDidApplyWorktreeEditorState.event;
+			override onDidRemoveWorktree = onDidRemoveWorktree.event;
+			override onDidChangeSessionState = onDidChangeSessionState.event;
+			override repositories = [{
+				name: 'repo',
+				path: '/repo',
+				isCollapsed: false,
+				worktrees: [
+					{ name: 'wt-a', path: '/repo/wt-a', branch: 'wt-a', isActive: false },
+					{ name: 'wt-b', path: '/repo/wt-b', branch: 'wt-b', isActive: false },
+				]
+			}];
+			override get activeWorktree(): IWorktreeEntry | undefined {
+				if (!activeWorktreePath) { return undefined; }
+				return { name: 'active', path: activeWorktreePath, branch: 'main', isActive: true };
+			}
+			override setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
+				const current = sessionStates.get(worktreePath);
+				if (current === state) { return true; }
+				sessionStates.set(worktreePath, state);
+				onDidChangeSessionState.fire({ worktreePath, state });
+				return true;
+			}
+			override getSessionState(worktreePath: string): WorktreeSessionState | undefined {
+				return sessionStates.get(worktreePath);
+			}
+		});
+
+		instantiationService.stub(IHookNotificationService, new class extends mock<IHookNotificationService>() {
+			override onDidReceiveNotification = onDidReceiveNotification.event;
+			override get port() { return 51742; }
+		});
+
+		instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
+			override notify(notification: { severity: Severity; message: string }): INotificationHandle {
+				return {
+					close() { }, updateMessage() { }, updateSeverity() { }, updateActions() { },
+					progress: { infinite() { }, total() { }, worked() { }, done() { } },
+					onDidClose: store.add(new Emitter<void>()).event,
+					onDidChangeVisibility: store.add(new Emitter<boolean>()).event,
+				} as INotificationHandle;
+			}
+		});
+
+		instantiationService.stub(IAccessibilitySignalService, new class extends mock<IAccessibilitySignalService>() {
+			override async playSignal(_signal: AccessibilitySignal): Promise<void> { }
+		});
+
+		instantiationService.stub(ITerminalService, new class extends mock<ITerminalService>() {
+			override onDidCreateInstance = onDidCreateInstance.event;
+			override onDidDisposeInstance = onDidDisposeInstance.event;
+			override onDidChangeInstances = store.add(new Emitter<void>()).event;
+			override get instances(): readonly ITerminalInstance[] {
+				return [...terminalInstances.values()];
+			}
+			override get foregroundInstances(): readonly ITerminalInstance[] {
+				return [...terminalInstances.values()].filter(i => !backgroundedInstances.has(i.instanceId));
+			}
+			override getInstanceFromId(id: number): ITerminalInstance | undefined {
+				return terminalInstances.get(id);
+			}
+			override moveToBackground(instance: ITerminalInstance): void {
+				backgroundedInstances.add(instance.instanceId);
+				// Remove terminal editor from the group (mirrors real behavior)
+				const editors = group0.findEditors(instance.resource);
+				for (const editor of editors) {
+					const idx = group0.editors.indexOf(editor);
+					if (idx >= 0) { group0.editors.splice(idx, 1); }
+				}
+			}
+			override async showBackgroundTerminal(instance: ITerminalInstance): Promise<void> {
+				backgroundedInstances.delete(instance.instanceId);
+			}
+			override setActiveInstance(_instance: ITerminalInstance): void { }
+			override async safeDisposeTerminal(instance: ITerminalInstance): Promise<void> {
+				terminalInstances.delete(instance.instanceId);
+				backgroundedInstances.delete(instance.instanceId);
+			}
+		});
+
+		instantiationService.stub(ITerminalEditorService, new class extends mock<ITerminalEditorService>() {
+			override async openEditor(instance: ITerminalInstance, options?: { viewColumn?: number }): Promise<void> {
+				// Simulate: add terminal editor tab to the target group (appended)
+				const targetGroup = group0; // simplified: single group
+				const existing = targetGroup.findEditors(instance.resource);
+				if (existing.length === 0) {
+					const termEditor = makeTerminalEditor(instance);
+					targetGroup.addEditor(termEditor);
+					// openEditor makes the terminal active (steals focus)
+					targetGroup.activeEditor = termEditor;
+				}
+			}
+		});
+
+		instantiationService.stub(IEditorGroupsService, new class extends mock<IEditorGroupsService>() {
+			override get activeGroup(): any { return activeGroupRef; }
+			override get count(): number { return 1; }
+			override getGroups(_order?: GroupsOrder): any[] { return [group0]; }
+			override activateGroup(group: any): any {
+				activeGroupRef = typeof group === 'number' ? group0 : group;
+				return activeGroupRef;
+			}
+			override removeGroup(_group: any): void { }
+		});
+
+		store.add(instantiationService.createInstance(OrchestratorTerminalContribution));
+	});
+
+	teardown(() => {
+		store.clear();
+	});
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	// --- Tab ordering ---
+
+	test('phase 2 restores original interleaved tab order [E1, T1, T2, E2]', async () => {
+		// Setup: activate wt-a, add interleaved tabs
+		onDidChangeActiveWorktree.fire(makeWorktree('/repo/wt-a'));
+		const e1 = makeFileEditor('e1.ts');
+		const t1 = createTerminal(1);
+		const t2 = createTerminal(2);
+		const e2 = makeFileEditor('e2.ts');
+
+		// Populate group with interleaved order: E1, T1, T2, E2
+		group0.addEditor(e1);
+		group0.addEditor(makeTerminalEditor(t1));
+		group0.addEditor(makeTerminalEditor(t2));
+		group0.addEditor(e2);
+		group0.activeEditor = e2;
+
+		assert.deepStrictEqual(group0.tabOrder(), ['/e1.ts', '/terminal-1', '/terminal-2', '/e2.ts']);
+
+		// Switch to wt-b (Phase 1 backgrounds T1, T2; Phase 2 is no-op for wt-b)
+		switchToWorktree(makeWorktree('/repo/wt-b'));
+
+		// After Phase 1: terminals removed → [E1, E2]
+		assert.deepStrictEqual(group0.tabOrder(), ['/e1.ts', '/e2.ts']);
+
+		// Switch back to wt-a (Phase 1 for wt-b, Phase 2 shows wt-a terminals)
+		switchToWorktree(makeWorktree('/repo/wt-a'));
+
+		// Allow async phase 2 to complete
+		await new Promise(r => setTimeout(r, 0));
+
+		// Tab order should be restored to original: [E1, T1, T2, E2]
+		assert.deepStrictEqual(
+			group0.tabOrder(),
+			['/e1.ts', '/terminal-1', '/terminal-2', '/e2.ts'],
+			'terminals should be reinserted at their original positions'
+		);
+	});
+
+	test('phase 2 restores tab order when terminals were at the start', async () => {
+		onDidChangeActiveWorktree.fire(makeWorktree('/repo/wt-a'));
+		const t1 = createTerminal(1);
+		const t2 = createTerminal(2);
+		const e1 = makeFileEditor('e1.ts');
+
+		// Tab order: T1, T2, E1
+		group0.addEditor(makeTerminalEditor(t1));
+		group0.addEditor(makeTerminalEditor(t2));
+		group0.addEditor(e1);
+
+		switchToWorktree(makeWorktree('/repo/wt-b'));
+		switchToWorktree(makeWorktree('/repo/wt-a'));
+		await new Promise(r => setTimeout(r, 0));
+
+		assert.deepStrictEqual(
+			group0.tabOrder(),
+			['/terminal-1', '/terminal-2', '/e1.ts'],
+			'terminals at start should be restored to start'
+		);
+	});
+
+	test('phase 2 restores tab order when terminal was at the end (no-op)', async () => {
+		onDidChangeActiveWorktree.fire(makeWorktree('/repo/wt-a'));
+		const e1 = makeFileEditor('e1.ts');
+		const e2 = makeFileEditor('e2.ts');
+		const t1 = createTerminal(1);
+
+		// Tab order: E1, E2, T1
+		group0.addEditor(e1);
+		group0.addEditor(e2);
+		group0.addEditor(makeTerminalEditor(t1));
+
+		switchToWorktree(makeWorktree('/repo/wt-b'));
+		switchToWorktree(makeWorktree('/repo/wt-a'));
+		await new Promise(r => setTimeout(r, 0));
+
+		assert.deepStrictEqual(
+			group0.tabOrder(),
+			['/e1.ts', '/e2.ts', '/terminal-1'],
+			'terminal at end should remain at end'
+		);
+	});
+
+	// --- Focus restoration ---
+
+	test('phase 2 restores active editor when file editor had focus', async () => {
+		onDidChangeActiveWorktree.fire(makeWorktree('/repo/wt-a'));
+		const e1 = makeFileEditor('e1.ts');
+		const t1 = createTerminal(1);
+		const e2 = makeFileEditor('e2.ts');
+
+		group0.addEditor(e1);
+		group0.addEditor(makeTerminalEditor(t1));
+		group0.addEditor(e2);
+		group0.activeEditor = e2; // E2 has focus
+
+		switchToWorktree(makeWorktree('/repo/wt-b'));
+
+		// After Phase 1, E2 should still be active (terminals removed)
+		assert.strictEqual(group0.activeEditor?.resource.path, '/e2.ts');
+
+		switchToWorktree(makeWorktree('/repo/wt-a'));
+		await new Promise(r => setTimeout(r, 0));
+
+		// Without fix: T1 becomes active (last terminal opened)
+		// With fix: E2 should be restored as active
+		assert.strictEqual(
+			group0.activeEditor?.resource.path,
+			'/e2.ts',
+			'active editor should be restored to E2, not the last terminal'
+		);
+	});
+
+	test('phase 2 restores active editor when terminal had focus', async () => {
+		onDidChangeActiveWorktree.fire(makeWorktree('/repo/wt-a'));
+		const e1 = makeFileEditor('e1.ts');
+		const t1 = createTerminal(1);
+		const e2 = makeFileEditor('e2.ts');
+
+		const t1Editor = makeTerminalEditor(t1);
+		group0.addEditor(e1);
+		group0.addEditor(t1Editor);
+		group0.addEditor(e2);
+		group0.activeEditor = t1Editor; // T1 has focus
+
+		switchToWorktree(makeWorktree('/repo/wt-b'));
+		switchToWorktree(makeWorktree('/repo/wt-a'));
+		await new Promise(r => setTimeout(r, 0));
+
+		// T1 should be restored as active editor
+		assert.strictEqual(
+			group0.activeEditor?.resource.path,
+			'/terminal-1',
+			'active terminal should be restored'
+		);
 	});
 });
