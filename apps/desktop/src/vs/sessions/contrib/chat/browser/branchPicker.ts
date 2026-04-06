@@ -198,7 +198,7 @@ export class BranchPicker extends Disposable {
 		dom.clearNode(this._triggerElement);
 		const isDisabled = this._branches.length === 0;
 		const label = this._selectedBranch ?? localize('branchPicker.select', "Branch");
-		dom.append(this._triggerElement, dom.$('span.icon-git-branch-png'));
+		dom.append(this._triggerElement, renderIcon(Codicon.gitBranch));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
 		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));

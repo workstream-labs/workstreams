@@ -410,7 +410,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		function updateBranchButton(): void {
 			branchBtn.textContent = '';
 			const icon = document.createElement('span');
-			icon.className = 'codicon codicon-git-branch';
+			icon.className = 'icon-git-branch-png';
 			branchBtn.appendChild(icon);
 			const label = document.createElement('span');
 			label.textContent = selectedBranch;
