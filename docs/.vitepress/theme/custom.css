@@ -1,19 +1,16 @@
 /* ===================================================
-   Home page: hide VitePress chrome, full-width layout
+   Home / Download page: hide VitePress chrome
    =================================================== */
 
-/* Hide VitePress nav and sidebar on home page */
 .is-home .VPNav,
 .is-home .VPSidebar {
   display: none !important;
 }
 
-/* Reset sidebar width variable so nothing shifts */
 .is-home {
   --vp-sidebar-width: 0px !important;
 }
 
-/* Remove all VitePress layout constraints on home page */
 .is-home .VPDoc,
 .is-home .VPDoc .container,
 .is-home .VPDoc .content,
@@ -42,30 +39,81 @@
   margin: 0 !important;
 }
 
-/* Kill any VitePress main element padding */
 .is-home main {
   padding: 0 !important;
   margin: 0 !important;
 }
 
 /* ===================================================
-   Doc pages: style VitePress nav
+   Doc pages: polished VitePress nav & chrome
    =================================================== */
+
+/* Nav bar background */
 .VPNav {
-  background: rgba(10, 10, 10, 0.85) !important;
+  background: rgba(10, 10, 10, 0.92) !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
+/* Remove default divider */
+.VPNavBar .divider,
 .VPNavBar .divider-line {
   display: none !important;
 }
 
+/* Title */
 .VPNavBar .VPNavBarTitle .title {
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+
+/* Nav menu links */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+}
+
+/* Sidebar styling */
+.VPSidebar {
+  background: rgba(10, 10, 10, 0.95) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+}
+
+.VPSidebar .VPSidebarItem .text {
+  font-size: 0.88rem !important;
+}
+
+/* Search bar */
+.DocSearch-Button {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+}
+
+/* Doc content area */
+.vp-doc {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  letter-spacing: -0.02em;
 }
 
 .vp-doc div[class*="language-"] code {
+  font-family: "Lilex", "Fira Code", monospace !important;
   font-size: 0.875rem;
+}
+
+/* Outline / "On this page" */
+.VPDocAside .VPDocAsideOutline {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
 }
