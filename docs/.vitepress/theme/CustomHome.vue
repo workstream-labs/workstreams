@@ -6,6 +6,22 @@ import AppleIcon from "./icons/AppleIcon.vue";
 import DownloadIcon from "./icons/DownloadIcon.vue";
 import ArrowRightIcon from "./icons/ArrowRightIcon.vue";
 
+// --- Download dropdown ---
+const showDropdown = ref<string | null>(null);
+
+function toggleDropdown(id: string) {
+  showDropdown.value = showDropdown.value === id ? null : id;
+}
+
+function closeDropdowns() {
+  showDropdown.value = null;
+}
+
+function pickArch(arch: string) {
+  showDropdown.value = null;
+  window.location.href = `/download?arch=${arch}`;
+}
+
 // --- FAQ ---
 const faqOpen = ref<number | null>(null);
 function toggleFaq(i: number) {
@@ -82,6 +98,7 @@ let observer: IntersectionObserver | null = null;
 
 onMounted(async () => {
   fetchDownloadCount();
+  document.addEventListener("click", closeDropdowns);
   await nextTick();
   observer = new IntersectionObserver(
     (entries) => {
@@ -94,7 +111,10 @@ onMounted(async () => {
   document.querySelectorAll(".sr").forEach((el) => observer!.observe(el));
 });
 
-onUnmounted(() => observer?.disconnect());
+onUnmounted(() => {
+  observer?.disconnect();
+  document.removeEventListener("click", closeDropdowns);
+});
 </script>
 
 <template>
@@ -118,10 +138,20 @@ onUnmounted(() => observer?.disconnect());
           <a href="https://github.com/workstream-labs/workstreams" class="nav-gh" target="_blank">
             <GitHubIcon /> GitHub
           </a>
-          <a href="/download" class="nav-download">
-            Download for macOS
-            <DownloadIcon />
-          </a>
+          <div class="dl-dropdown" @click.stop>
+            <button class="nav-download" @click="toggleDropdown('nav')">
+              Download for macOS
+              <DownloadIcon />
+            </button>
+            <div v-if="showDropdown === 'nav'" class="dl-menu">
+              <button class="dl-option" @click="pickArch('arm64')">
+                <AppleIcon /> Apple Silicon
+              </button>
+              <button class="dl-option" @click="pickArch('x64')">
+                <AppleIcon /> Intel
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </nav>
@@ -146,9 +176,19 @@ onUnmounted(() => observer?.disconnect());
         -->
 
         <div class="hero-actions anim" style="--d: 3">
-          <a href="/download" class="btn btn-primary">
-            <AppleIcon /> Download for macOS
-          </a>
+          <div class="dl-dropdown" @click.stop>
+            <button class="btn btn-primary" @click="toggleDropdown('hero')">
+              <AppleIcon /> Download for macOS
+            </button>
+            <div v-if="showDropdown === 'hero'" class="dl-menu dl-menu-center">
+              <button class="dl-option" @click="pickArch('arm64')">
+                <AppleIcon /> Apple Silicon
+              </button>
+              <button class="dl-option" @click="pickArch('x64')">
+                <AppleIcon /> Intel
+              </button>
+            </div>
+          </div>
           <a href="https://github.com/workstream-labs/workstreams" class="btn btn-ghost" target="_blank">
             <GitHubIcon /> View on GitHub
           </a>
@@ -297,10 +337,20 @@ onUnmounted(() => observer?.disconnect());
         <div class="cta-inner sr">
           <h2 class="cta-title">Get Workstreams Today</h2>
           <div class="cta-actions">
-            <a href="/download" class="btn btn-primary btn-lg">
-              Download for macOS
-              <DownloadIcon />
-            </a>
+            <div class="dl-dropdown" @click.stop>
+              <button class="btn btn-primary btn-lg" @click="toggleDropdown('cta')">
+                Download for macOS
+                <DownloadIcon />
+              </button>
+              <div v-if="showDropdown === 'cta'" class="dl-menu dl-menu-center">
+                <button class="dl-option" @click="pickArch('arm64')">
+                  <AppleIcon /> Apple Silicon <span class="dl-chip">M1&ndash;M4</span>
+                </button>
+                <button class="dl-option" @click="pickArch('x64')">
+                  <AppleIcon /> Intel <span class="dl-chip">x86_64</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -390,17 +440,34 @@ section, footer { position: relative; z-index: 1; }
 }
 .sr.visible { opacity: 1; transform: translateY(0); }
 
-/* Showcase slide-in from left */
+/* Showcase: no transform on the wrapper itself */
 .showcase.sr {
-  opacity: 0; transform: translateX(-60px);
+  opacity: 0;
+  transform: none;
 }
-.showcase.sr.visible { opacity: 1; transform: translateX(0); }
+.showcase.sr.visible { opacity: 1; }
 
-/* Showcase reverse slide-in from right */
-.showcase-reverse.sr {
-  opacity: 0; transform: translateX(60px);
+/* Text slides from left, image slides from right */
+.showcase .showcase-text {
+  opacity: 0; transform: translateX(-50px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.showcase-reverse.sr.visible { opacity: 1; transform: translateX(0); }
+.showcase .showcase-img {
+  opacity: 0; transform: translateX(50px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.1s, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.1s;
+}
+.showcase.visible .showcase-text,
+.showcase.visible .showcase-img {
+  opacity: 1; transform: translateX(0);
+}
+
+/* Reversed: text from right, image from left */
+.showcase-reverse .showcase-text {
+  transform: translateX(50px);
+}
+.showcase-reverse .showcase-img {
+  transform: translateX(-50px);
+}
 
 /* ===== NAV ===== */
 .nav {
@@ -519,7 +586,7 @@ section, footer { position: relative; z-index: 1; }
 /* ===== BUTTONS ===== */
 .hero-actions {
   display: flex; align-items: center; justify-content: center;
-  gap: 12px; margin-bottom: 64px; flex-wrap: wrap;
+  gap: 12px; margin-bottom: 100px; flex-wrap: wrap;
 }
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -741,6 +808,65 @@ section, footer { position: relative; z-index: 1; }
 .cta-actions { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
 
 .btn-lg { padding: 14px 32px; font-size: 1rem; }
+
+/* ===== DOWNLOAD DROPDOWN ===== */
+.dl-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.dl-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border-h);
+  background: var(--bg2);
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  animation: dropIn 0.15s ease;
+}
+
+.dl-menu-center {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dl-menu-center {
+  animation: dropInCenter 0.15s ease;
+}
+@keyframes dropInCenter {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.dl-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--t2);
+  font-family: var(--font-b);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dl-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--t1);
+}
 
 /* ===== FOOTER ===== */
 .ws-footer {

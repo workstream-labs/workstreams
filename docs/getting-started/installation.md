@@ -10,6 +10,28 @@ Download the latest release from GitHub:
 - macOS DMGs are published for Apple Silicon (`arm64`) and Intel (`x64`)
 - The app includes an in-app updater, so future releases can be installed from inside Workstreams
 
+### Installation steps
+
+1. **Open the .dmg file** — Find the downloaded `Workstreams-darwin-arm64.dmg` (or `x64`) in your Downloads folder and double-click to open.
+
+2. **Drag to Applications** — Drag the Workstreams icon into the Applications folder.
+
+3. **Remove quarantine flag** — Since the app isn't signed with an Apple certificate yet, macOS will block it. Run this command to allow it:
+
+   ```bash
+   xattr -cr /Applications/Workstreams.app
+   ```
+
+   <details>
+   <summary>Why is this needed?</summary>
+
+   When you download a DMG from the internet, macOS tags every file with a hidden `com.apple.quarantine` flag. Gatekeeper then checks if the app has an Apple Developer certificate. Since this build isn't signed or notarised, macOS shows a misleading "app is damaged" error — the app is fine, it just doesn't have a $99/year Apple signature.
+
+   `xattr -cr` strips the quarantine flag so Gatekeeper has nothing to complain about.
+   </details>
+
+4. **Launch Workstreams** — Open the app from Applications. You're all set!
+
 ## What you need
 
 - macOS

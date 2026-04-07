@@ -12,6 +12,17 @@ Workstreams is available as a macOS desktop app.
 
 **[Download the latest release](https://github.com/workstream-labs/workstreams/releases/latest)** — DMG installers for Apple Silicon (arm64) and Intel (x64).
 
+### Installation
+
+1. **Open the .dmg file** — Double-click the downloaded DMG.
+2. **Drag to Applications** — Drag the Workstreams icon into the Applications folder.
+3. **Remove quarantine flag** — The app isn't signed with an Apple certificate yet, so macOS will block it. Run:
+   ```bash
+   xattr -cr /Applications/Workstreams.app
+   ```
+   This strips the macOS quarantine flag that causes the misleading "app is damaged" error.
+4. **Launch Workstreams** — Open from Applications.
+
 Auto-update is built in. Once installed, the app updates itself on new releases.
 
 ## Features

@@ -7,13 +7,11 @@ import CheckCircleIcon from "./icons/CheckCircleIcon.vue";
 
 const REPO = "workstream-labs/workstreams";
 const FALLBACK_TAG = "v0.2.8";
-
 const API_BASE = "https://workstream-api.azurewebsites.net";
 
 const latestTag = ref(FALLBACK_TAG);
-const downloadCount = ref<number | null>(null);
-const selectedArch = ref<"arm64" | "x64" | null>(null);
-const downloading = ref(false);
+const selectedArch = ref<"arm64" | "x64">("arm64");
+const downloadStarted = ref(false);
 
 function dmgUrl(arch: string) {
   return `https://github.com/${REPO}/releases/download/${latestTag.value}/Workstreams-darwin-${arch}.dmg`;
@@ -25,32 +23,8 @@ async function fetchLatestTag() {
     if (!res.ok) return;
     const data = await res.json();
     latestTag.value = data.tag_name || FALLBACK_TAG;
-
-    // Sum download counts from DMG assets
-    const dmgAssets = (data.assets || []).filter((a: any) =>
-      a.name.endsWith(".dmg")
-    );
-    const ghCount = dmgAssets.reduce(
-      (sum: number, a: any) => sum + (a.download_count || 0),
-      0
-    );
-    downloadCount.value = ghCount;
   } catch {
     // silent
-  }
-}
-
-async function fetchDownloadCount() {
-  if (!API_BASE) return;
-  try {
-    const res = await fetch(`${API_BASE}/api/download-count`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.total != null) {
-      downloadCount.value = (downloadCount.value || 0) + data.total;
-    }
-  } catch {
-    // silent — GitHub count is the fallback
   }
 }
 
@@ -71,19 +45,21 @@ async function trackDownload(arch: string) {
   }
 }
 
-async function startDownload(arch: "arm64" | "x64") {
-  selectedArch.value = arch;
-  downloading.value = true;
+onMounted(async () => {
+  await fetchLatestTag();
 
-  // Track in background, don't block download
-  trackDownload(arch);
-
-  // Start download
-  window.location.href = dmgUrl(arch);
-}
-
-onMounted(() => {
-  fetchLatestTag().then(fetchDownloadCount);
+  // Read arch from query param
+  const params = new URLSearchParams(window.location.search);
+  const arch = params.get("arch");
+  if (arch === "arm64" || arch === "x64") {
+    selectedArch.value = arch;
+    downloadStarted.value = true;
+    trackDownload(arch);
+    // Start download after a brief delay so the page renders first
+    setTimeout(() => {
+      window.location.href = dmgUrl(arch);
+    }, 500);
+  }
 });
 </script>
 
@@ -94,7 +70,7 @@ onMounted(() => {
       <div class="dl-fade"></div>
     </div>
 
-    <!-- Nav (same as landing page) -->
+    <!-- Nav -->
     <nav class="dl-nav">
       <div class="dl-nav-inner">
         <a href="/" class="dl-nav-logo">Workstream</a>
@@ -116,48 +92,28 @@ onMounted(() => {
     </nav>
 
     <div class="dl-content">
-      <!-- Before download: arch picker -->
-      <template v-if="!downloading">
+      <!-- If no arch param, show picker as fallback -->
+      <template v-if="!downloadStarted">
         <h1 class="dl-title">Download Workstream</h1>
-        <p class="dl-sub">
-          Choose your Mac architecture to start the download.
-        </p>
-
-        <!-- Download count hidden for now — uncomment when numbers are meaningful
-        <div v-if="downloadCount != null" class="dl-count">
-          {{ downloadCount.toLocaleString() }} downloads
-        </div>
-        -->
-
+        <p class="dl-sub">Choose your Mac architecture to start the download.</p>
         <div class="dl-cards">
-          <button class="dl-card" @click="startDownload('arm64')">
-            <div class="dl-card-icon">
-              <AppleIcon :size="32" />
-            </div>
+          <a :href="`/download?arch=arm64`" class="dl-card">
+            <div class="dl-card-icon"><AppleIcon :size="32" /></div>
             <h3>Apple Silicon</h3>
             <p>M1, M2, M3, M4</p>
-          </button>
-
-          <button class="dl-card" @click="startDownload('x64')">
-            <div class="dl-card-icon">
-              <AppleIcon :size="32" />
-            </div>
+          </a>
+          <a :href="`/download?arch=x64`" class="dl-card">
+            <div class="dl-card-icon"><AppleIcon :size="32" /></div>
             <h3>Intel</h3>
             <p>x86_64</p>
-          </button>
+          </a>
         </div>
-
-        <p class="dl-version">
-          {{ latestTag }} &middot; macOS 12+
-        </p>
+        <p class="dl-version">{{ latestTag }} &middot; macOS 12+</p>
       </template>
 
-      <!-- After download: instructions -->
+      <!-- Download started: show instructions -->
       <template v-else>
         <div class="dl-started">
-          <div class="dl-check">
-            <CheckCircleIcon />
-          </div>
           <h1 class="dl-title">Your download has started</h1>
           <p class="dl-sub">
             Workstreams for
@@ -174,20 +130,44 @@ onMounted(() => {
               <p>Find <code>Workstreams-darwin-{{ selectedArch }}.dmg</code> in your Downloads folder and double-click to open.</p>
             </div>
           </div>
-
           <div class="dl-step">
             <span class="dl-step-num">2</span>
             <div>
               <h4>Drag to Applications</h4>
-              <p>Drag the Workstreams icon into your Applications folder.</p>
+              <p>Drag the Workstreams icon into the Applications folder.</p>
+              <img src="/dmg-install.png" alt="Drag Workstreams to Applications" class="dl-step-img" />
             </div>
           </div>
-
           <div class="dl-step">
             <span class="dl-step-num">3</span>
             <div>
+              <h4>Remove quarantine flag</h4>
+              <p>Since the app isn't signed with an Apple certificate yet, macOS will block it. Run this command to allow it:</p>
+              <div class="dl-cmd">
+                <code>xattr -cr /Applications/Workstreams.app</code>
+              </div>
+              <details class="dl-details">
+                <summary>Why is this needed?</summary>
+                <p>
+                  When you download a DMG from the internet, macOS tags every file
+                  with a hidden <code>com.apple.quarantine</code> flag. Gatekeeper
+                  then checks if the app has an Apple Developer certificate. Since
+                  this build isn't signed or notarised, macOS shows a misleading
+                  "app is damaged" error&thinsp;&mdash;&thinsp;the app is fine, it
+                  just doesn't have a $99/year Apple signature.
+                </p>
+                <p>
+                  <code>xattr -cr</code> strips the quarantine flag so Gatekeeper
+                  has nothing to complain about.
+                </p>
+              </details>
+            </div>
+          </div>
+          <div class="dl-step">
+            <span class="dl-step-num">4</span>
+            <div>
               <h4>Launch Workstreams</h4>
-              <p>Open the app from Applications. If macOS shows a security prompt, go to <strong>System Settings &rarr; Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p>
+              <p>Open the app from Applications. You're all set!</p>
             </div>
           </div>
         </div>
@@ -195,7 +175,7 @@ onMounted(() => {
         <div class="dl-retry">
           <p>
             Download didn't start?
-            <a :href="dmgUrl(selectedArch!)" class="dl-retry-link">Try again</a>
+            <a :href="dmgUrl(selectedArch)" class="dl-retry-link">Try again</a>
           </p>
         </div>
       </template>
@@ -230,7 +210,6 @@ onMounted(() => {
   -webkit-font-smoothing: antialiased;
 }
 
-/* BG */
 .dl-bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
 .dl-grid {
   position: absolute; inset: 0;
@@ -242,7 +221,6 @@ onMounted(() => {
   background: radial-gradient(ellipse 80% 60% at 50% 40%, transparent 30%, var(--bg) 70%);
 }
 
-/* Nav */
 .dl-nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   padding: 0 32px;
@@ -266,12 +244,10 @@ onMounted(() => {
 .dl-nav-link:hover { color: var(--t1); }
 .dl-nav-discord {
   display: inline-flex; align-items: center; gap: 6px;
-  color: var(--t2); text-decoration: none;
-  font-size: 0.88rem; font-weight: 500;
+  color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;
   transition: color 0.15s;
 }
 .dl-nav-discord:hover { color: #5865F2; }
-
 .dl-nav-gh {
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;
@@ -279,7 +255,6 @@ onMounted(() => {
 }
 .dl-nav-gh:hover { color: var(--t1); }
 
-/* Content */
 .dl-content {
   position: relative; z-index: 1;
   max-width: 640px; margin: 0 auto;
@@ -297,15 +272,6 @@ onMounted(() => {
 }
 .dl-sub strong { color: var(--t1); font-weight: 600; }
 
-.dl-count {
-  display: inline-block;
-  padding: 5px 14px; border-radius: 100px;
-  border: 1px solid var(--border); background: rgba(255,255,255,0.03);
-  font-family: var(--font-m); font-size: 0.78rem; color: var(--t2);
-  margin-bottom: 36px;
-}
-
-/* Arch cards */
 .dl-cards {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 16px; margin-bottom: 24px;
@@ -318,8 +284,8 @@ onMounted(() => {
   background: var(--bg2);
   cursor: pointer;
   text-align: center;
+  text-decoration: none;
   transition: all 0.25s ease;
-  font-family: var(--font-b);
   color: var(--t1);
 }
 .dl-card:hover {
@@ -329,27 +295,17 @@ onMounted(() => {
   box-shadow: 0 8px 32px -8px rgba(0,0,0,0.4), 0 0 0 1px rgba(52,211,153,0.1);
 }
 
-.dl-card-icon {
-  margin-bottom: 16px; color: var(--t2);
-}
+.dl-card-icon { margin-bottom: 16px; color: var(--t2); }
 .dl-card:hover .dl-card-icon { color: var(--t1); }
-
 .dl-card h3 {
   font-family: var(--font-d); font-size: 1.2rem; font-weight: 700;
   margin: 0 0 6px;
 }
-.dl-card p {
-  font-size: 0.85rem; color: var(--t2); margin: 0;
-  font-family: var(--font-m);
-}
+.dl-card p { font-size: 0.85rem; color: var(--t2); margin: 0; font-family: var(--font-m); }
 
-.dl-version {
-  font-family: var(--font-m); font-size: 0.78rem; color: var(--t3); margin: 0;
-}
+.dl-version { font-family: var(--font-m); font-size: 0.78rem; color: var(--t3); margin: 0; }
 
-/* Post-download */
 .dl-started { margin-bottom: 48px; }
-
 .dl-check {
   color: var(--accent); margin-bottom: 24px;
   animation: checkPop 0.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -361,20 +317,18 @@ onMounted(() => {
 
 .dl-steps {
   text-align: left;
-  display: flex; flex-direction: column; gap: 0;
+  display: flex; flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
   margin-bottom: 32px;
 }
-
 .dl-step {
   display: flex; align-items: flex-start; gap: 16px;
   padding: 24px;
   border-bottom: 1px solid var(--border);
 }
 .dl-step:last-child { border-bottom: none; }
-
 .dl-step-num {
   flex-shrink: 0;
   width: 32px; height: 32px;
@@ -384,27 +338,66 @@ onMounted(() => {
   color: var(--accent);
   font-family: var(--font-m); font-size: 0.82rem; font-weight: 600;
 }
-
 .dl-step h4 {
   font-family: var(--font-d); font-size: 1rem; font-weight: 600;
   margin: 0 0 6px; color: var(--t1);
 }
-.dl-step p {
-  font-size: 0.9rem; line-height: 1.6; color: var(--t2); margin: 0;
-}
+.dl-step p { font-size: 0.9rem; line-height: 1.6; color: var(--t2); margin: 0; }
 .dl-step code {
   font-family: var(--font-m); font-size: 0.82rem;
   padding: 2px 6px; border-radius: 4px;
   background: rgba(255,255,255,0.06); color: var(--t1);
 }
 
-.dl-retry {
-  font-size: 0.88rem; color: var(--t3);
+.dl-step-img {
+  margin-top: 16px;
+  border-radius: var(--r);
+  overflow: hidden;
+  max-width: 100%;
+  border: 1px solid var(--border);
 }
-.dl-retry-link {
-  color: var(--accent); text-decoration: underline;
-  text-underline-offset: 2px;
+
+.dl-cmd {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  font-family: var(--font-m);
+  font-size: 0.85rem;
+  color: var(--t1);
+  user-select: all;
 }
+
+.dl-details {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  color: var(--t3);
+}
+.dl-details summary {
+  cursor: pointer;
+  color: var(--t2);
+  font-weight: 500;
+  transition: color 0.15s;
+}
+.dl-details summary:hover { color: var(--t1); }
+.dl-details p {
+  margin: 10px 0 0;
+  line-height: 1.6;
+  color: var(--t2);
+  padding: 0;
+}
+.dl-details code {
+  font-family: var(--font-m);
+  font-size: 0.8rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--t1);
+}
+
+.dl-retry { font-size: 0.88rem; color: var(--t3); }
+.dl-retry-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 500px) {
   .dl-cards { grid-template-columns: 1fr; }
