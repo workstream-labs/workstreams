@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import DiscordIcon from "./icons/DiscordIcon.vue";
+import GitHubIcon from "./icons/GitHubIcon.vue";
+import AppleIcon from "./icons/AppleIcon.vue";
+import CheckCircleIcon from "./icons/CheckCircleIcon.vue";
 
 const REPO = "workstream-labs/workstreams";
 const FALLBACK_TAG = "v0.2.8";
@@ -97,14 +101,15 @@ onMounted(() => {
         <div class="dl-nav-right">
           <a href="/getting-started/installation" class="dl-nav-link">Docs</a>
           <a href="/guide/concepts" class="dl-nav-link">Guide</a>
-          <a href="/reference/cli" class="dl-nav-link">Reference</a>
+          <a href="https://discord.gg/xG4hn8WFR" class="dl-nav-discord" target="_blank" title="Discord">
+            <DiscordIcon /> Discord
+          </a>
           <a
             :href="`https://github.com/${REPO}`"
             class="dl-nav-gh"
             target="_blank"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-            GitHub
+            <GitHubIcon /> GitHub
           </a>
         </div>
       </div>
@@ -127,7 +132,7 @@ onMounted(() => {
         <div class="dl-cards">
           <button class="dl-card" @click="startDownload('arm64')">
             <div class="dl-card-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              <AppleIcon :size="32" />
             </div>
             <h3>Apple Silicon</h3>
             <p>M1, M2, M3, M4</p>
@@ -135,7 +140,7 @@ onMounted(() => {
 
           <button class="dl-card" @click="startDownload('x64')">
             <div class="dl-card-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              <AppleIcon :size="32" />
             </div>
             <h3>Intel</h3>
             <p>x86_64</p>
@@ -151,7 +156,7 @@ onMounted(() => {
       <template v-else>
         <div class="dl-started">
           <div class="dl-check">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+            <CheckCircleIcon />
           </div>
           <h1 class="dl-title">Your download has started</h1>
           <p class="dl-sub">
@@ -259,6 +264,14 @@ onMounted(() => {
   transition: color 0.15s;
 }
 .dl-nav-link:hover { color: var(--t1); }
+.dl-nav-discord {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--t2); text-decoration: none;
+  font-size: 0.88rem; font-weight: 500;
+  transition: color 0.15s;
+}
+.dl-nav-discord:hover { color: #5865F2; }
+
 .dl-nav-gh {
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;

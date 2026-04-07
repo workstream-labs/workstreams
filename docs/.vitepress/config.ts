@@ -23,7 +23,7 @@ export default defineConfig({
       "link",
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Lilex:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@1,400;1,500&family=Lilex:wght@400;500;600;700&display=swap",
       },
     ],
   ],
@@ -58,9 +58,6 @@ export default defineConfig({
       },
     ],
 
-    search: {
-      provider: "local",
-    },
 
     socialLinks: [
       {

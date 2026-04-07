@@ -56,10 +56,25 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Remove default divider */
+/* Remove all nav dividers, borders, lines */
 .VPNavBar .divider,
-.VPNavBar .divider-line {
+.VPNavBar .divider-line,
+.VPNavBar::after,
+.VPNavBar::before {
   display: none !important;
+}
+
+.VPNavBarTitle,
+.VPNavBarTitle *,
+.VPNavBar,
+.VPNavBar .wrapper,
+.VPNavBar .container,
+.VPNavBar .content,
+.VPNavBar .content-body {
+  border: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 /* Title */

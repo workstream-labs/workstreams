@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from "vue";
+import DiscordIcon from "./icons/DiscordIcon.vue";
+import GitHubIcon from "./icons/GitHubIcon.vue";
+import AppleIcon from "./icons/AppleIcon.vue";
+import DownloadIcon from "./icons/DownloadIcon.vue";
+import ArrowRightIcon from "./icons/ArrowRightIcon.vue";
 
 // --- FAQ ---
 const faqOpen = ref<number | null>(null);
@@ -32,6 +37,22 @@ const faqs = [
     q: "Can I use it with GitHub PRs?",
     a: "Yes. Workstreams supports pulling online comments from GitHub alongside local offline review comments. Both are included when resuming agents, so your feedback loop spans across tools.",
   },
+];
+
+// --- Companies ---
+const companies = [
+  { name: "LinkedIn", domain: "linkedin.com" },
+  { name: "Uber", domain: "uber.com" },
+  { name: "Intuit", domain: "intuit.com" },
+  { name: "Oracle", domain: "oracle.com" },
+  { name: "Simbian", domain: "simbian.ai" },
+  { name: "Google", domain: "google.com" },
+  { name: "Rubrik", domain: "rubrik.com" },
+  { name: "Amazon", domain: "amazon.com" },
+  { name: "Great Kapital", domain: "greatkapital.com" },
+  { name: "American Express", domain: "americanexpress.com" },
+  { name: "Glean", domain: "glean.com" },
+  { name: "DE Shaw", domain: "deshaw.com" },
 ];
 
 // --- Download count ---
@@ -91,14 +112,15 @@ onUnmounted(() => observer?.disconnect());
         <div class="nav-right">
           <a href="/getting-started/installation" class="nav-link">Docs</a>
           <a href="/guide/concepts" class="nav-link">Guide</a>
-          <a href="/reference/cli" class="nav-link">Reference</a>
+          <a href="https://discord.gg/xG4hn8WFR" class="nav-discord" target="_blank" title="Discord">
+            <DiscordIcon /> Discord
+          </a>
           <a href="https://github.com/workstream-labs/workstreams" class="nav-gh" target="_blank">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-            GitHub
+            <GitHubIcon /> GitHub
           </a>
           <a href="/download" class="nav-download">
             Download for macOS
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <DownloadIcon />
           </a>
         </div>
       </div>
@@ -125,18 +147,26 @@ onUnmounted(() => observer?.disconnect());
 
         <div class="hero-actions anim" style="--d: 3">
           <a href="/download" class="btn btn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            Download for macOS
+            <AppleIcon /> Download for macOS
           </a>
           <a href="https://github.com/workstream-labs/workstreams" class="btn btn-ghost" target="_blank">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-            View on GitHub
+            <GitHubIcon /> View on GitHub
           </a>
         </div>
 
         <div class="hero-image anim" style="--d: 4">
           <img src="/session-view.png" alt="Workstream IDE — worktree sidebar, agent session, and workspace explorer" class="hero-screenshot" />
         </div>
+      </div>
+    </section>
+
+    <!-- ========== TRUSTED BY ========== -->
+    <section class="trusted sr">
+      <h3 class="trusted-title">
+        Trusted by world-class developers
+      </h3>
+      <div class="trusted-logos">
+        <img v-for="c in companies" :key="c.name" :src="`https://img.logo.dev/${c.domain}?token=pk_MdLdiT0EQ6uFB9FQBG3xcA&size=120&format=png`" :alt="c.name" class="trusted-logo" />
       </div>
     </section>
 
@@ -242,12 +272,10 @@ onUnmounted(() => observer?.disconnect());
           </p>
           <div class="cta-actions">
             <a href="/download" class="btn btn-primary">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-              Download for macOS
+              <AppleIcon /> Download for macOS
             </a>
             <a href="https://github.com/workstream-labs/workstreams" class="btn btn-ghost" target="_blank">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-              View on GitHub
+              <GitHubIcon /> View on GitHub
             </a>
           </div>
         </div>
@@ -363,6 +391,14 @@ section { position: relative; z-index: 1; }
 }
 .nav-link:hover { color: var(--t1); }
 
+.nav-discord {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--t2); text-decoration: none;
+  font-size: 0.88rem; font-weight: 500;
+  transition: color 0.15s;
+}
+.nav-discord:hover { color: #5865F2; }
+
 .nav-gh {
   display: inline-flex;
   align-items: center;
@@ -459,6 +495,44 @@ section { position: relative; z-index: 1; }
 .gradient {
   background: linear-gradient(135deg, var(--accent), var(--cyan));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+
+/* ===== TRUSTED BY ===== */
+.trusted {
+  padding: 60px 24px 80px;
+  text-align: center;
+}
+
+.trusted-title {
+  font-family: var(--font-d);
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--t3);
+  margin: 0 auto 48px;
+  max-width: 500px;
+}
+
+.trusted-logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 40px 56px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.trusted-logo {
+  height: 32px;
+  width: auto;
+  opacity: 0.45;
+  filter: grayscale(1) brightness(1.6);
+  transition: all 0.3s ease;
+}
+.trusted-logo:hover {
+  opacity: 0.85;
+  filter: grayscale(0) brightness(1);
 }
 
 /* ===== SHOWCASE FEATURES (with screenshots) ===== */
