@@ -2,4 +2,4 @@
 layout: page
 ---
 
-<CustomHome />
+<DownloadPage />
