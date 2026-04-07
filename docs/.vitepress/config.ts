@@ -4,13 +4,26 @@ export default defineConfig({
   title: "Workstreams",
   description:
     "Desktop IDE for parallel AI coding in isolated git worktrees",
+  appearance: "dark",
 
   head: [
     [
       "link",
       {
         rel: "icon",
-        href: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>%E2%9A%A1</text></svg>",
+        href: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 16 16%22 fill=%22%23cccccc%22><path d=%22M2 3.5h3v1H2v-1zm5 0h7v1H7v-1zM2 7.5h3v1H2v-1zm5 0h7v1H7v-1zM2 11.5h3v1H2v-1zm5 0h7v1H7v-1z%22/><path d=%22M3.5 3L1.5 4l2 1V3zM3.5 7L1.5 8l2 1V7zM3.5 11l-2 1 2 1v-2z%22/></svg>",
+      },
+    ],
+    ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
+    [
+      "link",
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
+    ],
+    [
+      "link",
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@1,400;1,500&family=Lilex:wght@400;500;600;700&display=swap",
       },
     ],
   ],
@@ -19,10 +32,6 @@ export default defineConfig({
     nav: [
       { text: "Get Started", link: "/getting-started/installation" },
       { text: "Guide", link: "/guide/concepts" },
-      {
-        text: "GitHub",
-        link: "https://github.com/workstream-labs/workstreams",
-      },
     ],
 
     sidebar: [
@@ -45,6 +54,7 @@ export default defineConfig({
       },
     ],
 
+
     search: {
       provider: "local",
     },
@@ -53,6 +63,10 @@ export default defineConfig({
       {
         icon: "github",
         link: "https://github.com/workstream-labs/workstreams",
+      },
+      {
+        icon: "discord",
+        link: "https://discord.gg/xG4hn8WFR",
       },
     ],
 

@@ -1,45 +1,252 @@
+/* ===================================================
+   Shared design tokens — single source of truth for
+   both CustomHome.vue and DownloadPage.vue
+   =================================================== */
+
 :root {
-  --vp-c-brand-1: #0f766e;
-  --vp-c-brand-2: #0b5f59;
-  --vp-c-brand-3: #134e4a;
-  --vp-c-brand-soft: rgba(15, 118, 110, 0.14);
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(135deg, #0f766e, #2563eb);
-  --vp-home-hero-image-background-image: radial-gradient(
-    circle at center,
-    rgba(15, 118, 110, 0.28) 0%,
-    rgba(37, 99, 235, 0.22) 45%,
-    rgba(255, 255, 255, 0) 72%
-  );
-  --vp-home-hero-image-filter: blur(56px);
+  --ws-bg: #0a0a0a;
+  --ws-bg2: #111;
+  --ws-bg3: #161616;
+  --ws-border: rgba(255, 255, 255, 0.08);
+  --ws-border-h: rgba(255, 255, 255, 0.14);
+  --ws-t1: #fafafa;
+  --ws-t2: #888;
+  --ws-t3: #555;
+  --ws-accent: #34d399;
+  --ws-accent2: #6ee7b7;
+  --ws-cyan: #22d3ee;
+  --ws-font-d: "IBM Plex Sans", system-ui, sans-serif;
+  --ws-font-b: "IBM Plex Sans", system-ui, sans-serif;
+  --ws-font-m: "Lilex", "Fira Code", monospace;
+  --ws-r: 12px;
+  --ws-r-lg: 16px;
 }
 
-.VPHero .clip {
-  white-space: nowrap;
+/* ===================================================
+   Home / Download page: hide VitePress chrome
+   =================================================== */
+
+.is-home .VPNav,
+.is-home .VPNavBar,
+.is-home .VPSidebar,
+.is-home header.VPNav,
+.is-home nav.VPNavBar {
+  display: none !important;
 }
 
-.VPHero .image-src {
-  border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  box-shadow:
-    0 28px 80px rgba(15, 23, 42, 0.22),
-    0 8px 24px rgba(15, 23, 42, 0.14);
+.is-home {
+  --vp-sidebar-width: 0px !important;
 }
 
-.vp-doc img {
-  display: block;
-  width: 100%;
-  max-width: 1100px;
-  margin: 24px auto;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.14);
+.is-home .VPDoc,
+.is-home .VPDoc .container,
+.is-home .VPDoc .content,
+.is-home .VPDoc .content-container,
+.is-home .vp-doc {
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
-.vp-doc blockquote {
-  border-left-color: var(--vp-c-brand-1);
+.is-home .VPDoc .aside {
+  display: none !important;
+}
+
+.is-home .VPDoc .container {
+  display: block !important;
+}
+
+.is-home .VPContent.has-sidebar {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+.is-home .VPContent {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.is-home main {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Hide VitePress default footer on custom pages */
+.is-home .VPFooter {
+  display: none !important;
+}
+
+/* Nav element ordering: search, links, github+discord, toggle */
+.VPNavBar .content-body .VPNavBarSearch {
+  order: 10 !important;
+  margin-left: auto !important;
+  margin-right: 24px !important;
+  padding-left: 0 !important;
+  flex-grow: 0 !important;
+}
+.VPNavBar .content-body .VPNavBarMenu {
+  order: 11 !important;
+  margin-right: 8px !important;
+}
+.VPNavBarSocialLinks {
+  order: 12 !important;
+  margin-right: 4px !important;
+}
+.VPNavBarAppearance {
+  order: 13 !important;
+}
+
+/* Remove all dividers in nav */
+.VPNavBarExtra,
+.VPNavBar .divider,
+.VPNavBarSocialLinks::before,
+.VPNavBarAppearance::before,
+.VPNavBar .content-body > ::before {
+  display: none !important;
+  border: none !important;
+  width: 0 !important;
+}
+
+/* ===================================================
+   Doc pages: polished VitePress nav & chrome
+   =================================================== */
+
+/* Nav bar background */
+.VPNav {
+  background: rgba(10, 10, 10, 0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Remove all nav dividers, borders, lines */
+.VPNavBar .divider,
+.VPNavBar .divider-line,
+.VPNavBar::after,
+.VPNavBar::before {
+  display: none !important;
+}
+
+.VPNavBarTitle,
+.VPNavBarTitle *,
+.VPNavBar,
+.VPNavBar .wrapper,
+.VPNavBar .container,
+.VPNavBar .content,
+.VPNavBar .content-body {
+  border: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* Title */
+.VPNavBar .VPNavBarTitle .title {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+
+/* Nav content-body flex layout */
+.VPNavBar .content-body {
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Nav menu links */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+}
+
+/* Sidebar styling */
+.VPSidebar {
+  background: rgba(10, 10, 10, 0.95) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+}
+
+.VPSidebar .VPSidebarItem .text {
+  font-size: 0.88rem !important;
+}
+
+/* Search bar — minimal, no border */
+.DocSearch-Button {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  padding: 0 !important;
+  gap: 8px !important;
+}
+
+/* Hide search text, keep only icon */
+.DocSearch-Button-Placeholder,
+.VPNavBarSearch .search-text,
+button.DocSearch-Button .DocSearch-Button-Placeholder {
+  display: none !important;
+}
+
+/* Hide default ⌘K keys — replaced by custom shortcut via ::after */
+.DocSearch-Button-Keys,
+.DocSearch-Button .DocSearch-Button-Key {
+  display: none !important;
+}
+
+/* VitePress local search — minimal style, no border */
+.VPNavBarSearchButton.local-search-btn,
+#navbar-search,
+.VPNavBarSearch button,
+button.VPNavBarSearchButton {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  gap: 8px !important;
+}
+
+/* Hide default shortcut keys — replaced by custom */
+button.VPNavBarSearchButton .search-shortcut,
+.VPNavBarSearchButton kbd,
+.VPNavBarSearch kbd {
+  display: none !important;
+}
+
+/* Show ⌘⇧P shortcut after search icon */
+.VPNavBarSearch button::after,
+.DocSearch-Button::after {
+  content: "⌘ ⇧ P";
+  font-size: 0.75rem;
+  color: var(--ws-t2);
+  letter-spacing: 0.05em;
+}
+
+/* Hide search text in local search */
+button.VPNavBarSearchButton .search-text,
+.VPNavBarSearch .search-text {
+  display: none !important;
+}
+
+/* Doc content area */
+.vp-doc {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  letter-spacing: -0.02em;
 }
 
 .vp-doc div[class*="language-"] code {
+  font-family: "Lilex", "Fira Code", monospace !important;
   font-size: 0.875rem;
+}
+
+/* Outline / "On this page" */
+.VPDocAside .VPDocAsideOutline {
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
 }
