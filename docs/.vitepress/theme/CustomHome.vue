@@ -177,61 +177,91 @@ onUnmounted(() => observer?.disconnect());
       </h2>
     </section>
 
-    <!-- ========== FEATURES WITH SCREENSHOTS ========== -->
+    <!-- ========== FEATURES ========== -->
     <section class="features">
       <div class="container">
 
-        <!-- 1. Inline Review Comments — text left, image right -->
+        <!-- 1. Parallel Execution -->
         <div class="showcase sr">
           <div class="showcase-text">
-            <span class="showcase-label">Review</span>
-            <h3 class="showcase-title">Inline review comments</h3>
+            <span class="showcase-label">Orchestrate</span>
+            <h3 class="showcase-title">Run dozens of agents at once</h3>
             <p class="showcase-desc">
-              Split-side diff viewer with inline commenting. Click any line to
-              leave feedback, add context, or flag issues&thinsp;&mdash;&thinsp;just
-              like a code review, but for your AI agents. Supports both
-              <strong>online</strong> comments from GitHub and <strong>offline</strong>
-              local comments.
+              Spin up agents across multiple repos from a single orchestration
+              panel. Track live status for every agent&thinsp;&mdash;&thinsp;get
+              notified instantly when one needs your permission.
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/commenting-view.png" alt="Split diff with inline review comments" />
+            <img src="/session-view.png" alt="Orchestration panel with multiple agents" />
           </div>
         </div>
 
-        <!-- 2. Resume with feedback — image left, text right -->
+        <!-- 2. Agent Agnostic -->
         <div class="showcase showcase-reverse sr">
           <div class="showcase-text">
-            <span class="showcase-label">Resume</span>
-            <h3 class="showcase-title">Send feedback to the agent</h3>
+            <span class="showcase-label">Agents</span>
+            <h3 class="showcase-title">Works with any CLI agent</h3>
             <p class="showcase-desc">
-              Select which comments to send, hit Send All, and the agent resumes
-              with full conversation context. Your feedback becomes structured
-              prompts with file paths, line numbers, and diff
-              context&thinsp;&mdash;&thinsp;iterate until the code is right.
+              Deeply integrated with <strong>Claude Code</strong> and
+              <strong>Codex</strong>, but the terminal is your open
+              playground&thinsp;&mdash;&thinsp;run any agent of your choice.
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/sending-comments.png" alt="Sending review comments to Claude" />
+            <img src="/creating-workstream.png" alt="Agent selection with Claude Code and Codex" />
           </div>
         </div>
 
-        <!-- 3. Create workstreams — text left, image right -->
+        <!-- 3. Isolation -->
         <div class="showcase sr">
           <div class="showcase-text">
-            <span class="showcase-label">Create</span>
-            <h3 class="showcase-title">Natural language task creation</h3>
+            <span class="showcase-label">Isolation</span>
+            <h3 class="showcase-title">Changes are isolated</h3>
             <p class="showcase-desc">
-              Describe what you want built, pick an agent and a refactor
-              strategy, and go. Each workstream gets its own branch and isolated
-              worktree automatically. Supports Claude Code, Aider, Gemini, and
-              more.
+              Every agent works in its own git worktree. No conflicts, no
+              stepping on each other. Each branch is fully isolated, backed
+              by git&thinsp;&mdash;&thinsp;merge when you're ready.
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/creating-workstream.png" alt="Create workstream with agent selector" />
+            <img src="/commenting-view.png" alt="Isolated worktrees with split diff view" />
           </div>
         </div>
+
+        <!-- 4. Review Loop -->
+        <div class="showcase showcase-reverse sr">
+          <div class="showcase-text">
+            <span class="showcase-label">Review loop</span>
+            <h3 class="showcase-title">Offline &amp; online comments</h3>
+            <p class="showcase-desc">
+              Write <strong>offline comments</strong> directly on diffs. Fetch
+              <strong>online comments</strong> from GitHub PRs with isolated git
+              authorisation per repo. Send them all back to the agent in one
+              click.
+            </p>
+          </div>
+          <div class="showcase-img">
+            <img src="/sending-comments.png" alt="Review comments sent to agent" />
+          </div>
+        </div>
+
+        <!-- 5. LSP & Terminal -->
+        <div class="showcase sr">
+          <div class="showcase-text">
+            <span class="showcase-label">Editor</span>
+            <h3 class="showcase-title">LSP-integrated full-fledged terminal</h3>
+            <p class="showcase-desc">
+              A complete development environment with Language Server Protocol
+              support, syntax highlighting, and an integrated terminal to back
+              you up on everything.
+            </p>
+          </div>
+          <div class="showcase-img showcase-img-placeholder">
+            <span>Screenshot coming soon</span>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -265,22 +295,38 @@ onUnmounted(() => observer?.disconnect());
     <section class="cta">
       <div class="container">
         <div class="cta-inner sr">
-          <h2 class="cta-title">Ready to ship in&nbsp;parallel?</h2>
-          <p class="cta-sub">
-            Download the desktop app and run your first parallel agents in
-            under a minute.
-          </p>
+          <h2 class="cta-title">Get Workstreams Today</h2>
           <div class="cta-actions">
-            <a href="/download" class="btn btn-primary">
-              <AppleIcon /> Download for macOS
-            </a>
-            <a href="https://github.com/workstream-labs/workstreams" class="btn btn-ghost" target="_blank">
-              <GitHubIcon /> View on GitHub
+            <a href="/download" class="btn btn-primary btn-lg">
+              Download for macOS
+              <DownloadIcon />
             </a>
           </div>
         </div>
       </div>
     </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer class="ws-footer">
+      <div class="container">
+        <div class="footer-top">
+          <div class="footer-brand">
+            <span class="footer-logo">Workstreams</span>
+            <div class="footer-links">
+              <a href="/getting-started/installation">Docs</a>
+              <a href="/guide/concepts">Guide</a>
+            </div>
+          </div>
+          <div class="footer-social">
+            <a href="https://discord.gg/xG4hn8WFR" target="_blank" title="Discord"><DiscordIcon /></a>
+            <a href="https://github.com/workstream-labs/workstreams" target="_blank" title="GitHub"><GitHubIcon /></a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>&copy; 2026 Workstreams. All rights reserved.</span>
+        </div>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -327,7 +373,7 @@ onUnmounted(() => observer?.disconnect());
 
 /* ===== LAYOUT ===== */
 .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
-section { position: relative; z-index: 1; }
+section, footer { position: relative; z-index: 1; }
 
 /* ===== ANIMATIONS ===== */
 .anim {
@@ -343,6 +389,18 @@ section { position: relative; z-index: 1; }
   transition-delay: calc(var(--stagger, 0) * 0.08s);
 }
 .sr.visible { opacity: 1; transform: translateY(0); }
+
+/* Showcase slide-in from left */
+.showcase.sr {
+  opacity: 0; transform: translateX(-60px);
+}
+.showcase.sr.visible { opacity: 1; transform: translateX(0); }
+
+/* Showcase reverse slide-in from right */
+.showcase-reverse.sr {
+  opacity: 0; transform: translateX(60px);
+}
+.showcase-reverse.sr.visible { opacity: 1; transform: translateX(0); }
 
 /* ===== NAV ===== */
 .nav {
@@ -536,36 +594,34 @@ section { position: relative; z-index: 1; }
 }
 
 /* ===== SHOWCASE FEATURES (with screenshots) ===== */
-.features { padding: 0 0 80px; }
+.features { padding: 0 0 40px; }
 
 .showcase {
   display: grid;
-  grid-template-columns: 1fr 1.3fr;
-  gap: 48px;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 64px;
   align-items: center;
-  padding: 56px 48px;
-  margin-bottom: 24px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  transition: border-color 0.3s;
+  padding: 80px 0;
+  max-width: 1100px;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--border);
 }
-.showcase:hover { border-color: var(--border-h); }
+.showcase:last-child { border-bottom: none; }
 
-.showcase-reverse { grid-template-columns: 1.3fr 1fr; }
+.showcase-reverse { grid-template-columns: 1.4fr 1fr; }
 .showcase-reverse .showcase-text { order: 2; }
 .showcase-reverse .showcase-img { order: 1; }
 
 .showcase-label {
   display: inline-block;
-  font-family: var(--font-m); font-size: 0.72rem; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.1em;
-  color: var(--accent); margin-bottom: 14px;
+  font-family: var(--font-m); font-size: 0.7rem; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--accent); margin-bottom: 16px;
 }
 
 .showcase-title {
-  font-family: var(--font-d); font-size: 1.6rem; font-weight: 700;
-  margin: 0 0 14px; color: var(--t1); line-height: 1.2;
+  font-family: var(--font-d); font-size: 1.8rem; font-weight: 700;
+  margin: 0 0 16px; color: var(--t1); line-height: 1.2;
 }
 
 .showcase-desc {
@@ -576,9 +632,22 @@ section { position: relative; z-index: 1; }
 .showcase-img {
   border-radius: var(--r);
   overflow: hidden;
-  border: 1px solid var(--border);
+  box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.5);
 }
 .showcase-img img { width: 100%; display: block; }
+
+.showcase-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: var(--r);
+  color: var(--t3);
+  font-family: var(--font-m);
+  font-size: 0.82rem;
+}
 
 /* ===== CAPABILITIES GRID ===== */
 .capabilities { padding: 40px 0 100px; }
@@ -660,27 +729,69 @@ section { position: relative; z-index: 1; }
 }
 
 /* ===== CTA ===== */
-.cta { padding: 20px 0 120px; }
+.cta { padding: 80px 0 120px; }
 .cta-inner {
-  text-align: center; padding: 72px 40px;
-  border-radius: var(--r-lg); border: 1px solid var(--border);
-  background: var(--bg2); position: relative; overflow: hidden;
-}
-.cta-inner::before {
-  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 50%; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.4;
+  text-align: center; padding: 0;
 }
 .cta-title {
-  font-family: var(--font-d); font-size: clamp(1.6rem, 3.5vw, 2.4rem);
-  font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px;
+  font-family: var(--font-m); font-size: clamp(1.6rem, 4vw, 2.8rem);
+  font-weight: 500; letter-spacing: -0.02em; margin: 0 0 36px;
+  color: var(--t1);
 }
-.cta-sub { font-size: 1rem; color: var(--t2); margin: 0 auto 32px; max-width: 480px; }
 .cta-actions { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
+
+.btn-lg { padding: 14px 32px; font-size: 1rem; }
+
+/* ===== FOOTER ===== */
+.ws-footer {
+  border-top: 1px solid var(--border);
+  padding: 48px 24px;
+}
+
+.footer-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+
+.footer-brand { display: flex; flex-direction: column; gap: 16px; }
+
+.footer-logo {
+  font-family: var(--font-d);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--t1);
+}
+
+.footer-links {
+  display: flex; gap: 20px;
+}
+.footer-links a {
+  color: var(--t2); text-decoration: none; font-size: 0.88rem;
+  transition: color 0.15s;
+}
+.footer-links a:hover { color: var(--t1); }
+
+.footer-social {
+  display: flex; gap: 16px;
+}
+.footer-social a {
+  color: var(--t3); text-decoration: none;
+  transition: color 0.15s;
+}
+.footer-social a:hover { color: var(--t1); }
+
+.footer-bottom {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  font-size: 0.8rem;
+  color: var(--t3);
+}
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 860px) {
-  .showcase { grid-template-columns: 1fr; padding: 32px 24px; gap: 28px; }
+  .showcase { grid-template-columns: 1fr; padding: 48px 24px; gap: 32px; }
   .showcase-reverse { grid-template-columns: 1fr; }
   .showcase-reverse .showcase-text { order: 1; }
   .showcase-reverse .showcase-img { order: 2; }

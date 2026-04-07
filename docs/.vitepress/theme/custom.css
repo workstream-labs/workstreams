@@ -44,6 +44,11 @@
   margin: 0 !important;
 }
 
+/* Hide VitePress default footer on custom pages */
+.is-home .VPFooter {
+  display: none !important;
+}
+
 /* ===================================================
    Doc pages: polished VitePress nav & chrome
    =================================================== */

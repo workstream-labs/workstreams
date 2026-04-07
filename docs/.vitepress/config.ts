@@ -11,7 +11,7 @@ export default defineConfig({
       "link",
       {
         rel: "icon",
-        href: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>%E2%9A%A1</text></svg>",
+        href: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 16 16%22 fill=%22%23cccccc%22><path d=%22M2 3.5h3v1H2v-1zm5 0h7v1H7v-1zM2 7.5h3v1H2v-1zm5 0h7v1H7v-1zM2 11.5h3v1H2v-1zm5 0h7v1H7v-1z%22/><path d=%22M3.5 3L1.5 4l2 1V3zM3.5 7L1.5 8l2 1V7zM3.5 11l-2 1 2 1v-2z%22/></svg>",
       },
     ],
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
