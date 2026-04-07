@@ -4,7 +4,7 @@ An IDE for orchestrating parallel AI coding agents in isolated git worktrees.
 
 Run multiple agents on different tasks simultaneously, review their output with inline diff comments, and iterate with a tight feedback loop — all from a single window. Agent-agnostic: works with Claude, Codex, Aider, and more.
 
-![Workstreams IDE](apps/desktop/docs/public/session-view.png)
+![Workstreams IDE](docs/public/hero.gif)
 
 ## Download
 

@@ -22,13 +22,7 @@ Download the latest release from GitHub:
    xattr -cr /Applications/Workstreams.app
    ```
 
-   <details>
-   <summary>Why is this needed?</summary>
-
-   When you download a DMG from the internet, macOS tags every file with a hidden `com.apple.quarantine` flag. Gatekeeper then checks if the app has an Apple Developer certificate. Since this build isn't signed or notarised, macOS shows a misleading "app is damaged" error — the app is fine, it just doesn't have a $99/year Apple signature.
-
-   `xattr -cr` strips the quarantine flag so Gatekeeper has nothing to complain about.
-   </details>
+   > **Why is this needed?** When you download a DMG from the internet, macOS tags every file with a hidden `com.apple.quarantine` flag. Gatekeeper checks for an Apple Developer certificate, and since this build isn't signed, it shows a misleading "app is damaged" error. `xattr -cr` strips that quarantine flag.
 
 4. **Launch Workstreams** — Open the app from Applications. You're all set!
 

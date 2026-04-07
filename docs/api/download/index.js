@@ -41,6 +41,30 @@ module.exports = async function (context, req) {
           "",
         timestamp: body.timestamp || new Date().toISOString(),
       });
+
+      // Increment the pre-aggregated counter so download-count can read
+      // a single entity instead of iterating all rows.
+      try {
+        const counter = await client.getEntity("meta", "totalCount");
+        await client.updateEntity(
+          {
+            partitionKey: "meta",
+            rowKey: "totalCount",
+            count: (counter.count || 0) + 1,
+          },
+          "Merge",
+          { etag: counter.etag }
+        );
+      } catch (counterErr) {
+        if (counterErr.statusCode === 404) {
+          await client.createEntity({
+            partitionKey: "meta",
+            rowKey: "totalCount",
+            count: 1,
+          });
+        }
+        // Silently swallow conflicts — the counter is best-effort.
+      }
     } catch (err) {
       context.log.warn("Failed to log download:", err.message);
     }

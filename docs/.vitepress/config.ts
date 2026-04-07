@@ -32,10 +32,6 @@ export default defineConfig({
     nav: [
       { text: "Get Started", link: "/getting-started/installation" },
       { text: "Guide", link: "/guide/concepts" },
-      {
-        text: "GitHub",
-        link: "https://github.com/workstream-labs/workstreams",
-      },
     ],
 
     sidebar: [
@@ -59,10 +55,18 @@ export default defineConfig({
     ],
 
 
+    search: {
+      provider: "local",
+    },
+
     socialLinks: [
       {
         icon: "github",
         link: "https://github.com/workstream-labs/workstreams",
+      },
+      {
+        icon: "discord",
+        link: "https://discord.gg/xG4hn8WFR",
       },
     ],
 

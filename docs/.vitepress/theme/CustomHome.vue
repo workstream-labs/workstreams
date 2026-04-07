@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from "vue";
-import DiscordIcon from "./icons/DiscordIcon.vue";
-import GitHubIcon from "./icons/GitHubIcon.vue";
+import NavBar from "./NavBar.vue";
 import AppleIcon from "./icons/AppleIcon.vue";
+import DiscordIcon from "./icons/DiscordIcon.vue";
 import DownloadIcon from "./icons/DownloadIcon.vue";
-import ArrowRightIcon from "./icons/ArrowRightIcon.vue";
+import GitHubIcon from "./icons/GitHubIcon.vue";
 
 // --- Download dropdown ---
 const showDropdown = ref<string | null>(null);
@@ -126,35 +126,22 @@ onUnmounted(() => {
     </div>
 
     <!-- ========== NAV ========== -->
-    <nav class="nav">
-      <div class="nav-inner">
-        <a href="/" class="nav-logo">Workstream</a>
-        <div class="nav-right">
-          <a href="/getting-started/installation" class="nav-link">Docs</a>
-          <a href="/guide/concepts" class="nav-link">Guide</a>
-          <a href="https://discord.gg/xG4hn8WFR" class="nav-discord" target="_blank" title="Discord">
-            <DiscordIcon /> Discord
-          </a>
-          <a href="https://github.com/workstream-labs/workstreams" class="nav-gh" target="_blank">
-            <GitHubIcon /> GitHub
-          </a>
-          <div class="dl-dropdown" @click.stop>
-            <button class="nav-download" @click="toggleDropdown('nav')">
-              Download for macOS
-              <DownloadIcon />
-            </button>
-            <div v-if="showDropdown === 'nav'" class="dl-menu">
-              <button class="dl-option" @click="pickArch('arm64')">
-                <AppleIcon /> Apple Silicon
-              </button>
-              <button class="dl-option" @click="pickArch('x64')">
-                <AppleIcon /> Intel
-              </button>
-            </div>
-          </div>
+    <NavBar>
+      <div class="dl-dropdown" @click.stop>
+        <button class="nav-download" @click="toggleDropdown('nav')">
+          Download for macOS
+          <DownloadIcon />
+        </button>
+        <div v-if="showDropdown === 'nav'" class="dl-menu">
+          <button class="dl-option" @click="pickArch('arm64')">
+            <AppleIcon /> Apple Silicon
+          </button>
+          <button class="dl-option" @click="pickArch('x64')">
+            <AppleIcon /> Intel
+          </button>
         </div>
       </div>
-    </nav>
+    </NavBar>
 
     <!-- ========== HERO ========== -->
     <section class="hero">
@@ -195,7 +182,7 @@ onUnmounted(() => {
         </div>
 
         <div class="hero-image anim" style="--d: 4">
-          <img src="/session-view.png" alt="Workstream IDE — worktree sidebar, agent session, and workspace explorer" class="hero-screenshot" />
+          <img src="/hero.gif" alt="Workstream IDE — worktree sidebar, agent session, and workspace explorer" class="hero-screenshot" />
         </div>
       </div>
     </section>
@@ -233,7 +220,7 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/session-view.png" alt="Orchestration panel with multiple agents" />
+            <img src="/orchestrate-panel.png" alt="Orchestration panel with multiple agents running in parallel" />
           </div>
         </div>
 
@@ -249,7 +236,7 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/creating-workstream.png" alt="Agent selection with Claude Code and Codex" />
+            <img src="/agent-selector.png" alt="Agent selection with Claude Code and Codex" />
           </div>
         </div>
 
@@ -265,7 +252,7 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/commenting-view.png" alt="Isolated worktrees with split diff view" />
+            <img src="/isolation-diff.png" alt="Isolated worktrees with split diff view" />
           </div>
         </div>
 
@@ -282,7 +269,7 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/sending-comments.png" alt="Review comments sent to agent" />
+            <img src="/review-comments.png" alt="Inline review comments with offline and online support" />
           </div>
         </div>
 
@@ -297,8 +284,8 @@ onUnmounted(() => {
               you up on everything.
             </p>
           </div>
-          <div class="showcase-img showcase-img-placeholder">
-            <span>Screenshot coming soon</span>
+          <div class="showcase-img">
+            <img src="/lsp-editor.png" alt="LSP-integrated editor with syntax highlighting and autocomplete" />
           </div>
         </div>
 
@@ -309,8 +296,9 @@ onUnmounted(() => {
     <!-- ========== FAQ ========== -->
     <section class="faq">
       <div class="container">
-        <h2 class="section-title sr" style="text-align:center">Frequently asked questions</h2>
-        <div class="faq-list">
+        <div class="faq-layout">
+          <h2 class="faq-heading sr">Frequently<br />asked questions</h2>
+          <div class="faq-list">
           <div
             v-for="(f, i) in faqs"
             :key="i"
@@ -319,7 +307,7 @@ onUnmounted(() => {
           >
             <button class="faq-q" @click="toggleFaq(i)">
               <span>{{ f.q }}</span>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="faq-chevron"><path d="M6 9l6 6 6-6" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="faq-plus"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </button>
             <div class="faq-a" :ref="(el) => {}">
               <div class="faq-a-inner">
@@ -328,6 +316,7 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        </div>
       </div>
     </section>
 
@@ -335,7 +324,7 @@ onUnmounted(() => {
     <section class="cta">
       <div class="container">
         <div class="cta-inner sr">
-          <h2 class="cta-title">Get Workstreams Today</h2>
+          <h2 class="cta-title">Start shipping faster</h2>
           <div class="cta-actions">
             <div class="dl-dropdown" @click.stop>
               <button class="btn btn-primary btn-lg" @click="toggleDropdown('cta')">
@@ -381,24 +370,24 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* ===== TOKENS ===== */
+/* ===== TOKENS (aliased from shared :root vars in custom.css) ===== */
 .ws {
-  --bg: #0a0a0a;
-  --bg2: #111;
-  --bg3: #161616;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-h: rgba(255, 255, 255, 0.14);
-  --t1: #fafafa;
-  --t2: #888;
-  --t3: #555;
-  --accent: #34d399;
-  --accent2: #6ee7b7;
-  --cyan: #22d3ee;
-  --font-d: "IBM Plex Sans", system-ui, sans-serif;
-  --font-b: "IBM Plex Sans", system-ui, sans-serif;
-  --font-m: "Lilex", "Fira Code", monospace;
-  --r: 12px;
-  --r-lg: 16px;
+  --bg: var(--ws-bg);
+  --bg2: var(--ws-bg2);
+  --bg3: var(--ws-bg3);
+  --border: var(--ws-border);
+  --border-h: var(--ws-border-h);
+  --t1: var(--ws-t1);
+  --t2: var(--ws-t2);
+  --t3: var(--ws-t3);
+  --accent: var(--ws-accent);
+  --accent2: var(--ws-accent2);
+  --cyan: var(--ws-cyan);
+  --font-d: var(--ws-font-d);
+  --font-b: var(--ws-font-b);
+  --font-m: var(--ws-font-m);
+  --r: var(--ws-r);
+  --r-lg: var(--ws-r-lg);
 
   position: relative;
   width: 100%;
@@ -469,73 +458,7 @@ section, footer { position: relative; z-index: 1; }
   transform: translateX(-50px);
 }
 
-/* ===== NAV ===== */
-.nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  padding: 0 32px;
-  background: rgba(10, 10, 10, 0.8);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border);
-}
-
-.nav-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.nav-logo {
-  font-family: var(--font-d);
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: var(--t1);
-  text-decoration: none;
-  letter-spacing: -0.02em;
-}
-
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.nav-link {
-  color: var(--t2);
-  text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 500;
-  transition: color 0.15s;
-}
-.nav-link:hover { color: var(--t1); }
-
-.nav-discord {
-  display: inline-flex; align-items: center; gap: 6px;
-  color: var(--t2); text-decoration: none;
-  font-size: 0.88rem; font-weight: 500;
-  transition: color 0.15s;
-}
-.nav-discord:hover { color: #5865F2; }
-
-.nav-gh {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--t2);
-  text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 500;
-  transition: color 0.15s;
-}
-.nav-gh:hover { color: var(--t1); }
-
+/* ===== NAV (layout handled by NavBar.vue — only local overrides here) ===== */
 .nav-download {
   display: inline-flex;
   align-items: center;
@@ -555,9 +478,7 @@ section, footer { position: relative; z-index: 1; }
 }
 
 @media (max-width: 768px) {
-  .nav-links { display: none; }
   .nav-download span { display: none; }
-  .nav { padding: 0 16px; }
 }
 
 /* ===== HERO ===== */
@@ -761,7 +682,26 @@ section, footer { position: relative; z-index: 1; }
 /* ===== FAQ ===== */
 .faq { padding: 80px 0 100px; }
 
-.faq-list { max-width: 680px; margin: 0 auto; }
+.faq-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 64px;
+  align-items: start;
+}
+
+.faq-heading {
+  font-family: var(--font-d);
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--t1);
+  margin: 0;
+  position: sticky;
+  top: 100px;
+}
+
+.faq-list { }
 
 .faq-item { border-bottom: 1px solid var(--border); }
 .faq-item:first-child { border-top: 1px solid var(--border); }
@@ -774,10 +714,10 @@ section, footer { position: relative; z-index: 1; }
 }
 .faq-q:hover { color: var(--accent); }
 
-.faq-chevron {
+.faq-plus {
   flex-shrink: 0; transition: transform 0.3s ease; color: var(--t3);
 }
-.open .faq-chevron { transform: rotate(180deg); }
+.open .faq-plus { transform: rotate(45deg); }
 
 .faq-a {
   display: grid;
@@ -917,6 +857,8 @@ section, footer { position: relative; z-index: 1; }
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 860px) {
+  .faq-layout { grid-template-columns: 1fr; gap: 32px; }
+  .faq-heading { position: static; }
   .showcase { grid-template-columns: 1fr; padding: 48px 24px; gap: 32px; }
   .showcase-reverse { grid-template-columns: 1fr; }
   .showcase-reverse .showcase-text { order: 1; }

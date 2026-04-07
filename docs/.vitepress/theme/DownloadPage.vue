@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import DiscordIcon from "./icons/DiscordIcon.vue";
-import GitHubIcon from "./icons/GitHubIcon.vue";
+import NavBar from "./NavBar.vue";
 import AppleIcon from "./icons/AppleIcon.vue";
 import CheckCircleIcon from "./icons/CheckCircleIcon.vue";
 
@@ -12,6 +11,13 @@ const API_BASE = "https://workstream-api.azurewebsites.net";
 const latestTag = ref(FALLBACK_TAG);
 const selectedArch = ref<"arm64" | "x64">("arm64");
 const downloadStarted = ref(false);
+/**
+ * Controls the "Why is this needed?" disclosure panel in the quarantine step.
+ * macOS quarantine removal is the most confusing install step for unsigned apps,
+ * so we keep the explanation collapsed by default to avoid overwhelming new users
+ * while still making it accessible on demand.
+ */
+const showWhy = ref(false);
 
 function dmgUrl(arch: string) {
   return `https://github.com/${REPO}/releases/download/${latestTag.value}/Workstreams-darwin-${arch}.dmg`;
@@ -71,25 +77,7 @@ onMounted(async () => {
     </div>
 
     <!-- Nav -->
-    <nav class="dl-nav">
-      <div class="dl-nav-inner">
-        <a href="/" class="dl-nav-logo">Workstream</a>
-        <div class="dl-nav-right">
-          <a href="/getting-started/installation" class="dl-nav-link">Docs</a>
-          <a href="/guide/concepts" class="dl-nav-link">Guide</a>
-          <a href="https://discord.gg/xG4hn8WFR" class="dl-nav-discord" target="_blank" title="Discord">
-            <DiscordIcon /> Discord
-          </a>
-          <a
-            :href="`https://github.com/${REPO}`"
-            class="dl-nav-gh"
-            target="_blank"
-          >
-            <GitHubIcon /> GitHub
-          </a>
-        </div>
-      </div>
-    </nav>
+    <NavBar />
 
     <div class="dl-content">
       <!-- If no arch param, show picker as fallback -->
@@ -146,21 +134,26 @@ onMounted(async () => {
               <div class="dl-cmd">
                 <code>xattr -cr /Applications/Workstreams.app</code>
               </div>
-              <details class="dl-details">
-                <summary>Why is this needed?</summary>
-                <p>
-                  When you download a DMG from the internet, macOS tags every file
-                  with a hidden <code>com.apple.quarantine</code> flag. Gatekeeper
-                  then checks if the app has an Apple Developer certificate. Since
-                  this build isn't signed or notarised, macOS shows a misleading
-                  "app is damaged" error&thinsp;&mdash;&thinsp;the app is fine, it
-                  just doesn't have a $99/year Apple signature.
-                </p>
-                <p>
-                  <code>xattr -cr</code> strips the quarantine flag so Gatekeeper
-                  has nothing to complain about.
-                </p>
-              </details>
+              <div class="dl-details">
+                <button class="dl-details-toggle" @click="showWhy = !showWhy">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" :class="{ rotated: showWhy }"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5.3 5.3-5.3 5.4z"/></svg>
+                  Why is this needed?
+                </button>
+                <div v-if="showWhy" class="dl-details-body">
+                  <p>
+                    When you download a DMG from the internet, macOS tags every file
+                    with a hidden <code>com.apple.quarantine</code> flag. Gatekeeper
+                    then checks if the app has an Apple Developer certificate. Since
+                    this build isn't signed or notarised, macOS shows a misleading
+                    "app is damaged" error&thinsp;&mdash;&thinsp;the app is fine, it
+                    just doesn't have a $99/year Apple signature.
+                  </p>
+                  <p>
+                    <code>xattr -cr</code> strips the quarantine flag so Gatekeeper
+                    has nothing to complain about.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
           <div class="dl-step">
@@ -184,21 +177,22 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* Alias shared :root tokens from custom.css */
 .dl {
-  --bg: #0a0a0a;
-  --bg2: #111;
-  --bg3: #161616;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-h: rgba(255, 255, 255, 0.14);
-  --t1: #fafafa;
-  --t2: #888;
-  --t3: #555;
-  --accent: #34d399;
-  --font-d: "IBM Plex Sans", system-ui, sans-serif;
-  --font-b: "IBM Plex Sans", system-ui, sans-serif;
-  --font-m: "Lilex", "Fira Code", monospace;
-  --r: 12px;
-  --r-lg: 16px;
+  --bg: var(--ws-bg);
+  --bg2: var(--ws-bg2);
+  --bg3: var(--ws-bg3);
+  --border: var(--ws-border);
+  --border-h: var(--ws-border-h);
+  --t1: var(--ws-t1);
+  --t2: var(--ws-t2);
+  --t3: var(--ws-t3);
+  --accent: var(--ws-accent);
+  --font-d: var(--ws-font-d);
+  --font-b: var(--ws-font-b);
+  --font-m: var(--ws-font-m);
+  --r: var(--ws-r);
+  --r-lg: var(--ws-r-lg);
 
   position: relative;
   width: 100%;
@@ -221,39 +215,6 @@ onMounted(async () => {
   background: radial-gradient(ellipse 80% 60% at 50% 40%, transparent 30%, var(--bg) 70%);
 }
 
-.dl-nav {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  padding: 0 32px;
-  background: rgba(10, 10, 10, 0.8);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border);
-}
-.dl-nav-inner {
-  max-width: 1200px; margin: 0 auto; height: 60px;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.dl-nav-logo {
-  font-family: var(--font-d); font-size: 1.1rem; font-weight: 800;
-  color: var(--t1); text-decoration: none; letter-spacing: -0.02em;
-}
-.dl-nav-right { display: flex; align-items: center; gap: 16px; }
-.dl-nav-link {
-  color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;
-  transition: color 0.15s;
-}
-.dl-nav-link:hover { color: var(--t1); }
-.dl-nav-discord {
-  display: inline-flex; align-items: center; gap: 6px;
-  color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;
-  transition: color 0.15s;
-}
-.dl-nav-discord:hover { color: #5865F2; }
-.dl-nav-gh {
-  display: inline-flex; align-items: center; gap: 6px;
-  color: var(--t2); text-decoration: none; font-size: 0.88rem; font-weight: 500;
-  transition: color 0.15s;
-}
-.dl-nav-gh:hover { color: var(--t1); }
 
 .dl-content {
   position: relative; z-index: 1;
@@ -371,23 +332,39 @@ onMounted(async () => {
 
 .dl-details {
   margin-top: 14px;
-  font-size: 0.85rem;
-  color: var(--t3);
 }
-.dl-details summary {
+
+.dl-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
   cursor: pointer;
   color: var(--t2);
+  font-family: var(--font-b);
+  font-size: 0.85rem;
   font-weight: 500;
   transition: color 0.15s;
 }
-.dl-details summary:hover { color: var(--t1); }
-.dl-details p {
+.dl-details-toggle:hover { color: var(--t1); }
+
+.dl-details-toggle svg {
+  transition: transform 0.2s ease;
+}
+.dl-details-toggle svg.rotated {
+  transform: rotate(90deg);
+}
+
+.dl-details-body p {
   margin: 10px 0 0;
   line-height: 1.6;
   color: var(--t2);
+  font-size: 0.85rem;
   padding: 0;
 }
-.dl-details code {
+.dl-details-body code {
   font-family: var(--font-m);
   font-size: 0.8rem;
   padding: 1px 5px;

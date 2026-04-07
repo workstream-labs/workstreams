@@ -36,20 +36,17 @@ module.exports = async function (context, req) {
 
   let total = 0;
 
-  // Count from Azure Table Storage
+  // Read the pre-aggregated counter entity instead of iterating all rows.
+  // The counter is maintained by the POST /api/download handler on each write.
   const client = getTableClient();
   if (client) {
     try {
-      let count = 0;
-      const entities = client.listEntities({
-        queryOptions: { filter: "PartitionKey eq 'download'" },
-      });
-      for await (const _ of entities) {
-        count++;
-      }
-      total += count;
+      const counter = await client.getEntity("meta", "totalCount");
+      total = counter.count || 0;
     } catch (err) {
-      context.log.warn("Failed to count downloads:", err.message);
+      if (err.statusCode !== 404) {
+        context.log.warn("Failed to read download counter:", err.message);
+      }
     }
   }
 
