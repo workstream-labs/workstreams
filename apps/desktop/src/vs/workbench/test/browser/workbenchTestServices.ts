@@ -144,6 +144,7 @@ import { IEnvironmentVariableService } from '../../contrib/terminal/common/envir
 import { EnvironmentVariableService } from '../../contrib/terminal/common/environmentVariableService.js';
 import { IRegisterContributedProfileArgs, IShellLaunchConfigResolveOptions, ITerminalProfileProvider, ITerminalProfileResolverService, ITerminalProfileService, type ITerminalConfiguration } from '../../contrib/terminal/common/terminal.js';
 import { IChatEntitlementService } from '../../services/chat/common/chatEntitlementService.js';
+import { IOrchestratorService } from '../../services/orchestrator/common/orchestratorService.js';
 import { IDecoration, IDecorationData, IDecorationsProvider, IDecorationsService, IResourceDecorationChangeEvent } from '../../services/decorations/common/decorations.js';
 import { CodeEditorService } from '../../services/editor/browser/codeEditorService.js';
 import { EditorPaneService } from '../../services/editor/browser/editorPaneService.js';
@@ -381,6 +382,34 @@ export function workbenchInstantiationService(
 	instantiationService.stub(IMarkdownRendererService, instantiationService.createInstance(MarkdownRendererService));
 	instantiationService.stub(IChatWidgetService, instantiationService.createInstance(TestChatWidgetService));
 	instantiationService.stub(IDefaultAccountService, DefaultAccountService);
+	// eslint-disable-next-line local/code-no-any-casts
+	instantiationService.stub(IOrchestratorService, {
+		repositories: [],
+		activeWorktree: undefined,
+		onDidChangeRepositories: Event.None,
+		onDidChangeActiveWorktree: Event.None,
+		onDidApplyWorktreeEditorState: Event.None,
+		onDidRemoveWorktree: Event.None,
+		onDidChangeSessionState: Event.None,
+		whenReady: Promise.resolve(),
+		pendingTerminalRestore: Promise.resolve(),
+		setSessionState: () => false,
+		getSessionState: () => undefined,
+		pickAndAddRepository: async () => { },
+		pickAndAddWorktree: async () => { },
+		addRepository: async () => { },
+		removeRepository: async () => { },
+		toggleRepositoryCollapsed: () => { },
+		addWorktree: async () => { },
+		removeWorktree: async () => { },
+		switchTo: async () => { },
+		getCurrentBranch: async () => 'main',
+		listBranches: async () => [],
+		detectAgents: async () => [],
+		getAgentCommand: () => '',
+		setAgentCommand: () => { },
+		scheduleRefresh: () => { },
+	} as any);
 
 	return instantiationService;
 }

@@ -153,7 +153,7 @@ suite('OrchestratorService', () => {
 			await service.addWorktree('/path/to/repo', 'feature-login', 'Build login page');
 
 			assert.strictEqual(service.repositories[0].worktrees.length, 2); // local + feature-login
-			assert.strictEqual(service.repositories[0].worktrees[1].name, 'feature login');
+			assert.strictEqual(service.repositories[0].worktrees[1].name, 'feature-login');
 			assert.strictEqual(service.repositories[0].worktrees[1].branch, 'feature-login');
 		});
 
@@ -164,9 +164,9 @@ suite('OrchestratorService', () => {
 			await service.addWorktree('/path/to/repo-b', 'wt-2', '');
 
 			assert.strictEqual(service.repositories[0].worktrees.length, 2); // local + wt-1
-			assert.strictEqual(service.repositories[0].worktrees[1].name, 'wt 1');
+			assert.strictEqual(service.repositories[0].worktrees[1].name, 'wt-1');
 			assert.strictEqual(service.repositories[1].worktrees.length, 2); // local + wt-2
-			assert.strictEqual(service.repositories[1].worktrees[1].name, 'wt 2');
+			assert.strictEqual(service.repositories[1].worktrees[1].name, 'wt-2');
 		});
 	});
 
@@ -252,9 +252,10 @@ suite('OrchestratorService', () => {
 			// Switch back to local — should restore its saved working set
 			await service.switchTo(service.repositories[0].worktrees[0]);
 
-			assert.strictEqual(appliedWorkingSets.length, 1);
-			assert.notStrictEqual(appliedWorkingSets[0], 'empty');
-			assert.strictEqual((appliedWorkingSets[0] as IEditorWorkingSet).name, '/path/to/repo');
+			assert.strictEqual(appliedWorkingSets.length, 2);
+			assert.strictEqual(appliedWorkingSets[0], 'empty');
+			assert.notStrictEqual(appliedWorkingSets[1], 'empty');
+			assert.strictEqual((appliedWorkingSets[1] as IEditorWorkingSet).name, '/path/to/repo');
 		});
 	});
 });
