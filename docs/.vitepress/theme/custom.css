@@ -1,0 +1,45 @@
+:root {
+  --vp-c-brand-1: #0f766e;
+  --vp-c-brand-2: #0b5f59;
+  --vp-c-brand-3: #134e4a;
+  --vp-c-brand-soft: rgba(15, 118, 110, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #0f766e, #2563eb);
+  --vp-home-hero-image-background-image: radial-gradient(
+    circle at center,
+    rgba(15, 118, 110, 0.28) 0%,
+    rgba(37, 99, 235, 0.22) 45%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  --vp-home-hero-image-filter: blur(56px);
+}
+
+.VPHero .clip {
+  white-space: nowrap;
+}
+
+.VPHero .image-src {
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow:
+    0 28px 80px rgba(15, 23, 42, 0.22),
+    0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.vp-doc img {
+  display: block;
+  width: 100%;
+  max-width: 1100px;
+  margin: 24px auto;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.14);
+}
+
+.vp-doc blockquote {
+  border-left-color: var(--vp-c-brand-1);
+}
+
+.vp-doc div[class*="language-"] code {
+  font-size: 0.875rem;
+}
