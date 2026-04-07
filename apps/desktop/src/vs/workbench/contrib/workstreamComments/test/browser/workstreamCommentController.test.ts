@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  Copyright (c) Workstreams Labs. All rights reserved.
+ *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
@@ -75,6 +75,7 @@ function createMocks(ds: Pick<DisposableStore, 'add'>) {
 	const configurationService = configurationServiceInstance;
 	ds.add({ dispose() { configurationServiceInstance.onDidChangeConfigurationEmitter.dispose(); } });
 	const logService = new NullLogService();
+	const scmService = { repositories: [] };
 
 	return {
 		commentService,
@@ -83,6 +84,7 @@ function createMocks(ds: Pick<DisposableStore, 'add'>) {
 		codeEditorService,
 		configurationService,
 		logService,
+		scmService,
 		setEditors,
 		setDiffEditors,
 	};
@@ -143,6 +145,7 @@ suite('WorkstreamCommentController', () => {
 			mocks.codeEditorService as any,
 			mocks.configurationService,
 			mocks.logService,
+			mocks.scmService as any,
 		));
 	});
 
@@ -215,7 +218,7 @@ suite('WorkstreamCommentController', () => {
 	});
 
 	suite('side and label detection', () => {
-		test('split view: left editor → side old, label L{n}', () => {
+		test('split view: left editor, deleted line → side old, label L{n}, storedLine=n', () => {
 			const resource = URI.from({ scheme: 'git', path: '/test/repo/.workstreams/trees/test-worktree/src/foo.ts' });
 			const originalEditor = makeMockCodeEditor({ id: 'orig', uri: resource, inDiffEditor: true });
 			const modifiedEditor = makeMockCodeEditor({
@@ -223,10 +226,17 @@ suite('WorkstreamCommentController', () => {
 				uri: URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts'),
 				inDiffEditor: true,
 			});
+			// Deletion at lines 40-44 on the left (no corresponding modified lines)
+			const deletionMapping = new DetailedLineRangeMapping(
+				new LineRange(40, 45),
+				new LineRange(40, 40),
+				undefined,
+			);
 			const diffEditor = makeMockDiffEditor({
 				originalEditor,
 				modifiedEditor,
 				renderSideBySide: true,
+				changes2: [deletionMapping],
 			});
 
 			mocks.setEditors([originalEditor, modifiedEditor]);
@@ -235,9 +245,41 @@ suite('WorkstreamCommentController', () => {
 			const result = (controller as any)._getCommentSideAndLabel(originalEditor, 42);
 			assert.strictEqual(result.side, 'old');
 			assert.strictEqual(result.label, 'L42');
+			assert.strictEqual(result.storedLine, 42);
 		});
 
-		test('split view: right editor → side new, label R{n}', () => {
+		test('split view: left editor, context line → side new, label R{right-n}, storedLine=right-n', () => {
+			const resource = URI.from({ scheme: 'git', path: '/test/repo/.workstreams/trees/test-worktree/src/foo.ts' });
+			const originalEditor = makeMockCodeEditor({ id: 'orig', uri: resource, inDiffEditor: true });
+			const modifiedEditor = makeMockCodeEditor({
+				id: 'mod',
+				uri: URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts'),
+				inDiffEditor: true,
+			});
+			// Addition at lines 5-7 on modified (shifts all subsequent lines by +2)
+			const additionMapping = new DetailedLineRangeMapping(
+				new LineRange(5, 5),
+				new LineRange(5, 7),
+				undefined,
+			);
+			const diffEditor = makeMockDiffEditor({
+				originalEditor,
+				modifiedEditor,
+				renderSideBySide: true,
+				changes2: [additionMapping],
+			});
+
+			mocks.setEditors([originalEditor, modifiedEditor]);
+			mocks.setDiffEditors([diffEditor]);
+
+			// Left line 10 is a context line; right-side equivalent is 10 + 2 = 12
+			const result = (controller as any)._getCommentSideAndLabel(originalEditor, 10);
+			assert.strictEqual(result.side, 'new');
+			assert.strictEqual(result.label, 'R12');
+			assert.strictEqual(result.storedLine, 12);
+		});
+
+		test('split view: right editor → side new, label R{n}, storedLine=n', () => {
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const originalEditor = makeMockCodeEditor({
 				id: 'orig',
@@ -257,9 +299,12 @@ suite('WorkstreamCommentController', () => {
 			const result = (controller as any)._getCommentSideAndLabel(modifiedEditor, 42);
 			assert.strictEqual(result.side, 'new');
 			assert.strictEqual(result.label, 'R42');
+			assert.strictEqual(result.storedLine, 42);
 		});
 
-		test('inline view: pure addition → side new, label R{n}', () => {
+		test('inline view: pure addition → side new, label R{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -289,7 +334,9 @@ suite('WorkstreamCommentController', () => {
 			assert.strictEqual(result.label, 'R11');
 		});
 
-		test('inline view: changed line → side new, label L{n}', () => {
+		test('inline view: changed line → side new, label R{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -297,29 +344,25 @@ suite('WorkstreamCommentController', () => {
 				uri: URI.from({ scheme: 'git', path: resource.path }),
 				inDiffEditor: true,
 			});
-
-			const changeMapping = new DetailedLineRangeMapping(
-				new LineRange(10, 12), // original: lines 10-11
-				new LineRange(10, 13), // modified: lines 10-12
-				undefined,
-			);
-
 			const diffEditor = makeMockDiffEditor({
 				originalEditor,
 				modifiedEditor,
 				renderSideBySide: false,
-				changes2: [changeMapping],
 			});
 
 			mocks.setEditors([originalEditor, modifiedEditor]);
 			mocks.setDiffEditors([diffEditor]);
 
+			// In inline mode all lines are R — no diff computation needed
 			const result = (controller as any)._getCommentSideAndLabel(modifiedEditor, 11);
 			assert.strictEqual(result.side, 'new');
-			assert.strictEqual(result.label, 'L11');
+			assert.strictEqual(result.label, 'R11');
+			assert.strictEqual(result.storedLine, 11);
 		});
 
-		test('inline view: context line → side new, label L{n}', () => {
+		test('inline view: context line → side new, label R{n}', async () => {
+			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
+
 			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
@@ -327,18 +370,10 @@ suite('WorkstreamCommentController', () => {
 				uri: URI.from({ scheme: 'git', path: resource.path }),
 				inDiffEditor: true,
 			});
-
-			const changeMapping = new DetailedLineRangeMapping(
-				new LineRange(20, 22),
-				new LineRange(20, 23),
-				undefined,
-			);
-
 			const diffEditor = makeMockDiffEditor({
 				originalEditor,
 				modifiedEditor,
 				renderSideBySide: false,
-				changes2: [changeMapping],
 			});
 
 			mocks.setEditors([originalEditor, modifiedEditor]);
@@ -346,7 +381,8 @@ suite('WorkstreamCommentController', () => {
 
 			const result = (controller as any)._getCommentSideAndLabel(modifiedEditor, 5);
 			assert.strictEqual(result.side, 'new');
-			assert.strictEqual(result.label, 'L5');
+			assert.strictEqual(result.label, 'R5');
+			assert.strictEqual(result.storedLine, 5);
 		});
 
 		test('no diff editor → defaults to side new, label R{n}', () => {
@@ -363,57 +399,16 @@ suite('WorkstreamCommentController', () => {
 	});
 
 	suite('_buildLineLabel — consistency with creation', () => {
-		test('split view: old side → L{n}', () => {
-			const diffEditor = makeMockDiffEditor({
-				originalEditor: makeMockCodeEditor({ id: 'orig', uri: URI.from({ scheme: 'git', path: '/foo' }), inDiffEditor: true }),
-				modifiedEditor: makeMockCodeEditor({ id: 'mod', uri: URI.file('/foo'), inDiffEditor: true }),
-				renderSideBySide: true,
-			});
-
-			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 42, 'old'), 'L42');
+		test('old side → L{n}', () => {
+			assert.strictEqual((controller as any)._buildLineLabel(42, 'old'), 'L42');
 		});
 
-		test('split view: new side → R{n}', () => {
-			const diffEditor = makeMockDiffEditor({
-				originalEditor: makeMockCodeEditor({ id: 'orig', uri: URI.from({ scheme: 'git', path: '/foo' }), inDiffEditor: true }),
-				modifiedEditor: makeMockCodeEditor({ id: 'mod', uri: URI.file('/foo'), inDiffEditor: true }),
-				renderSideBySide: true,
-			});
-
-			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 42, 'new'), 'R42');
+		test('new side → R{n}', () => {
+			assert.strictEqual((controller as any)._buildLineLabel(42, 'new'), 'R42');
 		});
 
-		test('inline view: addition line uses R{n} consistent with creation', () => {
-			const additionMapping = new DetailedLineRangeMapping(
-				new LineRange(10, 10),
-				new LineRange(10, 13),
-				undefined,
-			);
-
-			const diffEditor = makeMockDiffEditor({
-				originalEditor: makeMockCodeEditor({ id: 'orig', uri: URI.from({ scheme: 'git', path: '/foo' }), inDiffEditor: true }),
-				modifiedEditor: makeMockCodeEditor({ id: 'mod', uri: URI.file('/foo'), inDiffEditor: true }),
-				renderSideBySide: false,
-				changes2: [additionMapping],
-			});
-
-			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 11, 'new'), 'R11');
-		});
-
-		test('inline view: old side comment → L{n}', () => {
-			const diffEditor = makeMockDiffEditor({
-				originalEditor: makeMockCodeEditor({ id: 'orig', uri: URI.from({ scheme: 'git', path: '/foo' }), inDiffEditor: true }),
-				modifiedEditor: makeMockCodeEditor({ id: 'mod', uri: URI.file('/foo'), inDiffEditor: true }),
-				renderSideBySide: false,
-				changes2: [],
-			});
-
-			assert.strictEqual((controller as any)._buildLineLabel(diffEditor, 42, 'old'), 'L42');
-		});
-
-		test('no diff editor: old → L, new → R', () => {
-			assert.strictEqual((controller as any)._buildLineLabel(undefined, 42, 'old'), 'L42');
-			assert.strictEqual((controller as any)._buildLineLabel(undefined, 42, 'new'), 'R42');
+		test('new side, different line number → R{n}', () => {
+			assert.strictEqual((controller as any)._buildLineLabel(11, 'new'), 'R11');
 		});
 	});
 });

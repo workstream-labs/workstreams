@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  Copyright (c) Workstreams Labs. All rights reserved.
+ *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import './media/workstreamComments.css';
@@ -53,6 +53,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		private readonly _orchestratorService: IOrchestratorService,
 		private readonly _side: CommentSide = 'new',
 		private readonly _lineLabel?: string,
+		private readonly _storedLine: number = _lineNumber,
 	) {
 		super(editor, {
 			showFrame: true,
@@ -244,7 +245,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
 		} else {
 			await this._workstreamCommentService.addComment(
-				worktree.name, relativePath, this._lineNumber, text, this._side
+				worktree.name, relativePath, this._storedLine, text, this._side
 			);
 		}
 		// Close — onDidChangeComments will recreate from saved data

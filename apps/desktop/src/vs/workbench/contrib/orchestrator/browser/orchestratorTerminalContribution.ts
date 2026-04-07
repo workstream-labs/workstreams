@@ -1,8 +1,9 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  Copyright (c) Workstreams Labs. All rights reserved.
+ *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { URI } from '../../../../base/common/uri.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -27,6 +28,8 @@ interface ITerminalOwnership {
 	readonly worktreeKey: string;
 	/** Editor group index (GRID_APPEARANCE order) before backgrounding. */
 	groupIndex: number;
+	/** Tab index within the editor group before backgrounding. */
+	tabIndex: number;
 }
 
 /**
@@ -58,6 +61,14 @@ export class OrchestratorTerminalContribution extends Disposable {
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
 
 	/**
+	 * Per-worktree snapshot of each group's active editor URI, captured in
+	 * Phase 1 before backgrounding so Phase 2 can restore focus after
+	 * terminal editors are re-shown.
+	 * Key: worktreeKey, Value: Map<groupIndex, activeEditorResource>
+	 */
+	private readonly _savedActiveEditors = new Map<string, Map<number, URI>>();
+
+	/**
 	 * Heartbeat timers per worktree. If no hook event arrives within the
 	 * timeout period while a worktree is in Working state, the state is
 	 * reset to Idle as a crash-recovery fallback.
@@ -84,7 +95,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		 * from the main-process HTTP server and updates session state.
 		 */
 		this._register(this._hookNotificationService.onDidReceiveNotification(event => {
-			console.warn(`[LIFECYCLE DEBUG] Hook event: ${event.eventType} for "${event.worktreePath}" | current state: ${this._findWorktreeSessionState(event.worktreePath) ?? 'undefined'}`);
+			this._logService.trace(`${TAG} Hook event: ${event.eventType} for "${event.worktreePath}" | current state: ${this._findWorktreeSessionState(event.worktreePath) ?? 'undefined'}`);
 			this._logService.info(`${TAG} Hook notification: ${event.eventType} for "${event.worktreePath}"`);
 
 			const worktreeName = this._resolveWorktreeName(event.worktreePath);
@@ -108,9 +119,17 @@ export class OrchestratorTerminalContribution extends Disposable {
 					}
 
 					const isActive = this._orchestratorService.activeWorktree?.path === event.worktreePath;
+					const targetState = isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review;
+
+					// Skip notification for self-transitions (duplicate Stop events)
+					if (currentState === targetState) {
+						this._logService.trace(`${TAG} Duplicate Stop for "${event.worktreePath}" (already ${currentState}) — skipping`);
+						break;
+					}
+
 					const accepted = this._orchestratorService.setSessionState(
 						event.worktreePath,
-						isActive ? WorktreeSessionState.Idle : WorktreeSessionState.Review
+						targetState
 					);
 
 					if (accepted) {
@@ -165,7 +184,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 				this._logService.trace(`${TAG} Moved panel terminal ${instance.instanceId} → editor`);
 			}
 			if (this._activeKey) {
-				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0 });
+				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0, tabIndex: -1 });
 				this._logService.trace(`${TAG} Claimed terminal ${instance.instanceId} → "${this._activeKey}"`);
 
 				// Inject worktree path so Claude hooks can identify which
@@ -195,7 +214,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._terminalService.onDidDisposeInstance(instance => {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
-				console.warn(`[LIFECYCLE DEBUG] onDidDisposeInstance: terminal ${instance.instanceId} owner="${info.worktreeKey}"`);
+				this._logService.trace(`${TAG} onDidDisposeInstance: terminal ${instance.instanceId} owner="${info.worktreeKey}"`);
 				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}" — removing from ownership`);
 				this._ownership.delete(instance.instanceId);
 
@@ -261,7 +280,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 */
 	private _listenForCommandFinished(instance: ITerminalInstance): void {
 		const handleCommandFinished = () => {
-			console.warn(`[LIFECYCLE DEBUG] onCommandFinished: terminal ${instance.instanceId}`);
+			this._logService.trace(`${TAG} onCommandFinished: terminal ${instance.instanceId}`);
 			this._orchestratorService.scheduleRefresh();
 
 			// Crash recovery: if a command finished in a terminal whose
@@ -320,6 +339,24 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
+	 * Find the tab index (position within the editor group's tab list)
+	 * for a terminal. Returns -1 if not found.
+	 */
+	private _findTabIndex(instance: ITerminalInstance): number {
+		if (instance.target !== TerminalLocation.Editor) {
+			return -1;
+		}
+		const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
+		for (const group of groups) {
+			const editors = group.findEditors(instance.resource);
+			if (editors.length > 0) {
+				return group.getIndexOfEditor(editors[0]);
+			}
+		}
+		return -1;
+	}
+
+	/**
 	 * Phase 1: Fires BEFORE saveWorkingSet/applyWorkingSet.
 	 * Snapshots each terminal's group position, then backgrounds all managed
 	 * terminals so their editor tabs are removed from groups. The empty groups
@@ -349,20 +386,36 @@ export class OrchestratorTerminalContribution extends Disposable {
 		if (previousKey) {
 			for (const inst of this._terminalService.foregroundInstances) {
 				if (!this._ownership.has(inst.instanceId)) {
-					this._ownership.set(inst.instanceId, { worktreeKey: previousKey, groupIndex: 0 });
+					this._ownership.set(inst.instanceId, { worktreeKey: previousKey, groupIndex: 0, tabIndex: -1 });
 					this._logService.trace(`${TAG} Adopted unclaimed terminal ${inst.instanceId} → "${previousKey}"`);
 				}
 			}
 		}
 
 		/**
-		 * Snapshot group positions BEFORE backgrounding (detach removes from group).
+		 * Snapshot the active editor per group for focus restoration in Phase 2.
+		 */
+		if (previousKey) {
+			const activeEditors = new Map<number, URI>();
+			const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
+			for (let i = 0; i < groups.length; i++) {
+				const active = groups[i].activeEditor;
+				if (active?.resource) {
+					activeEditors.set(i, active.resource);
+				}
+			}
+			this._savedActiveEditors.set(previousKey, activeEditors);
+		}
+
+		/**
+		 * Snapshot group + tab positions BEFORE backgrounding (detach removes from group).
 		 */
 		for (const instance of this._terminalService.foregroundInstances) {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
 				info.groupIndex = this._findGroupIndex(instance);
-				this._logService.trace(`${TAG} Snapshotted terminal ${instance.instanceId} → groupIndex=${info.groupIndex}`);
+				info.tabIndex = this._findTabIndex(instance);
+				this._logService.trace(`${TAG} Snapshotted terminal ${instance.instanceId} → groupIndex=${info.groupIndex} tabIndex=${info.tabIndex}`);
 			}
 		}
 
@@ -407,14 +460,14 @@ export class OrchestratorTerminalContribution extends Disposable {
 		/**
 		 * Collect background terminals owned by the new worktree.
 		 */
-		const toShow: { instance: ITerminalInstance; groupIndex: number }[] = [];
+		const toShow: { instance: ITerminalInstance; groupIndex: number; tabIndex: number }[] = [];
 		for (const instance of [...this._terminalService.instances]) {
 			const isFg = this._terminalService.foregroundInstances.includes(instance);
 			const info = this._ownership.get(instance.instanceId);
 			if (!isFg && info?.worktreeKey === newKey) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);
 				if (current && !current.isDisposed) {
-					toShow.push({ instance: current, groupIndex: info.groupIndex });
+					toShow.push({ instance: current, groupIndex: info.groupIndex, tabIndex: info.tabIndex });
 				}
 			} else if (!isFg && info) {
 				this._logService.trace(`${TAG} Not showing bg terminal ${instance.instanceId}: owner="${info.worktreeKey}" wanted="${newKey}"`);
@@ -471,6 +524,59 @@ export class OrchestratorTerminalContribution extends Disposable {
 			}
 		}
 
+		/**
+		 * Reorder terminal tabs to their original positions within each group.
+		 * After showBackgroundTerminal + openEditor, terminals are appended
+		 * at the end. Move each one to its saved tabIndex to restore the
+		 * original interleaved order (e.g. [E1, T1, T2, E2] not [E1, E2, T1, T2]).
+		 */
+		const groupsAfter = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
+		const terminalsByGroup = new Map<number, { instance: ITerminalInstance; tabIndex: number }[]>();
+		for (const { instance, groupIndex, tabIndex } of toShow) {
+			if (tabIndex < 0) { continue; }
+			let list = terminalsByGroup.get(groupIndex);
+			if (!list) {
+				list = [];
+				terminalsByGroup.set(groupIndex, list);
+			}
+			list.push({ instance, tabIndex });
+		}
+
+		for (const [groupIndex, terminals] of terminalsByGroup) {
+			const group = groupsAfter[groupIndex] ?? groupsAfter[0];
+			if (!group) { continue; }
+			// Sort by tabIndex ascending so earlier moves don't shift later targets
+			terminals.sort((a, b) => a.tabIndex - b.tabIndex);
+			for (const { instance, tabIndex } of terminals) {
+				const editors = group.findEditors(instance.resource);
+				if (editors.length > 0) {
+					const targetIdx = Math.min(tabIndex, group.editors.length - 1);
+					group.moveEditor(editors[0], group, { index: targetIdx });
+					this._logService.trace(`${TAG} Reordered terminal ${instance.instanceId} → tabIndex=${targetIdx}`);
+				}
+			}
+		}
+
+		/**
+		 * Restore per-group active editor focus. Phase 1 saved which editor
+		 * was active in each group before terminals were backgrounded.
+		 * After terminals are re-shown, the last openEditor call will have
+		 * stolen focus — restore it to the original active editor.
+		 */
+		const savedActive = this._savedActiveEditors.get(newKey);
+		if (savedActive) {
+			for (const [groupIndex, activeResource] of savedActive) {
+				const group = groupsAfter[groupIndex] ?? groupsAfter[0];
+				if (!group) { continue; }
+				const editors = group.findEditors(activeResource);
+				if (editors.length > 0) {
+					await group.openEditor(editors[0], { preserveFocus: true });
+					this._logService.trace(`${TAG} Restored active editor in group ${groupIndex}: ${activeResource.path}`);
+				}
+			}
+			this._savedActiveEditors.delete(newKey);
+		}
+
 		this._dumpState('phase2-done');
 		this._logService.trace(`${TAG} ===== PHASE 2 DONE: showed=${toShow.length} fg=${this._terminalService.foregroundInstances.length} =====`);
 	}
@@ -523,7 +629,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 			scheduler = new RunOnceScheduler(() => {
 				const state = this._findWorktreeSessionState(worktreePath);
 				if (state === WorktreeSessionState.Working) {
-					console.warn(`[LIFECYCLE DEBUG] Heartbeat timeout: "${worktreePath}" state=${state} → Idle`);
+					this._logService.trace(`${TAG} Heartbeat timeout: "${worktreePath}" state=${state} → Idle`);
 					this._logService.warn(`${TAG} Heartbeat timeout for "${worktreePath}" — resetting to Idle`);
 					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
 					const worktreeName = this._resolveWorktreeName(worktreePath);

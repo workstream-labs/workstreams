@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  Copyright (c) Workstreams Labs. All rights reserved.
+ *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { addDisposableListener, DragAndDropObserver, EventType } from '../../../../base/browser/dom.js';
@@ -410,7 +410,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		function updateBranchButton(): void {
 			branchBtn.textContent = '';
 			const icon = document.createElement('span');
-			icon.className = 'codicon codicon-git-branch';
+			icon.className = 'icon-git-branch-png';
 			branchBtn.appendChild(icon);
 			const label = document.createElement('span');
 			label.textContent = selectedBranch;

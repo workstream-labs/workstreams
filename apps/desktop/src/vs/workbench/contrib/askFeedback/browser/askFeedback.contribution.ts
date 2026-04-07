@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *  Copyright (c) Workstreams Labs. All rights reserved.
+ *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import './askFeedback.css';
@@ -10,11 +10,10 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { IsAuxiliaryWindowContext } from '../../../common/contextkeys.js';
 import { type FeedbackType, type IFeedbackResult, submitFeedback, tryAcquireFeedback } from './feedbackService.js';
 
 function showFeedbackDialog(container: HTMLElement): Promise<IFeedbackResult | undefined> {
@@ -156,12 +155,7 @@ registerAction2(class AskFeedbackAction extends Action2 {
 			id: 'workbench.action.askFeedback',
 			title: localize2('askFeedback', "Send Feedback"),
 			icon: Codicon.comment,
-			menu: [{
-				id: MenuId.LayoutControlMenu,
-				group: '2_pane_toggles',
-				order: -1, // Before Terminal (0)
-				when: IsAuxiliaryWindowContext.negate(),
-			}]
+			menu: []
 		});
 	}
 
