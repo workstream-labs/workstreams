@@ -210,16 +210,18 @@
 /* -- Worktree Delete Button (hover-only, in right slot) -- */
 
 .monaco-workbench .orchestrator-content .worktree-delete {
-	margin-left: auto;
-	display: none;
+	position: absolute;
+	right: 0;
+	top: 0;
 	cursor: pointer;
-	opacity: 0.4;
-	flex-shrink: 0;
+	opacity: 0;
 	transition: opacity 0.1s ease;
+	pointer-events: none;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:hover .worktree-delete {
-	display: inline-block;
+	opacity: 0.4;
+	pointer-events: auto;
 }
 
 .monaco-workbench .orchestrator-content .worktree-delete:hover {
@@ -264,6 +266,7 @@
 .monaco-workbench .icon-git-pr-draft-svg {
 	-webkit-mask-image: url('./git-pull-request-draft.svg');
 	mask-image: url('./git-pull-request-draft.svg');
+	transform: scale(0.8);
 }
 
 .monaco-workbench .icon-git-pr-close-svg {
@@ -364,6 +367,7 @@
 	min-width: 0;
 	margin-top: 2px;
 	line-height: 1.35;
+	position: relative;
 }
 
 .monaco-workbench .orchestrator-content .worktree-branch {
