@@ -157,17 +157,29 @@ export class OrchestratorViewPane extends ViewPane {
 			item.classList.add('active');
 		}
 
-		const iconEl = append(item, $('.worktree-icon'));
+		const isMainWorktree = worktree.path === repo.path;
+		const iconSlot = append(item, $('.worktree-icon-slot'));
+		const iconEl = append(iconSlot, $('.worktree-icon'));
 		this.applySessionStateIcon(iconEl, worktree);
+
+		if (!isMainWorktree) {
+			iconSlot.classList.add('has-delete');
+			const deleteEl = append(iconSlot, $('.worktree-icon-delete.icon-delete-svg'));
+			deleteEl.title = localize('deleteWorktree', "Delete Worktree");
+			this.renderDisposables.add(addDisposableListener(deleteEl, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+			}));
+		}
 
 		const info = append(item, $('.worktree-info'));
 
-		// Row 1: name ... [+N -N] or [trash] on hover
+		// Row 1: name ... [+N -N]
 		const nameRow = append(info, $('.worktree-name-row'));
 		const nameEl = append(nameRow, $('.worktree-name'));
 		nameEl.textContent = worktree.name;
 
-		// Right-side slot: stats badge visible by default, trash replaces it on hover
+		// Right-side slot: diff stats badge
 		const rightSlot = append(nameRow, $('.worktree-name-right'));
 
 		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;

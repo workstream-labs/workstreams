@@ -200,11 +200,41 @@
 
 /* -- Worktree Icon -- */
 
+.monaco-workbench .orchestrator-content .worktree-icon-slot {
+	position: relative;
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	margin-top: 2px;
+}
+
 .monaco-workbench .orchestrator-content .worktree-icon {
 	font-size: 16px;
 	flex-shrink: 0;
 	opacity: 0.45;
-	margin-top: 2px;
+}
+
+/* Delete icon: overlays git icon, swaps on hover */
+
+.monaco-workbench .orchestrator-content .worktree-icon-delete {
+	position: absolute;
+	inset: 0;
+	visibility: hidden;
+	opacity: 0.5;
+	cursor: pointer;
+	transition: opacity 0.1s ease;
+}
+
+.monaco-workbench .orchestrator-content .worktree-item:hover .has-delete .worktree-icon-delete {
+	visibility: visible;
+}
+
+.monaco-workbench .orchestrator-content .worktree-item:hover .has-delete .worktree-icon {
+	visibility: hidden;
+}
+
+.monaco-workbench .orchestrator-content .worktree-icon-delete:hover {
+	opacity: 0.8;
 }
 
 /* SVG icon masks — global so they work in modals outside .orchestrator-content */
@@ -212,7 +242,8 @@
 .monaco-workbench .icon-git-branch-svg,
 .monaco-workbench .icon-git-merge-svg,
 .monaco-workbench .icon-git-pr-svg,
-.monaco-workbench .icon-git-pr-close-svg {
+.monaco-workbench .icon-git-pr-close-svg,
+.monaco-workbench .icon-delete-svg {
 	width: 16px;
 	height: 16px;
 	display: inline-block;
@@ -243,6 +274,11 @@
 .monaco-workbench .icon-git-pr-close-svg {
 	-webkit-mask-image: url('./git-pull-request-close.svg');
 	mask-image: url('./git-pull-request-close.svg');
+}
+
+.monaco-workbench .icon-delete-svg {
+	-webkit-mask-image: url('./delete.svg');
+	mask-image: url('./delete.svg');
 }
 
 .monaco-workbench .orchestrator-content .worktree-icon.state-loading {
