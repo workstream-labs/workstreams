@@ -192,24 +192,10 @@ export class OrchestratorViewPane extends ViewPane {
 			}
 		}
 
-		// Row 2: branch · status
+		// Row 2: branch
 		const branchRow = append(info, $('.worktree-branch-row'));
 		const branchEl = append(branchRow, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
-
-		if (worktree.prState) {
-			const statusEl = append(branchRow, $('span'));
-			if (worktree.prMergeable === 'conflicting') {
-				statusEl.className = 'worktree-status worktree-status-conflicts';
-				statusEl.textContent = localize('mergeConflicts', "Merge conflicts");
-			} else if (worktree.prState === 'draft') {
-				statusEl.className = 'worktree-status worktree-status-draft';
-				statusEl.textContent = localize('draft', "Draft");
-			} else if (worktree.prMergeable === 'mergeable') {
-				statusEl.className = 'worktree-status worktree-status-ready';
-				statusEl.textContent = localize('readyToMerge', "Ready to merge");
-			}
-		}
 
 		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
 			this.orchestratorService.switchTo(worktree);

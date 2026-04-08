@@ -379,29 +379,6 @@
 	min-width: 0;
 }
 
-.monaco-workbench .orchestrator-content .worktree-status {
-	font-size: 11px;
-	white-space: nowrap;
-	flex-shrink: 0;
-}
-
-.monaco-workbench .orchestrator-content .worktree-status::before {
-	content: ' \00B7 ';
-	opacity: 0.4;
-	color: var(--vscode-descriptionForeground);
-}
-
-.monaco-workbench .orchestrator-content .worktree-status-ready {
-	color: var(--vscode-testing-iconPassed, #3fb950);
-}
-
-.monaco-workbench .orchestrator-content .worktree-status-conflicts {
-	color: var(--vscode-editorWarning-foreground, #d29922);
-}
-
-.monaco-workbench .orchestrator-content .worktree-status-draft {
-	color: var(--vscode-descriptionForeground);
-}
 
 /* -- Add Worktree Modal -- */
 
