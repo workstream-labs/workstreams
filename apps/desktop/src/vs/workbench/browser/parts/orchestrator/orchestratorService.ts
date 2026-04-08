@@ -18,6 +18,7 @@ import { IWorkspaceEditingService } from '../../../services/workspaces/common/wo
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IEditorGroupsService, IEditorWorkingSet } from '../../../services/editor/common/editorGroupsService.js';
+import { WebviewInput } from '../../../contrib/webviewPanel/browser/webviewEditorInput.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -426,6 +427,19 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			 * removing terminal editor tabs from all groups.
 			 */
 			this._onDidChangeActiveWorktree.fire(worktree);
+
+			/**
+			 * Step 1b: Close webview tabs (e.g. markdown preview) that cannot
+			 * survive a workspace-root change. Their serialisers fail to
+			 * deserialise after the folder swap, producing "An error occurred
+			 * while loading view" placeholders.
+			 */
+			for (const group of this.editorGroupsService.groups) {
+				const webviews = group.editors.filter(e => e instanceof WebviewInput);
+				if (webviews.length) {
+					await group.closeEditors(webviews);
+				}
+			}
 
 			/**
 			 * Step 2: Save current editor state. Terminal tabs were removed in
