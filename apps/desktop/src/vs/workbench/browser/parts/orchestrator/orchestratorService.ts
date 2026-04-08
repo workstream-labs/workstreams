@@ -11,7 +11,7 @@ import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSession
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { IGitWorktreeService, IDiffStats, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { IGitWorktreeService, IDiffStats, IPRInfo, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
@@ -579,16 +579,23 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		try {
 			let changed = false;
 			const updated = await Promise.all(this._repositories.map(async repo => {
-				const [statsMap, branchMap] = await Promise.all([
+				const [statsMap, branchMap, prMap] = await Promise.all([
 					this._fetchDiffStats(repo.path, repo.worktrees),
 					this._fetchBranches(repo.worktrees),
+					this._fetchPRInfo(repo.path, repo.worktrees),
 				]);
 				const worktrees = repo.worktrees.map(wt => {
 					const s = statsMap.get(wt.path) ?? EMPTY_STATS;
 					const branch = branchMap.get(wt.path) ?? wt.branch;
-					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch) {
+					const pr = prMap.get(wt.path) ?? null;
+					const prNumber = pr?.number;
+					const prState = pr?.state;
+					const prMergeable = pr?.mergeable;
+					const prUrl = pr?.url;
+					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch
+						|| wt.prNumber !== prNumber || wt.prState !== prState || wt.prMergeable !== prMergeable || !wt.prLoaded) {
 						changed = true;
-						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, branch };
+						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, branch, prLoaded: true, prNumber, prState, prMergeable, prUrl };
 					}
 					return wt;
 				});
@@ -629,6 +636,15 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			worktrees.map(wt => this.gitService.getCurrentBranch(wt.path).catch(() => wt.branch))
 		);
 		const map = new Map<string, string>();
+		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
+		return map;
+	}
+
+	private async _fetchPRInfo(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IPRInfo | null>> {
+		const results = await Promise.all(
+			worktrees.map(wt => this.gitService.getPRInfo(repoPath, wt.branch).catch(() => null))
+		);
+		const map = new Map<string, IPRInfo | null>();
 		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
 		return map;
 	}

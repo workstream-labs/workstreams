@@ -39,6 +39,11 @@ export interface IWorktreeEntry {
 	readonly filesChanged?: number;
 	readonly additions?: number;
 	readonly deletions?: number;
+	readonly prLoaded?: boolean;
+	readonly prNumber?: number;
+	readonly prState?: 'open' | 'draft' | 'merged' | 'closed';
+	readonly prMergeable?: 'mergeable' | 'conflicting' | 'unknown';
+	readonly prUrl?: string;
 }
 
 export interface IRepositoryEntry {

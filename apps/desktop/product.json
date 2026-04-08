@@ -3,6 +3,7 @@
 	"nameLong": "Workstreams",
 	"applicationName": "workstreams",
 	"version": "1.104.0",
+	"vscodeVersion": "1.104.0",
 	"quality": "stable",
 	"updateUrl": "https://api.github.com/repos/workstream-labs/workstreams",
 	"releaseNotesUrl": "https://github.com/workstream-labs/workstreams/releases",
@@ -40,6 +41,14 @@
 	"nodejsRepository": "https://nodejs.org",
 	"urlProtocol": "code-oss",
 	"webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",
+	"extensionsGallery": {
+		"serviceUrl": "https://open-vsx.org/vscode/gallery",
+		"itemUrl": "https://open-vsx.org/vscode/item",
+		"resourceUrlTemplate": "https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}",
+		"controlUrl": "",
+		"nlsBaseUrl": "",
+		"publisherUrl": ""
+	},
 	"builtInExtensions": [
 		{
 			"name": "ms-vscode.js-debug-companion",

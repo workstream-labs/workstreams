@@ -27,6 +27,13 @@ export interface IWorktreeMeta {
 	readonly createdAt: string;
 }
 
+export interface IPRInfo {
+	readonly number: number;
+	readonly state: 'open' | 'draft' | 'merged' | 'closed';
+	readonly mergeable: 'mergeable' | 'conflicting' | 'unknown';
+	readonly url: string;
+}
+
 export interface IGitWorktreeService {
 	readonly _serviceBrand: undefined;
 
@@ -39,6 +46,7 @@ export interface IGitWorktreeService {
 	addWorktree(repoPath: string, name: string, baseBranch?: string): Promise<string>;
 	removeWorktree(repoPath: string, worktreePath: string, branchName?: string, force?: boolean): Promise<void>;
 	getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats>;
+	getPRInfo(repoPath: string, branch: string): Promise<IPRInfo | null>;
 	detectAgents(): Promise<string[]>;
 	writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void>;
 	readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null>;

@@ -28,6 +28,7 @@ class MockGitWorktreeService implements IGitWorktreeService {
 	async addWorktree(repoPath: string, name: string): Promise<string> { return `${repoPath}/.workstreams/${name}/tree`; }
 	async removeWorktree(): Promise<void> { }
 	async getDiffStats(): Promise<IDiffStats> { return { filesChanged: 0, additions: 0, deletions: 0 }; }
+	async getPRInfo(): Promise<null> { return null; }
 	async writeWorktreeMeta(): Promise<void> { }
 	async readWorktreeMeta(): Promise<IWorktreeMeta | null> { return null; }
 }

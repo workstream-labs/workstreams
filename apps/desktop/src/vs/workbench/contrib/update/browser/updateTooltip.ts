@@ -91,6 +91,12 @@ export class UpdateTooltip extends Disposable {
 			class: ThemeIcon.asClassName(Codicon.gear),
 			run: () => this.runCommandAndClose('workbench.action.openSettings', '@id:update*'),
 		}), { icon: true, label: false });
+		actionBar.push(toAction({
+			id: 'update.closeTooltip',
+			label: localize('updateTooltip.close', "Close"),
+			class: ThemeIcon.asClassName(Codicon.close),
+			run: () => this.hoverService.hideHover(true),
+		}), { icon: true, label: false });
 
 		// Product info section
 		this.productInfoNode = dom.append(this.domNode, dom.$('.product-info'));

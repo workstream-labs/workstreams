@@ -7,7 +7,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IWorktreeMeta, parseWorktreeList } from '../common/gitWorktreeService.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IPRInfo, IWorktreeMeta, parseWorktreeList } from '../common/gitWorktreeService.js';
 
 const execFile = promisify(cp.execFile);
 const readFile = promisify(fs.readFile);
@@ -267,15 +267,58 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		}
 	}
 
-	private static readonly KNOWN_AGENTS = ['claude', 'codex'];
+	//#region PR info
 
-	async detectAgents(): Promise<string[]> {
-		/**
-		 * When launched from DMG/Finder on macOS, process.env.PATH is minimal
-		 * (e.g. /usr/bin:/bin:/usr/sbin:/sbin) and won't include paths like
-		 * /opt/homebrew/bin where agents are typically installed.
-		 * Augment PATH with common binary locations so `which` can find them.
-		 */
+	private static readonly PR_CACHE_TTL_MS = 60_000;
+	private readonly _prCache = new Map<string, { info: IPRInfo | null; ts: number }>();
+
+	async getPRInfo(repoPath: string, branch: string): Promise<IPRInfo | null> {
+		const cacheKey = `${repoPath}:${branch}`;
+		const cached = this._prCache.get(cacheKey);
+		if (cached && Date.now() - cached.ts < GitWorktreeMainService.PR_CACHE_TTL_MS) {
+			return cached.info;
+		}
+
+		try {
+			const { stdout } = await execFile('gh', [
+				'pr', 'view', branch,
+				'--json', 'number,state,isDraft,mergeable,url',
+			], { cwd: repoPath, timeout: 10_000, env: GitWorktreeMainService.augmentedEnv() });
+
+			const raw = JSON.parse(stdout.trim());
+
+			const rawState = typeof raw.state === 'string' ? raw.state.toLowerCase() : 'open';
+			const state: IPRInfo['state'] = raw.isDraft ? 'draft'
+				: (rawState === 'merged' || rawState === 'closed') ? rawState
+					: 'open';
+
+			const mergeable: IPRInfo['mergeable'] = raw.mergeable === 'MERGEABLE' ? 'mergeable'
+				: raw.mergeable === 'CONFLICTING' ? 'conflicting'
+					: 'unknown';
+
+			const info: IPRInfo = {
+				number: raw.number,
+				state,
+				mergeable,
+				url: raw.url ?? '',
+			};
+			this._prCache.set(cacheKey, { info, ts: Date.now() });
+			return info;
+		} catch {
+			this._prCache.set(cacheKey, { info: null, ts: Date.now() });
+			return null;
+		}
+	}
+
+	//#endregion
+
+	/**
+	 * When launched from DMG/Finder on macOS, process.env.PATH is minimal
+	 * (e.g. /usr/bin:/bin:/usr/sbin:/sbin) and won't include paths like
+	 * /opt/homebrew/bin where CLI tools (gh, claude, codex) are installed.
+	 * Returns an env object with augmented PATH.
+	 */
+	private static augmentedEnv(): NodeJS.ProcessEnv {
 		const home = process.env.HOME || '';
 		const extraPaths = [
 			'/opt/homebrew/bin',
@@ -286,7 +329,13 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		];
 		const currentPath = process.env.PATH || '/usr/bin:/bin';
 		const augmentedPath = [...extraPaths, ...currentPath.split(':')].join(':');
-		const env = { ...process.env, PATH: augmentedPath };
+		return { ...process.env, PATH: augmentedPath };
+	}
+
+	private static readonly KNOWN_AGENTS = ['claude', 'codex'];
+
+	async detectAgents(): Promise<string[]> {
+		const env = GitWorktreeMainService.augmentedEnv();
 
 		const results = await Promise.all(
 			GitWorktreeMainService.KNOWN_AGENTS.map(async agent => {
