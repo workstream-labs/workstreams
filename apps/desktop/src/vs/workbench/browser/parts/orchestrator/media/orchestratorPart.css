@@ -231,6 +231,7 @@
 .monaco-workbench .icon-git-branch-svg,
 .monaco-workbench .icon-git-merge-svg,
 .monaco-workbench .icon-git-pr-svg,
+.monaco-workbench .icon-git-pr-draft-svg,
 .monaco-workbench .icon-git-pr-close-svg,
 .monaco-workbench .icon-delete-svg {
 	width: 16px;
@@ -258,6 +259,11 @@
 .monaco-workbench .icon-git-pr-svg {
 	-webkit-mask-image: url('./git-pull-request.svg');
 	mask-image: url('./git-pull-request.svg');
+}
+
+.monaco-workbench .icon-git-pr-draft-svg {
+	-webkit-mask-image: url('./git-pull-request-draft.svg');
+	mask-image: url('./git-pull-request-draft.svg');
 }
 
 .monaco-workbench .icon-git-pr-close-svg {

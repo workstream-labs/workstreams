@@ -421,7 +421,9 @@ export class OrchestratorViewPane extends ViewPane {
 			default:
 				if (!worktree.prLoaded) {
 					el.classList.add('icon-git-branch-svg', 'state-loading');
-				} else if (worktree.prState === 'open' || worktree.prState === 'draft') {
+				} else if (worktree.prState === 'draft') {
+					el.classList.add('icon-git-pr-draft-svg');
+				} else if (worktree.prState === 'open') {
 					el.classList.add('icon-git-pr-svg');
 				} else if (worktree.prState === 'merged') {
 					el.classList.add('icon-git-merge-svg');

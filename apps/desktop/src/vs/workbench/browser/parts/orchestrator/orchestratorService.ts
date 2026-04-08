@@ -642,9 +642,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private async _fetchPRInfo(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IPRInfo | null>> {
 		const results = await Promise.all(
-			worktrees.map(wt => wt.path === repoPath
-				? Promise.resolve(null)
-				: this.gitService.getPRInfo(repoPath, wt.branch).catch(() => null))
+			worktrees.map(wt => this.gitService.getPRInfo(repoPath, wt.branch).catch(() => null))
 		);
 		const map = new Map<string, IPRInfo | null>();
 		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
