@@ -121,6 +121,9 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 	}
 
 	private updateContext() {
+		// DEBUG: always show for visual testing
+		this.context.set(true);
+		return;
 		switch (this.mode) {
 			case 'always':
 				this.context.set(true);
@@ -139,6 +142,16 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 
 	private async onStateChange(startup = false) {
 		this.updateContext();
+
+		// DEBUG: force tooltip visible on startup with mock AvailableForDownload state
+		if (startup) {
+			this.tooltip.renderState(State.AvailableForDownload({ version: 'abc1234', productVersion: '0.4.47', timestamp: Date.now() }));
+			this.tooltipVisible = true;
+			this.context.set(true);
+			this.entry?.showTooltip();
+			return;
+		}
+
 		if (this.mode === 'none') {
 			return;
 		}
