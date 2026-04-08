@@ -212,8 +212,7 @@
 .monaco-workbench .icon-git-branch-svg,
 .monaco-workbench .icon-git-merge-svg,
 .monaco-workbench .icon-git-pr-svg,
-.monaco-workbench .icon-git-pr-close-svg,
-.monaco-workbench .icon-delete-svg {
+.monaco-workbench .icon-git-pr-close-svg {
 	width: 16px;
 	height: 16px;
 	display: inline-block;
@@ -244,21 +243,6 @@
 .monaco-workbench .icon-git-pr-close-svg {
 	-webkit-mask-image: url('./git-pull-request-close.svg');
 	mask-image: url('./git-pull-request-close.svg');
-}
-
-.monaco-workbench .icon-delete-svg {
-	-webkit-mask-image: url('./delete.svg');
-	mask-image: url('./delete.svg');
-}
-
-.monaco-workbench .orchestrator-content .worktree-icon.worktree-icon-delete {
-	cursor: pointer;
-	opacity: 0.3;
-	transition: opacity 0.1s ease;
-}
-
-.monaco-workbench .orchestrator-content .worktree-icon.worktree-icon-delete:hover {
-	opacity: 0.7;
 }
 
 .monaco-workbench .orchestrator-content .worktree-icon.state-loading {
