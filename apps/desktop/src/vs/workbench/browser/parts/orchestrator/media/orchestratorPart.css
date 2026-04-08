@@ -211,7 +211,7 @@
 
 .monaco-workbench .orchestrator-content .worktree-delete {
 	margin-left: auto;
-	visibility: hidden;
+	display: none;
 	cursor: pointer;
 	opacity: 0.4;
 	flex-shrink: 0;
@@ -219,7 +219,7 @@
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:hover .worktree-delete {
-	visibility: visible;
+	display: inline-block;
 }
 
 .monaco-workbench .orchestrator-content .worktree-delete:hover {
