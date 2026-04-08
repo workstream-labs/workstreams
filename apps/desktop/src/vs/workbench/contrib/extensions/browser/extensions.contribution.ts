@@ -121,7 +121,7 @@ export const VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainer
 		rejectAddedViews: true,
 		alwaysUseContainerInfo: true,
 		hideIfEmpty: true,
-	}, ViewContainerLocation.Panel, { isDefault: false });
+	}, ViewContainerLocation.Sidebar, { isDefault: false });
 
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration)
 	.registerConfiguration({
