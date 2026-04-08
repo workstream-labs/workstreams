@@ -158,16 +158,24 @@ export class OrchestratorViewPane extends ViewPane {
 		}
 
 		const iconEl = append(item, $('.worktree-icon'));
-		this.applySessionStateIcon(iconEl, worktree);
+		const isMainWorktree = worktree.path === repo.path;
+		this.applySessionStateIcon(iconEl, worktree, isMainWorktree);
+
+		if (!isMainWorktree) {
+			this.renderDisposables.add(addDisposableListener(iconEl, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+			}));
+		}
 
 		const info = append(item, $('.worktree-info'));
 
-		// Row 1: name ... [+N -N] or [trash] on hover
+		// Row 1: name ... [+N -N]
 		const nameRow = append(info, $('.worktree-name-row'));
 		const nameEl = append(nameRow, $('.worktree-name'));
 		nameEl.textContent = worktree.name;
 
-		// Right-side slot: stats badge visible by default, trash replaces it on hover
+		// Right-side slot: diff stats badge
 		const rightSlot = append(nameRow, $('.worktree-name-right'));
 
 		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
@@ -389,7 +397,7 @@ export class OrchestratorViewPane extends ViewPane {
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 	private static readonly BRAILLE_INTERVAL_MS = 80;
 
-	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
+	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry, isMainWorktree: boolean): void {
 		el.className = 'worktree-icon';
 		// Read session state from the authoritative map, not from the
 		// worktree entry which may be stale after async _repositories mutations.
@@ -410,18 +418,27 @@ export class OrchestratorViewPane extends ViewPane {
 				el.classList.add('codicon', 'codicon-stop-circle', 'state-waiting');
 				break;
 			default:
-				if (!worktree.prLoaded) {
-					el.classList.add('icon-git-branch-svg', 'state-loading');
-				} else if (worktree.prState === 'open' || worktree.prState === 'draft') {
-					el.classList.add('icon-git-pr-svg');
-				} else if (worktree.prState === 'merged') {
-					el.classList.add('icon-git-merge-svg');
-				} else if (worktree.prState === 'closed') {
-					el.classList.add('icon-git-pr-close-svg');
+				if (isMainWorktree) {
+					this.applyGitStateIcon(el, worktree);
 				} else {
-					el.classList.add('icon-git-branch-svg');
+					el.classList.add('icon-delete-svg', 'worktree-icon-delete');
+					el.title = localize('deleteWorktree', "Delete Worktree");
 				}
 				break;
+		}
+	}
+
+	private applyGitStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
+		if (!worktree.prLoaded) {
+			el.classList.add('icon-git-branch-svg', 'state-loading');
+		} else if (worktree.prState === 'open' || worktree.prState === 'draft') {
+			el.classList.add('icon-git-pr-svg');
+		} else if (worktree.prState === 'merged') {
+			el.classList.add('icon-git-merge-svg');
+		} else if (worktree.prState === 'closed') {
+			el.classList.add('icon-git-pr-close-svg');
+		} else {
+			el.classList.add('icon-git-branch-svg');
 		}
 	}
 
