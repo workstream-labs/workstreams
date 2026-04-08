@@ -213,6 +213,8 @@
 	position: absolute;
 	right: 0;
 	top: 0;
+	width: 14px;
+	height: 14px;
 	cursor: pointer;
 	opacity: 0;
 	transition: opacity 0.1s ease;
@@ -220,7 +222,7 @@
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:hover .worktree-delete {
-	opacity: 0.4;
+	opacity: 0.5;
 	pointer-events: auto;
 }
 
@@ -266,7 +268,7 @@
 .monaco-workbench .icon-git-pr-draft-svg {
 	-webkit-mask-image: url('./git-pull-request-draft.svg');
 	mask-image: url('./git-pull-request-draft.svg');
-	transform: scale(0.8);
+	transform: scale(0.9);
 }
 
 .monaco-workbench .icon-git-pr-close-svg {
