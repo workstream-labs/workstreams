@@ -183,16 +183,7 @@ export class OrchestratorViewPane extends ViewPane {
 			}
 		}
 
-		if (!isMainWorktree) {
-			const deleteBtn = append(rightSlot, $('.worktree-delete.icon-delete-svg'));
-			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
-			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
-				e.stopPropagation();
-				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
-			}));
-		}
-
-		// Row 2: branch · status
+		// Row 2: branch · status / delete
 		const branchRow = append(info, $('.worktree-branch-row'));
 		const branchEl = append(branchRow, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
@@ -209,6 +200,15 @@ export class OrchestratorViewPane extends ViewPane {
 				statusEl.className = 'worktree-status worktree-status-ready';
 				statusEl.textContent = localize('readyToMerge', "Ready to merge");
 			}
+		}
+
+		if (!isMainWorktree) {
+			const deleteBtn = append(branchRow, $('.worktree-delete.icon-delete-svg'));
+			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
+			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+			}));
 		}
 
 		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {

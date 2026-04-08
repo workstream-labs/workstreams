@@ -210,9 +210,11 @@
 /* -- Worktree Delete Button (hover-only, in right slot) -- */
 
 .monaco-workbench .orchestrator-content .worktree-delete {
+	margin-left: auto;
 	visibility: hidden;
 	cursor: pointer;
 	opacity: 0.4;
+	flex-shrink: 0;
 	transition: opacity 0.1s ease;
 }
 
