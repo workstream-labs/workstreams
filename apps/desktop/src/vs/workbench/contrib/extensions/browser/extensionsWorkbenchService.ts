@@ -2212,7 +2212,7 @@ export class ExtensionsWorkbenchService extends Disposable implements IExtension
 	}
 
 	private getProductCurrentVersion(): IProductVersion {
-		return { version: this.productService.version, date: this.productService.date };
+		return { version: this.productService.vscodeVersion || this.productService.version, date: this.productService.date };
 	}
 
 	private getProductUpdateVersion(): IProductVersion | undefined {
