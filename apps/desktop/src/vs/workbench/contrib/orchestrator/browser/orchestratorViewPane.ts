@@ -158,28 +158,16 @@ export class OrchestratorViewPane extends ViewPane {
 		}
 
 		const isMainWorktree = worktree.path === repo.path;
-		const iconSlot = append(item, $('.worktree-icon-slot'));
-		const iconEl = append(iconSlot, $('.worktree-icon'));
+		const iconEl = append(item, $('.worktree-icon'));
 		this.applySessionStateIcon(iconEl, worktree);
-
-		if (!isMainWorktree) {
-			iconSlot.classList.add('has-delete');
-			const deleteEl = append(iconSlot, $('.worktree-icon-delete.icon-delete-svg'));
-			deleteEl.title = localize('deleteWorktree', "Delete Worktree");
-			this.renderDisposables.add(addDisposableListener(deleteEl, EventType.CLICK, e => {
-				e.stopPropagation();
-				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
-			}));
-		}
 
 		const info = append(item, $('.worktree-info'));
 
-		// Row 1: name ... [+N -N]
+		// Row 1: name ... [+N -N] / [delete] on hover
 		const nameRow = append(info, $('.worktree-name-row'));
 		const nameEl = append(nameRow, $('.worktree-name'));
 		nameEl.textContent = worktree.name;
 
-		// Right-side slot: diff stats badge
 		const rightSlot = append(nameRow, $('.worktree-name-right'));
 
 		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
@@ -193,6 +181,15 @@ export class OrchestratorViewPane extends ViewPane {
 				const delEl = append(statsEl, $('.diff-stat-del'));
 				delEl.textContent = `-${worktree.deletions}`;
 			}
+		}
+
+		if (!isMainWorktree) {
+			const deleteBtn = append(rightSlot, $('.worktree-delete.icon-delete-svg'));
+			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
+			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+			}));
 		}
 
 		// Row 2: branch · status
