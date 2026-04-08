@@ -67,7 +67,7 @@
 .monaco-workbench .orchestrator-content .repo-list {
 	flex: 1;
 	overflow-y: auto;
-	padding: 4px 0;
+	padding: 0;
 }
 
 /* -- Repository Section -- */
@@ -87,9 +87,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 6px 10px;
+	padding: 10px 14px;
 	cursor: pointer;
-	border-bottom: 1px solid transparent;
 	transition: background-color 0.1s ease;
 }
 
@@ -100,37 +99,43 @@
 .monaco-workbench .orchestrator-content .repo-header-left {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 	flex: 1;
 }
 
 .monaco-workbench .orchestrator-content .repo-folder-icon {
-	font-size: 16px;
+	font-size: 18px;
 	flex-shrink: 0;
-	opacity: 0.8;
+	opacity: 0.6;
 }
 
 .monaco-workbench .orchestrator-content .repo-name {
-	font-size: 12px;
-	font-weight: 600;
+	font-size: 14px;
+	font-weight: 400;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-
-/* -- Repository Header Actions (hover-reveal) -- */
-
-.monaco-workbench .orchestrator-content .repo-header-actions {
-	display: none;
+.monaco-workbench .orchestrator-content .repo-header-right {
+	display: flex;
 	align-items: center;
 	gap: 2px;
 	flex-shrink: 0;
 }
 
-.monaco-workbench .orchestrator-content .repo-header:hover .repo-header-actions {
+/* -- Repository Header Actions (hover-reveal, before chevron) -- */
+
+.monaco-workbench .orchestrator-content .repo-header-actions {
 	display: flex;
+	align-items: center;
+	gap: 2px;
+	visibility: hidden;
+}
+
+.monaco-workbench .orchestrator-content .repo-header:hover .repo-header-actions {
+	visibility: visible;
 }
 
 .monaco-workbench .orchestrator-content .repo-action {
@@ -142,7 +147,7 @@
 	border-radius: 4px;
 	font-size: 14px;
 	cursor: pointer;
-	opacity: 0.6;
+	opacity: 0.5;
 }
 
 .monaco-workbench .orchestrator-content .repo-action:hover {
@@ -150,52 +155,28 @@
 	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
+/* Chevron: always visible on the far right */
+
+.monaco-workbench .orchestrator-content .repo-chevron {
+	font-size: 14px;
+	opacity: 0.4;
+	flex-shrink: 0;
+}
+
 /* -- Worktree List -- */
 
 .monaco-workbench .orchestrator-content .worktree-list {
-	padding: 0 0 6px 0;
-	margin-left: 22px;
+	padding: 0 0 8px 0;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item {
 	display: flex;
-	align-items: center;
-	padding: 5px 8px 5px 0;
+	align-items: flex-start;
+	padding: 8px 14px 8px 16px;
 	cursor: pointer;
-	gap: 6px;
+	gap: 10px;
 	transition: background-color 0.1s ease;
 	position: relative;
-}
-
-.monaco-workbench .orchestrator-content .worktree-connector {
-	width: 16px;
-	flex-shrink: 0;
-	align-self: stretch;
-	position: relative;
-}
-
-.monaco-workbench .orchestrator-content .worktree-connector::before {
-	content: '';
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 12px;
-	height: 50%;
-	border-left: 1px solid var(--vscode-descriptionForeground);
-	border-bottom: 1px solid var(--vscode-descriptionForeground);
-	border-bottom-left-radius: 4px;
-	opacity: 0.35;
-}
-
-.monaco-workbench .orchestrator-content .worktree-item:not(:last-child) .worktree-connector::after {
-	content: '';
-	position: absolute;
-	top: 50%;
-	left: 0;
-	width: 1px;
-	height: 50%;
-	border-left: 1px solid var(--vscode-descriptionForeground);
-	opacity: 0.35;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item:hover {
@@ -204,50 +185,83 @@
 
 .monaco-workbench .orchestrator-content .worktree-item.active {
 	background-color: rgba(255, 255, 255, 0.04);
-	position: relative;
 }
 
 .monaco-workbench .orchestrator-content .worktree-item.active::after {
 	content: '';
 	position: absolute;
 	left: 0;
-	top: 4px;
-	bottom: 4px;
+	top: 6px;
+	bottom: 6px;
 	width: 2px;
 	border-radius: 1px;
 	background-color: var(--vscode-focusBorder);
 }
 
+/* -- Worktree Icon -- */
+
 .monaco-workbench .orchestrator-content .worktree-icon {
-	font-size: 14px;
+	font-size: 16px;
 	flex-shrink: 0;
-	opacity: 0.7;
+	opacity: 0.45;
+	margin-top: 2px;
 }
 
-.monaco-workbench .orchestrator-content .worktree-icon.icon-local-branch,
-.icon-git-branch-png {
-	width: 14px;
-	height: 14px;
+/* SVG icon masks — global so they work in modals outside .orchestrator-content */
+
+.monaco-workbench .icon-git-branch-svg,
+.monaco-workbench .icon-git-merge-svg,
+.monaco-workbench .icon-git-pr-svg,
+.monaco-workbench .icon-git-pr-close-svg {
+	width: 16px;
+	height: 16px;
 	display: inline-block;
-	-webkit-mask-image: url('./git-branch.png');
 	-webkit-mask-size: contain;
 	-webkit-mask-repeat: no-repeat;
 	-webkit-mask-position: center;
-	mask-image: url('./git-branch.png');
 	mask-size: contain;
 	mask-repeat: no-repeat;
 	mask-position: center;
 	background-color: currentColor;
 }
 
+.monaco-workbench .icon-git-branch-svg {
+	-webkit-mask-image: url('./git-branch.svg');
+	mask-image: url('./git-branch.svg');
+}
+
+.monaco-workbench .icon-git-merge-svg {
+	-webkit-mask-image: url('./git-merge.svg');
+	mask-image: url('./git-merge.svg');
+}
+
+.monaco-workbench .icon-git-pr-svg {
+	-webkit-mask-image: url('./git-pull-request.svg');
+	mask-image: url('./git-pull-request.svg');
+}
+
+.monaco-workbench .icon-git-pr-close-svg {
+	-webkit-mask-image: url('./git-pull-request-close.svg');
+	mask-image: url('./git-pull-request-close.svg');
+}
+
+.monaco-workbench .orchestrator-content .worktree-icon.state-loading {
+	animation: iconPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes iconPulse {
+	0%, 100% { opacity: 0.15; }
+	50% { opacity: 0.4; }
+}
+
 .monaco-workbench .orchestrator-content .worktree-item.active .worktree-icon {
-	opacity: 1;
+	opacity: 0.8;
 }
 
 .monaco-workbench .orchestrator-content .worktree-icon.braille-spinner {
 	font-family: monospace;
-	font-size: 14px;
-	width: 14px;
+	font-size: 16px;
+	width: 16px;
 	text-align: center;
 	color: var(--vscode-foreground);
 	opacity: 0.9;
@@ -258,15 +272,7 @@
 	opacity: 0.7;
 }
 
-.monaco-workbench .orchestrator-content .worktree-icon.state-done {
-	color: var(--vscode-testing-iconPassed);
-	opacity: 1;
-}
-
-.monaco-workbench .orchestrator-content .worktree-icon.state-error {
-	color: var(--vscode-errorForeground);
-	opacity: 1;
-}
+/* -- Worktree Info -- */
 
 .monaco-workbench .orchestrator-content .worktree-info {
 	flex: 1;
@@ -275,29 +281,39 @@
 
 .monaco-workbench .orchestrator-content .worktree-name-row {
 	display: flex;
-	align-items: baseline;
-	gap: 6px;
+	align-items: center;
+	gap: 8px;
 	min-width: 0;
 	justify-content: space-between;
 }
 
 .monaco-workbench .orchestrator-content .worktree-name {
 	font-size: 12px;
-	font-weight: 500;
+	font-weight: 400;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	line-height: 1.4;
+	line-height: 1.35;
 	min-width: 0;
+}
+
+/* Right slot: stats visible by default, trash replaces on hover */
+
+.monaco-workbench .orchestrator-content .worktree-name-right {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
 }
 
 .monaco-workbench .orchestrator-content .worktree-diff-stats {
 	display: flex;
 	gap: 4px;
-	flex-shrink: 0;
 	font-size: 10px;
 	font-family: var(--monaco-monospace-font);
-	line-height: 1.4;
+	line-height: 1;
+	border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.12));
+	border-radius: 4px;
+	padding: 2px 6px;
 }
 
 .monaco-workbench .orchestrator-content .diff-stat-add {
@@ -308,39 +324,49 @@
 	color: var(--vscode-errorForeground, #f85149);
 }
 
+/* -- Branch row + PR status -- */
+
+.monaco-workbench .orchestrator-content .worktree-branch-row {
+	display: flex;
+	align-items: baseline;
+	gap: 0;
+	min-width: 0;
+	margin-top: 2px;
+	line-height: 1.35;
+}
+
 .monaco-workbench .orchestrator-content .worktree-branch {
-	font-size: 10px;
+	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	margin-top: 1px;
 	font-family: var(--monaco-monospace-font);
-	line-height: 1.3;
+	min-width: 0;
 }
 
-/* -- Worktree Delete Button (hover-reveal) -- */
-
-.monaco-workbench .orchestrator-content .worktree-delete {
+.monaco-workbench .orchestrator-content .worktree-status {
+	font-size: 11px;
+	white-space: nowrap;
 	flex-shrink: 0;
-	display: none;
-	align-items: center;
-	justify-content: center;
-	width: 20px;
-	height: 20px;
-	border-radius: 4px;
-	cursor: pointer;
-	font-size: 13px;
-	opacity: 0.5;
 }
 
-.monaco-workbench .orchestrator-content .worktree-item:hover .worktree-delete {
-	display: flex;
+.monaco-workbench .orchestrator-content .worktree-status::before {
+	content: ' \00B7 ';
+	opacity: 0.4;
+	color: var(--vscode-descriptionForeground);
 }
 
-.monaco-workbench .orchestrator-content .worktree-delete:hover {
-	opacity: 1;
-	background-color: var(--vscode-toolbar-hoverBackground);
+.monaco-workbench .orchestrator-content .worktree-status-ready {
+	color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+.monaco-workbench .orchestrator-content .worktree-status-conflicts {
+	color: var(--vscode-editorWarning-foreground, #d29922);
+}
+
+.monaco-workbench .orchestrator-content .worktree-status-draft {
+	color: var(--vscode-descriptionForeground);
 }
 
 /* -- Add Worktree Modal -- */

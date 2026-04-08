@@ -3,6 +3,7 @@
 	"nameLong": "Workstreams",
 	"applicationName": "workstreams",
 	"version": "1.104.0",
+	"vscodeVersion": "1.104.0",
 	"quality": "stable",
 	"updateUrl": "https://api.github.com/repos/workstream-labs/workstreams",
 	"releaseNotesUrl": "https://github.com/workstream-labs/workstreams/releases",
