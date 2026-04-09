@@ -94,6 +94,15 @@ export class OrchestratorTerminalContribution extends Disposable {
 
 		this._logService.info(`${TAG} Contribution initialized`);
 
+		// Seed _activeKey from already-restored active worktree so the
+		// first real switch correctly claims terminals for the current worktree.
+		const initialActive = this._orchestratorService.activeWorktree;
+		if (initialActive) {
+			this._activeKey = initialActive.path.toLowerCase();
+			this._restoreOwnership();
+			this._logService.trace(`${TAG} Seeded _activeKey="${this._activeKey}" from restored active worktree`);
+		}
+
 		/**
 		 * Hook notification listener: receives Claude Code lifecycle events
 		 * from the main-process HTTP server and updates session state.
@@ -367,8 +376,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * are left in place so saveWorkingSet captures the exact grid layout.
 	 */
 	private _onActiveWorktreeChanging(worktree: IWorktreeEntry): void {
-		this._restoreOwnership();
-
 		const newKey = worktree.path.toLowerCase();
 
 		if (this._activeKey === newKey) {

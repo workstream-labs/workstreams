@@ -835,7 +835,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 				const match = repo.worktrees.find(w => w.path === persisted.activeWorktreePath);
 				if (match) {
 					this._activeWorktree = match;
-					this._onDidChangeActiveWorktree.fire(match);
 					break;
 				}
 			}
