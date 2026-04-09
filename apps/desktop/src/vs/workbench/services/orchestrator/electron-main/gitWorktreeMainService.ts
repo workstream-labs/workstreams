@@ -140,12 +140,25 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	async getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats> {
 		const empty: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
 		try {
-			// Resolve the default branch from the main repo
-			const { stdout: defaultBranchOut } = await execFile('git', ['branch', '--show-current'], { cwd: repoPath });
-			const defaultBranch = defaultBranchOut.trim() || 'main';
+			/**
+			 * Resolve the repo's default branch (e.g. "main" or "master")
+			 * via origin/HEAD — NOT `git branch --show-current` which
+			 * returns whatever is checked out locally (could be a feature branch).
+			 */
+			let defaultBranch = 'main';
+			try {
+				const { stdout } = await execFile('git', [
+					'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'
+				], { cwd: repoPath });
+				defaultBranch = stdout.trim().replace(/^origin\//, '');
+			} catch {
+				// origin/HEAD not set — fall back to 'main'
+			}
 
-			// Determine the base ref — prefer origin/<branch> so stats reflect
-			// remote state; fall back to local branch for repos without a remote.
+			/**
+			 * Prefer origin/<default> so stats reflect remote state;
+			 * fall back to local branch for repos without a remote.
+			 */
 			let baseRef = `origin/${defaultBranch}`;
 			try {
 				await execFile('git', ['rev-parse', '--verify', baseRef], { cwd: worktreePath });
