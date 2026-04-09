@@ -1045,7 +1045,7 @@
 	border-radius: 6px;
 }
 
-.delete-worktree-stats-icon {
+.delete-worktree-stats-icon.codicon {
 	font-size: 13px;
 	color: var(--vscode-errorForeground, #f14c4c);
 	flex-shrink: 0;
