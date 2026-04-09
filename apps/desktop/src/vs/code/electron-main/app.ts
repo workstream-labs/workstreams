@@ -412,9 +412,21 @@ export class CodeApplication extends Disposable {
 		app.on('activate', async (event, hasVisibleWindows) => {
 			this.logService.trace('app#activate');
 
-			// Mac only event: open new window when we get activated
+			// Mac only event: show hidden windows or open new window when we get activated
 			if (!hasVisibleWindows) {
-				if ((process as INodeProcess).isEmbeddedApp || (this.environmentMainService.args['sessions'] && this.productService.quality !== 'stable')) {
+				// Show any hidden windows (hidden via X-button close) instead of opening new ones
+				const allWindows = this.windowsMainService?.getWindows() ?? [];
+				const hiddenWindows = allWindows.filter(w => {
+					const bw = w.win;
+					return bw && !bw.isDestroyed() && !bw.isVisible();
+				});
+
+				if (hiddenWindows.length > 0) {
+					for (const window of hiddenWindows) {
+						window.win!.show();
+					}
+					hiddenWindows.reduce((a, b) => a.lastFocusTime > b.lastFocusTime ? a : b).focus();
+				} else if ((process as INodeProcess).isEmbeddedApp || (this.environmentMainService.args['sessions'] && this.productService.quality !== 'stable')) {
 					await this.windowsMainService?.openSessionsWindow({ context: OpenContext.DOCK });
 				} else {
 					await this.windowsMainService?.openEmptyWindow({ context: OpenContext.DOCK });
