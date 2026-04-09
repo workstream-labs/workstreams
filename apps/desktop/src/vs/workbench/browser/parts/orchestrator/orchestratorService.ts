@@ -3,6 +3,7 @@
  *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
@@ -86,6 +87,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
 	private readonly _refreshScheduler: RunOnceScheduler;
+	private readonly _editorRetryScheduler: RunOnceScheduler;
 	private _refreshInFlight = false;
 	private _worktreeUris: URI[] = [];
 
@@ -117,6 +119,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		super();
 
 		this._refreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshGitState(), OrchestratorServiceImpl.REFRESH_DEBOUNCE_MS));
+		this._editorRetryScheduler = this._register(new RunOnceScheduler(() => this._doRetryFailedEditors(), OrchestratorServiceImpl.RETRY_DELAY_MS));
 
 		// Keep URI cache in sync so onDidFilesChange doesn't allocate on every event
 		this._register(this.onDidChangeRepositories(() => this._rebuildWorktreeUriCache()));
@@ -516,32 +519,34 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	private _editorRetryCount = 0;
 
 	private retryFailedEditors(): void {
-		setTimeout(async () => {
-			let retried = false;
-			for (const group of this.editorGroupsService.groups) {
-				if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
-					this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
-					try {
-						await group.openEditor(group.activeEditor);
-					} catch (err) {
-						this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
-					}
-					retried = true;
-				}
-			}
+		this._editorRetryScheduler.schedule();
+	}
 
-			if (retried && this._editorRetryCount < OrchestratorServiceImpl.MAX_RETRIES) {
-				const stillFailing = this.editorGroupsService.groups.some(
-					g => g.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID
-				);
-				if (stillFailing) {
-					this._editorRetryCount++;
-					this.retryFailedEditors();
-					return;
+	private async _doRetryFailedEditors(): Promise<void> {
+		let retried = false;
+		for (const group of this.editorGroupsService.groups) {
+			if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
+				this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
+				try {
+					await group.openEditor(group.activeEditor);
+				} catch (err) {
+					this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
 				}
+				retried = true;
 			}
-			this._editorRetryCount = 0;
-		}, OrchestratorServiceImpl.RETRY_DELAY_MS);
+		}
+
+		if (retried && this._editorRetryCount < OrchestratorServiceImpl.MAX_RETRIES) {
+			const stillFailing = this.editorGroupsService.groups.some(
+				g => g.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID
+			);
+			if (stillFailing) {
+				this._editorRetryCount++;
+				this._editorRetryScheduler.schedule();
+				return;
+			}
+		}
+		this._editorRetryCount = 0;
 	}
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {

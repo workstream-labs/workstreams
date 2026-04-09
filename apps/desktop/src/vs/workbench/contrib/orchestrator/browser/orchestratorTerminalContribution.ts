@@ -6,7 +6,7 @@
 import { URI } from '../../../../base/common/uri.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
+import { ILogService, LogLevel } from '../../../../platform/log/common/log.js';
 import { localize } from '../../../../nls.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
@@ -186,10 +186,9 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._orchestratorService.onDidRemoveWorktree(e => this._onWorktreeRemoved(e.worktreePath)));
 
 		/**
-		 * Redirect panel terminals to editor and track ownership.
+		 * Redirect panel terminals to editor, track ownership, and
+		 * listen for command completions (refreshes git state on finish).
 		 */
-		this._logService.info(`${TAG} Contribution initialized`);
-
 		this._register(this._terminalService.onDidCreateInstance(instance => {
 			this._logService.info(`${TAG} onDidCreateInstance: ${describeInstance(instance)}`);
 			if (instance.target === TerminalLocation.Panel) {
@@ -210,14 +209,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
 			}
-		}));
-
-		/**
-		 * Refresh orchestrator state (branches, diff stats) after terminal commands finish.
-		 * Shell integration reports command completion; we hook into it so that
-		 * `git checkout` (or any command that changes git state) updates the sidebar.
-		 */
-		this._register(this._terminalService.onDidCreateInstance(instance => {
 			this._listenForCommandFinished(instance);
 		}));
 
@@ -262,6 +253,10 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * Dump full state for debugging.
 	 */
 	private _dumpState(context: string): void {
+		if (this._logService.getLevel() > LogLevel.Trace) {
+			return;
+		}
+
 		const all = this._terminalService.instances;
 		const fg = this._terminalService.foregroundInstances;
 		const bgCount = all.length - fg.length;
