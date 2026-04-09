@@ -27,6 +27,7 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { showAddWorktreeModal, agentsFromIds, DroppedImage, TERMINAL_AGENT_ID } from './addWorktreeModal.js';
+import { showDeleteWorktreeModal } from './deleteWorktreeModal.js';
 import { IUpdate, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
@@ -175,7 +176,17 @@ export class OrchestratorViewPane extends ViewPane {
 			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
 			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
 				e.stopPropagation();
-				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+				showDeleteWorktreeModal({
+					name: worktree.name,
+					branch: worktree.branch,
+					filesChanged: worktree.filesChanged,
+					additions: worktree.additions,
+					deletions: worktree.deletions,
+				}).then(confirmed => {
+					if (confirmed) {
+						this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+					}
+				});
 			}));
 		}
 
