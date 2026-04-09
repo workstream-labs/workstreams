@@ -167,10 +167,14 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			}
 
 			/**
-			 * Find the merge-base between baseRef and HEAD.
-			 * Diffing against the merge-base (not baseRef directly)
-			 * ensures we measure only what THIS branch changed,
-			 * regardless of where origin/main has moved since.
+			 * Find the merge-base (common ancestor) between baseRef
+			 * and HEAD. Used for two things only:
+			 *  1. Ahead count  — how many commits this branch added.
+			 *  2. File discovery — which files did the branch touch?
+			 *
+			 * The actual numstat diff is still against baseRef (the
+			 * current tip of origin/main) so squash-merged content
+			 * correctly shows 0 diff.
 			 */
 			let mergeBase = baseRef;
 			try {
@@ -194,12 +198,13 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			}
 
 			/**
-			 * Build the set of files to diff against the merge-base.
+			 * Build the set of files to diff against baseRef.
 			 *
-			 * When the branch has commits ahead, find files the branch
-			 * touched (merge-base..HEAD). Also include any locally
-			 * modified tracked files (staged + unstaged). The union
-			 * ensures both committed and uncommitted changes are counted.
+			 * When the branch has commits ahead, use the merge-base to
+			 * find which files the branch touched (avoids pulling in
+			 * main-only files). Also include locally modified tracked
+			 * files (staged + unstaged). The union ensures both
+			 * committed and uncommitted changes are counted.
 			 */
 			const filesToDiff = new Set<string>();
 
@@ -235,16 +240,22 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			}
 
 			/**
-			 * Single diff from merge-base to the working tree, scoped
-			 * to the files we care about. This measures exactly what
-			 * this branch changed (committed + staged + unstaged) and
-			 * is stable even when origin/main moves ahead.
+			 * Single diff from baseRef to the working tree, scoped to
+			 * the files we care about.
+			 *
+			 * We use baseRef (current tip of main), NOT merge-base, so
+			 * that squash-merged content is detected: if the branch's
+			 * files already match main's tree, the diff is 0.
+			 *
+			 * File discovery above uses merge-base to avoid pulling in
+			 * main-only files, but the actual content comparison must
+			 * be against the current tip.
 			 */
 			const files = new Map<string, { add: number; del: number }>();
 
 			if (filesToDiff.size > 0) {
 				const result = await execFile('git', [
-					'diff', '--numstat', mergeBase, '--', ...filesToDiff
+					'diff', '--numstat', baseRef, '--', ...filesToDiff
 				], { cwd: worktreePath }).catch(() => null);
 				if (result) {
 					for (const [file, stats] of parseNumstat(result.stdout)) {

@@ -125,7 +125,7 @@ export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Pr
 
 			const statsText = document.createElement('span');
 			statsText.className = 'delete-worktree-stats-text';
-			statsText.textContent = localize('unmergedWarning', "{0} ahead of {1}", parts.join(', '), options.defaultBranch);
+			statsText.textContent = localize('unmergedWarning', "{0} ahead of origin/{1}", parts.join(', '), options.defaultBranch);
 			statsWarning.appendChild(statsText);
 			body.appendChild(statsWarning);
 		}
