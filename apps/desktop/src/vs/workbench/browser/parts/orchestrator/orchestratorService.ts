@@ -55,6 +55,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	static readonly STORAGE_KEY = 'orchestrator.repositoryState';
 	static readonly AGENT_COMMANDS_KEY = 'orchestrator.agentCommands';
+	static readonly WORKING_SET_MAP_KEY = 'orchestrator.workingSetMap';
 
 	declare readonly _serviceBrand: undefined;
 
@@ -449,8 +450,15 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			 * placed back into those slots in phase 2).
 			 */
 			if (previousPath) {
+				// Delete stale working set before creating a fresh one so dead
+				// snapshots don't accumulate across sessions.
+				const existing = this._workingSetMap.get(previousPath);
+				if (existing) {
+					this.editorGroupsService.deleteWorkingSet(existing);
+				}
 				const workingSet = this.editorGroupsService.saveWorkingSet(previousPath);
 				this._workingSetMap.set(previousPath, workingSet);
+				this._persistWorkingSetMap();
 			}
 
 			/**
@@ -665,6 +673,17 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	//#endregion
 
+	private _persistWorkingSetMap(): void {
+		const entries = Array.from(this._workingSetMap.entries())
+			.map(([path, ws]) => ({ path, id: ws.id, name: ws.name }));
+		this.storageService.store(
+			OrchestratorServiceImpl.WORKING_SET_MAP_KEY,
+			JSON.stringify(entries),
+			StorageScope.WORKSPACE,
+			StorageTarget.MACHINE
+		);
+	}
+
 	private saveState(): void {
 		const state: IPersistedOrchestratorState = {
 			repositories: this._repositories.map(r => ({
@@ -774,6 +793,26 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 		if (this._repositories.length > 0) {
 			this._onDidChangeRepositories.fire();
+		}
+
+		// Restore working set map (path → {id, name}).
+		// The actual layout states live in editorParts under StorageScope.WORKSPACE
+		// and are already loaded by the time we get here. We only need to rebuild
+		// the in-memory path→id index so switchTo() can call applyWorkingSet().
+		const rawMap = this.storageService.get(OrchestratorServiceImpl.WORKING_SET_MAP_KEY, StorageScope.WORKSPACE);
+		if (rawMap) {
+			try {
+				const entries = JSON.parse(rawMap) as { path: string; id: string; name: string }[];
+				const validIds = new Set(this.editorGroupsService.getWorkingSets().map(ws => ws.id));
+				for (const entry of entries) {
+					if (validIds.has(entry.id)) {
+						this._workingSetMap.set(entry.path, { id: entry.id, name: entry.name });
+					}
+				}
+				this.logService.trace(`[OrchestratorService] Restored working set map: ${this._workingSetMap.size} entries`);
+			} catch {
+				this.logService.warn('[OrchestratorService] Failed to parse working set map, ignoring.');
+			}
 		}
 
 		// Restore active worktree selection
