@@ -949,7 +949,7 @@
 .delete-worktree-card {
 	position: relative;
 	background: var(--vscode-editorWidget-background);
-	border: 1px solid var(--vscode-errorForeground, #f14c4c);
+	border: none;
 	border-radius: 10px;
 	padding: 16px 18px;
 	box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
@@ -980,7 +980,7 @@
 
 .delete-worktree-separator {
 	height: 1px;
-	background: var(--vscode-panel-border, var(--vscode-editorWidget-border));
+	background: rgba(255, 255, 255, 0.06);
 	margin: 12px 0;
 }
 
@@ -1040,20 +1040,20 @@
 	gap: 6px;
 	margin-top: 4px;
 	padding: 6px 8px;
-	background: var(--vscode-inputValidation-errorBackground, rgba(80, 18, 18, 0.3));
-	border: 1px solid var(--vscode-errorForeground, #f14c4c);
+	background: rgba(220, 60, 60, 0.08);
+	border: none;
 	border-radius: 6px;
 }
 
 .delete-worktree-stats-icon.codicon {
 	font-size: 13px;
-	color: var(--vscode-errorForeground, #f14c4c);
+	color: var(--vscode-errorForeground);
 	flex-shrink: 0;
 }
 
 .delete-worktree-stats-text {
 	font-size: 11px;
-	color: var(--vscode-errorForeground, #f14c4c);
+	color: var(--vscode-errorForeground);
 	line-height: 1.3;
 }
 
@@ -1081,7 +1081,7 @@
 .delete-worktree-btn.cancel {
 	background: transparent;
 	color: var(--vscode-foreground);
-	border-color: var(--vscode-panel-border, var(--vscode-editorWidget-border));
+	border: none;
 }
 
 .delete-worktree-btn.cancel:hover {
@@ -1089,9 +1089,9 @@
 }
 
 .delete-worktree-btn.delete {
-	background: var(--vscode-errorForeground, #f14c4c);
+	background: var(--vscode-errorForeground);
 	color: #fff;
-	border-color: var(--vscode-errorForeground, #f14c4c);
+	border: none;
 }
 
 .delete-worktree-btn.delete:hover {
@@ -1099,6 +1099,6 @@
 }
 
 .delete-worktree-btn.delete:focus-visible {
-	outline-color: var(--vscode-errorForeground, #f14c4c);
+	outline-color: var(--vscode-errorForeground);
 }
 
