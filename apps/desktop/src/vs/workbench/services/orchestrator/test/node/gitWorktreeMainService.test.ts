@@ -461,6 +461,63 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		assert.strictEqual(stats.deletions, 1);
 	});
 
+	test('returns defaultBranch as main when no origin/HEAD is set', async () => {
+		const wtPath = path.join(repoPath, '.workstreams', 'default-branch', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'default-branch', wtPath);
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		assert.strictEqual(stats.defaultBranch, 'main');
+	});
+
+	test('returns defaultBranch as master when origin/HEAD points to master', async () => {
+		// Set up a bare "remote" repo with master as default branch
+		const remoteRepo = await mkdtemp(path.join(os.tmpdir(), 'ws-remote-'));
+		tempDirs.push(remoteRepo);
+		await git(remoteRepo, 'init', '--bare', '-b', 'master');
+
+		// Push local main as master to the remote
+		await git(repoPath, 'remote', 'add', 'origin', remoteRepo);
+		await git(repoPath, 'push', '-u', 'origin', 'main:master');
+
+		// Set origin/HEAD to point to master
+		await git(repoPath, 'remote', 'set-head', 'origin', 'master');
+
+		const wtPath = path.join(repoPath, '.workstreams', 'master-detect', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'master-detect', wtPath);
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		assert.strictEqual(stats.defaultBranch, 'master');
+	});
+
+	test('diff stats are correct against origin/master when default branch is master', async () => {
+		// Set up a bare "remote" repo with master as default branch
+		const remoteRepo = await mkdtemp(path.join(os.tmpdir(), 'ws-remote-'));
+		tempDirs.push(remoteRepo);
+		await git(remoteRepo, 'init', '--bare', '-b', 'master');
+
+		// Push local main as master to the remote
+		await git(repoPath, 'remote', 'add', 'origin', remoteRepo);
+		await git(repoPath, 'push', '-u', 'origin', 'main:master');
+		await git(repoPath, 'remote', 'set-head', 'origin', 'master');
+
+		const wtPath = path.join(repoPath, '.workstreams', 'master-stats', 'tree');
+		await git(repoPath, 'worktree', 'add', '-b', 'master-stats', wtPath);
+
+		// Make a commit in the worktree
+		await writeFile(path.join(wtPath, 'feature.ts'), 'line1\nline2\n');
+		await git(wtPath, 'add', '.');
+		await git(wtPath, 'commit', '-m', 'add feature');
+
+		const stats = await service.getDiffStats(repoPath, wtPath);
+
+		assert.strictEqual(stats.defaultBranch, 'master');
+		assert.strictEqual(stats.filesChanged, 1);
+		assert.strictEqual(stats.additions, 2);
+		assert.strictEqual(stats.deletions, 0);
+	});
+
 	test('squash-merged branch with local edits shows only local edits', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'squash-local', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'squash-local', wtPath);

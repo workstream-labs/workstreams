@@ -138,14 +138,27 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	}
 
 	async getDiffStats(repoPath: string, worktreePath: string): Promise<IDiffStats> {
-		const empty: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
+		const empty: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0, defaultBranch: 'main' };
 		try {
-			// Resolve the default branch from the main repo
-			const { stdout: defaultBranchOut } = await execFile('git', ['branch', '--show-current'], { cwd: repoPath });
-			const defaultBranch = defaultBranchOut.trim() || 'main';
+			/**
+			 * Resolve the repo's default branch (e.g. "main" or "master")
+			 * via origin/HEAD — NOT `git branch --show-current` which
+			 * returns whatever is checked out locally (could be a feature branch).
+			 */
+			let defaultBranch = 'main';
+			try {
+				const { stdout } = await execFile('git', [
+					'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'
+				], { cwd: repoPath });
+				defaultBranch = stdout.trim().replace(/^origin\//, '');
+			} catch {
+				// origin/HEAD not set — fall back to 'main'
+			}
 
-			// Determine the base ref — prefer origin/<branch> so stats reflect
-			// remote state; fall back to local branch for repos without a remote.
+			/**
+			 * Prefer origin/<default> so stats reflect remote state;
+			 * fall back to local branch for repos without a remote.
+			 */
 			let baseRef = `origin/${defaultBranch}`;
 			try {
 				await execFile('git', ['rev-parse', '--verify', baseRef], { cwd: worktreePath });
@@ -153,35 +166,51 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				baseRef = defaultBranch;
 			}
 
+			/**
+			 * Find the merge-base (common ancestor) between baseRef
+			 * and HEAD. Used for two things only:
+			 *  1. Ahead count  — how many commits this branch added.
+			 *  2. File discovery — which files did the branch touch?
+			 *
+			 * The actual numstat diff is still against baseRef (the
+			 * current tip of origin/main) so squash-merged content
+			 * correctly shows 0 diff.
+			 */
+			let mergeBase = baseRef;
+			try {
+				const { stdout } = await execFile('git', [
+					'merge-base', baseRef, 'HEAD'
+				], { cwd: worktreePath });
+				mergeBase = stdout.trim();
+			} catch {
+				// If merge-base fails, fall back to baseRef
+			}
+
 			// Ahead count — how many commits this branch has over the base
 			let ahead = 0;
 			try {
 				const { stdout: tracking } = await execFile('git', [
-					'rev-list', '--left-right', '--count', `${baseRef}...HEAD`
+					'rev-list', '--count', `${mergeBase}..HEAD`
 				], { cwd: worktreePath });
-				const [, aheadStr] = tracking.trim().split(/\s+/);
-				ahead = parseInt(aheadStr || '0', 10);
+				ahead = parseInt(tracking.trim() || '0', 10);
 			} catch {
 				// If rev-list fails (e.g. unrelated histories), fall through
 			}
 
 			/**
-			 * Build the set of files to diff against the base ref.
+			 * Build the set of files to diff against baseRef.
 			 *
-			 * When the branch has commits ahead, find files the branch
-			 * touched (three-dot --name-only). Also include any locally
-			 * modified tracked files (staged + unstaged). The union
-			 * ensures both committed and uncommitted changes are counted.
-			 *
-			 * Scoping to specific files handles squash merges: if the
-			 * branch was squash-merged, tree content for branch-touched
-			 * files is identical to base → empty diff.
+			 * When the branch has commits ahead, use the merge-base to
+			 * find which files the branch touched (avoids pulling in
+			 * main-only files). Also include locally modified tracked
+			 * files (staged + unstaged). The union ensures both
+			 * committed and uncommitted changes are counted.
 			 */
 			const filesToDiff = new Set<string>();
 
 			if (ahead > 0) {
 				const nameResult = await execFile('git', [
-					'diff', '--name-only', `${baseRef}...HEAD`
+					'diff', '--name-only', `${mergeBase}...HEAD`
 				], { cwd: worktreePath }).catch(() => null);
 
 				if (nameResult) {
@@ -212,10 +241,15 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 			/**
 			 * Single diff from baseRef to the working tree, scoped to
-			 * the files we care about. `git diff <ref>` (no second
-			 * treeish) compares the ref directly to the working tree,
-			 * so committed + staged + unstaged changes are all captured
-			 * in one accurate numstat — no double-counting.
+			 * the files we care about.
+			 *
+			 * We use baseRef (current tip of main), NOT merge-base, so
+			 * that squash-merged content is detected: if the branch's
+			 * files already match main's tree, the diff is 0.
+			 *
+			 * File discovery above uses merge-base to avoid pulling in
+			 * main-only files, but the actual content comparison must
+			 * be against the current tip.
 			 */
 			const files = new Map<string, { add: number; del: number }>();
 
@@ -261,7 +295,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				additions += add;
 				deletions += del;
 			}
-			return { filesChanged: files.size, additions, deletions };
+			return { filesChanged: files.size, additions, deletions, defaultBranch };
 		} catch {
 			return empty;
 		}

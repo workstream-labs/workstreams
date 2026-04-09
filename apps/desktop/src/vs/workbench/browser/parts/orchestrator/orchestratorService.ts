@@ -25,7 +25,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 
-const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0 };
+const EMPTY_STATS: IDiffStats = { filesChanged: 0, additions: 0, deletions: 0, defaultBranch: 'main' };
 
 const DEFAULT_AGENT_COMMANDS: ReadonlyMap<string, string> = new Map([
 	['claude', 'claude'],
@@ -609,7 +609,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch
 						|| wt.prNumber !== prNumber || wt.prState !== prState || wt.prMergeable !== prMergeable || !wt.prLoaded) {
 						changed = true;
-						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, branch, prLoaded: true, prNumber, prState, prMergeable, prUrl };
+						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, defaultBranch: s.defaultBranch, branch, prLoaded: true, prNumber, prState, prMergeable, prUrl };
 					}
 					return wt;
 				});
