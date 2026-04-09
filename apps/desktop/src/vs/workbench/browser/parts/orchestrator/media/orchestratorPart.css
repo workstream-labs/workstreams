@@ -1041,7 +1041,7 @@
 	margin-top: 4px;
 	padding: 6px 8px;
 	background: var(--vscode-inputValidation-errorBackground, rgba(80, 18, 18, 0.3));
-	border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+	border: 1px solid var(--vscode-errorForeground, #f14c4c);
 	border-radius: 6px;
 }
 

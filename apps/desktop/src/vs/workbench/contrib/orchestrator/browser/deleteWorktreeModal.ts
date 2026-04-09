@@ -78,7 +78,7 @@ export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Pr
 		liWorktree.appendChild(liWorktreeLabel);
 		const liWorktreePath = document.createElement('span');
 		liWorktreePath.className = 'delete-worktree-item-path';
-		liWorktreePath.textContent = `.workstreams/trees/${options.name}`;
+		liWorktreePath.textContent = options.name;
 		liWorktree.appendChild(liWorktreePath);
 		list.appendChild(liWorktree);
 
