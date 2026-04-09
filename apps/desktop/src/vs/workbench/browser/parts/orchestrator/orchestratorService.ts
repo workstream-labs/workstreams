@@ -758,16 +758,17 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 						: this.gitService.readWorktreeMeta(saved.path, wt.branch).catch(() => null))
 				);
 
+				const activeWtPath = persisted.activeWorktreePath;
 				const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
-					const persisted = savedWorktreeMap.get(wt.branch);
+					const savedWt = savedWorktreeMap.get(wt.branch);
 					const diskMeta = metaResults[i];
 					return {
-						name: persisted?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+						name: savedWt?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
 						path: wt.path,
 						branch: wt.branch,
-						baseBranch: persisted?.baseBranch ?? diskMeta?.baseBranch,
-						description: persisted?.description ?? diskMeta?.description,
-						isActive: false,
+						baseBranch: savedWt?.baseBranch ?? diskMeta?.baseBranch,
+						description: savedWt?.description ?? diskMeta?.description,
+						isActive: wt.path === activeWtPath,
 					};
 				});
 
@@ -776,7 +777,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 						name: 'local',
 						path: saved.path,
 						branch: currentBranch,
-						isActive: false,
+						isActive: saved.path === activeWtPath,
 					});
 				}
 
@@ -821,12 +822,20 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			}
 		}
 
-		// Restore active worktree selection
+		/*
+		 * Restore active worktree selection directly — skip switchTo() because
+		 * VS Code's own editor and terminal persistence already restored the
+		 * active worktree's state. The full switch flow would wipe editors via
+		 * applyWorkingSet('empty') with nothing to restore (only inactive
+		 * worktrees have saved working sets), and redundantly re-save state,
+		 * re-fire repository changes, and re-trigger a git refresh.
+		 */
 		if (persisted.activeWorktreePath) {
 			for (const repo of this._repositories) {
 				const match = repo.worktrees.find(w => w.path === persisted.activeWorktreePath);
 				if (match) {
-					await this.switchTo(match);
+					this._activeWorktree = match;
+					this._onDidChangeActiveWorktree.fire(match);
 					break;
 				}
 			}

@@ -16,6 +16,7 @@ import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../
 import { GroupsOrder, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IOrchestratorService, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IHookNotificationService } from '../../../services/orchestrator/common/hookNotificationService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 
 const TAG = '[OrchestratorTerminal]';
@@ -52,8 +53,10 @@ interface ITerminalOwnership {
 export class OrchestratorTerminalContribution extends Disposable {
 
 	static readonly ID = 'workbench.contrib.orchestratorTerminal';
+	private static readonly OWNERSHIP_STORAGE_KEY = 'orchestrator.terminalOwnership';
 
 	private _activeKey: string | undefined;
+	private _ownershipRestored = false;
 
 	/**
 	 * Maps terminal instanceId → ownership info (worktree key + group position).
@@ -85,6 +88,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		@IHookNotificationService private readonly _hookNotificationService: IHookNotificationService,
 		@INotificationService private readonly _notificationService: INotificationService,
 		@IAccessibilitySignalService private readonly _signalService: IAccessibilitySignalService,
+		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 
@@ -363,6 +367,8 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * are left in place so saveWorkingSet captures the exact grid layout.
 	 */
 	private _onActiveWorktreeChanging(worktree: IWorktreeEntry): void {
+		this._restoreOwnership();
+
 		const newKey = worktree.path.toLowerCase();
 
 		if (this._activeKey === newKey) {
@@ -422,11 +428,14 @@ export class OrchestratorTerminalContribution extends Disposable {
 		/**
 		 * Background ALL managed foreground terminals (previous + strays).
 		 * This removes their editor tabs so saveWorkingSet captures clean state.
+		 * Set forcePersist so the pty process survives window reload and the
+		 * terminal service includes it in the persisted background layout.
 		 */
 		for (const instance of [...this._terminalService.foregroundInstances]) {
 			if (this._ownership.has(instance.instanceId)) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);
 				if (current && !current.isDisposed) {
+					current.shellLaunchConfig.forcePersist = true;
 					this._logService.trace(`${TAG} Backgrounding ${current.instanceId}: ${describeInstance(current)}`);
 					this._terminalService.moveToBackground(current);
 					this._logService.trace(`${TAG} Backgrounded ${current.instanceId} OK`);
@@ -436,6 +445,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 			}
 		}
 
+		this._persistOwnership();
 		this._dumpState('phase1-done');
 	}
 
@@ -668,6 +678,76 @@ export class OrchestratorTerminalContribution extends Disposable {
 					this._ownership.delete(instance.instanceId);
 				}
 			}
+		}
+		this._persistOwnership();
+	}
+
+	/**
+	 * Persist the ownership map to workspace storage keyed by
+	 * persistentProcessId so it survives window reload.
+	 */
+	private _persistOwnership(): void {
+		const entries: { pid: number; key: string; gi: number; ti: number }[] = [];
+		for (const [instanceId, info] of this._ownership) {
+			const inst = this._terminalService.getInstanceFromId(instanceId);
+			if (inst?.persistentProcessId !== undefined) {
+				entries.push({
+					pid: inst.persistentProcessId,
+					key: info.worktreeKey,
+					gi: info.groupIndex,
+					ti: info.tabIndex,
+				});
+			}
+		}
+		this._storageService.store(
+			OrchestratorTerminalContribution.OWNERSHIP_STORAGE_KEY,
+			JSON.stringify(entries),
+			StorageScope.WORKSPACE,
+			StorageTarget.MACHINE,
+		);
+		this._logService.trace(`${TAG} Persisted ownership: ${entries.length} entries`);
+	}
+
+	/**
+	 * Restore the ownership map once after reload by matching persisted
+	 * persistentProcessIds to revived terminal instances.
+	 */
+	private _restoreOwnership(): void {
+		if (this._ownershipRestored) {
+			return;
+		}
+		this._ownershipRestored = true;
+
+		const raw = this._storageService.get(OrchestratorTerminalContribution.OWNERSHIP_STORAGE_KEY, StorageScope.WORKSPACE);
+		if (!raw) {
+			return;
+		}
+
+		try {
+			const entries = JSON.parse(raw) as { pid: number; key: string; gi: number; ti: number }[];
+
+			const pidToInstance = new Map<number, ITerminalInstance>();
+			for (const inst of this._terminalService.instances) {
+				if (inst.persistentProcessId !== undefined) {
+					pidToInstance.set(inst.persistentProcessId, inst);
+				}
+			}
+
+			for (const entry of entries) {
+				const inst = pidToInstance.get(entry.pid);
+				if (inst && !inst.isDisposed) {
+					this._ownership.set(inst.instanceId, {
+						worktreeKey: entry.key,
+						groupIndex: entry.gi,
+						tabIndex: entry.ti,
+					});
+					this._logService.trace(`${TAG} Restored ownership: terminal ${inst.instanceId} (pid=${entry.pid}) → "${entry.key}"`);
+				}
+			}
+
+			this._logService.info(`${TAG} Restored ${this._ownership.size} terminal ownership entries`);
+		} catch {
+			this._logService.warn(`${TAG} Failed to parse persisted terminal ownership, ignoring.`);
 		}
 	}
 }
