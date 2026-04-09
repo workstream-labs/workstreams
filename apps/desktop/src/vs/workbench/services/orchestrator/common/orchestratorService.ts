@@ -39,6 +39,7 @@ export interface IWorktreeEntry {
 	readonly filesChanged?: number;
 	readonly additions?: number;
 	readonly deletions?: number;
+	readonly defaultBranch?: string;
 	readonly prLoaded?: boolean;
 	readonly prNumber?: number;
 	readonly prState?: 'open' | 'draft' | 'merged' | 'closed';

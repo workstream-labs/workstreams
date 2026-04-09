@@ -13,6 +13,7 @@ export interface DeleteWorktreeModalOptions {
 	readonly additions?: number;
 	readonly deletions?: number;
 	readonly filesChanged?: number;
+	readonly defaultBranch: string;
 }
 
 export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Promise<boolean> {
@@ -102,7 +103,7 @@ export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Pr
 		liSession.appendChild(liSessionLabel);
 		list.appendChild(liSession);
 
-		// --- Stats warning (if there are uncommitted changes) ---
+		// --- Stats warning (if there are unmerged changes) ---
 		if ((options.filesChanged ?? 0) > 0) {
 			const statsWarning = document.createElement('div');
 			statsWarning.className = 'delete-worktree-stats-warning';
@@ -124,7 +125,7 @@ export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Pr
 
 			const statsText = document.createElement('span');
 			statsText.className = 'delete-worktree-stats-text';
-			statsText.textContent = localize('uncommittedWarning', "{0} \u2014 uncommitted changes will be lost", parts.join(', '));
+			statsText.textContent = localize('unmergedWarning', "{0} ahead of {1}", parts.join(', '), options.defaultBranch);
 			statsWarning.appendChild(statsText);
 			body.appendChild(statsWarning);
 		}

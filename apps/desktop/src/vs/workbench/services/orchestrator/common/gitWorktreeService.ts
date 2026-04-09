@@ -17,6 +17,7 @@ export interface IDiffStats {
 	readonly filesChanged: number;
 	readonly additions: number;
 	readonly deletions: number;
+	readonly defaultBranch: string;
 }
 
 export interface IWorktreeMeta {

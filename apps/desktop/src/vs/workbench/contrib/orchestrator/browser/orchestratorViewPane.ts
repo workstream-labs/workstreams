@@ -182,6 +182,7 @@ export class OrchestratorViewPane extends ViewPane {
 					filesChanged: worktree.filesChanged,
 					additions: worktree.additions,
 					deletions: worktree.deletions,
+					defaultBranch: worktree.defaultBranch ?? 'main',
 				}).then(confirmed => {
 					if (confirmed) {
 						this.orchestratorService.removeWorktree(repo.path, worktree.branch);
