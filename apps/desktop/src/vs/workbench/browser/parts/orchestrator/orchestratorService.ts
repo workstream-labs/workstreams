@@ -393,6 +393,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.saveState();
 
 		if (worktreePath) {
+			const removedWs = this._workingSetMap.get(worktreePath);
+			if (removedWs) {
+				this.editorGroupsService.deleteWorkingSet(removedWs);
+				this._workingSetMap.delete(worktreePath);
+				this._persistWorkingSetMap();
+			}
 			this._onDidRemoveWorktree.fire({ repoPath, worktreePath });
 		}
 	}
