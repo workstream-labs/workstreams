@@ -108,7 +108,7 @@ export function showDeleteWorktreeModal(options: DeleteWorktreeModalOptions): Pr
 			statsWarning.className = 'delete-worktree-stats-warning';
 
 			const statsIcon = document.createElement('span');
-			statsIcon.className = 'delete-worktree-stats-icon codicon codicon-warning';
+			statsIcon.className = 'delete-worktree-stats-icon codicon codicon-git-commit';
 			statsWarning.appendChild(statsIcon);
 
 			const parts: string[] = [];
