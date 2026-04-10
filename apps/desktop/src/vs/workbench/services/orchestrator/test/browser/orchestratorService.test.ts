@@ -60,6 +60,7 @@ suite('OrchestratorService', () => {
 			appliedWorkingSets.push(workingSet);
 			return true;
 		};
+		editorGroupsService.deleteWorkingSet = () => { };
 
 		createService = () => ds.add(instantiationService.createInstance(OrchestratorServiceImpl));
 		service = createService();
@@ -182,14 +183,14 @@ suite('OrchestratorService', () => {
 			assert.strictEqual(service.repositories[0].worktrees[0].name, 'local');
 		});
 
-		test('clears active worktree if it was removed', async () => {
+		test('falls back to local worktree after removing active worktree', async () => {
 			await service.addRepository('/path/to/repo');
 			await service.addWorktree('/path/to/repo', 'feature', '');
 			await service.switchTo(service.repositories[0].worktrees[1]);
 
 			await service.removeWorktree('/path/to/repo', 'feature');
 
-			assert.strictEqual(service.activeWorktree, undefined);
+			assert.strictEqual(service.activeWorktree?.name, 'local');
 		});
 	});
 
@@ -279,6 +280,7 @@ suite('persistence', () => {
 			return { id: `ws-${nextId++}`, name };
 		};
 		editorGroupsService.applyWorkingSet = async () => true;
+		editorGroupsService.deleteWorkingSet = () => { };
 
 		createService = () => ds.add(instantiationService.createInstance(OrchestratorServiceImpl));
 	});
@@ -546,6 +548,7 @@ suite('setSessionState validation', () => {
 		let nextId = 0;
 		editorGroupsService.saveWorkingSet = (name: string) => ({ id: `ws-${nextId++}`, name });
 		editorGroupsService.applyWorkingSet = async () => true;
+		editorGroupsService.deleteWorkingSet = () => { };
 
 		service = ds.add(instantiationService.createInstance(OrchestratorServiceImpl));
 		await service.whenReady;
