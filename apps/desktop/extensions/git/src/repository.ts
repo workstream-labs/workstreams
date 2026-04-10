@@ -190,7 +190,12 @@ export class Resource implements SourceControlResourceState {
 	get type(): Status { return this._type; }
 	get original(): Uri { return this._resourceUri; }
 	get renameResourceUri(): Uri | undefined { return this._renameResourceUri; }
-	get contextValue(): string | undefined { return this._repositoryKind; }
+	get contextValue(): string | undefined {
+		if (this._resourceGroupType === ResourceGroupType.ParentChanges) {
+			return 'parentChange';
+		}
+		return this._repositoryKind;
+	}
 
 	private static Icons = {
 		light: {
@@ -1025,7 +1030,7 @@ export class Repository implements Disposable {
 		this._indexGroup = this._sourceControl.createResourceGroup('index', l10n.t('Staged Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._workingTreeGroup = this._sourceControl.createResourceGroup('workingTree', l10n.t('Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._untrackedGroup = this._sourceControl.createResourceGroup('untracked', l10n.t('Untracked Changes'), { multiDiffEditorEnableViewChanges: true });
-		this._parentChangesGroup = this._sourceControl.createResourceGroup('parentChanges', l10n.t('Changes in Parent'), { multiDiffEditorEnableViewChanges: true });
+		this._parentChangesGroup = this._sourceControl.createResourceGroup('parentChanges', l10n.t('Changes in Parent'));
 
 		const updateIndexGroupVisibility = () => {
 			const config = workspace.getConfiguration('git', root);
@@ -2980,6 +2985,7 @@ export class Repository implements Disposable {
 			}
 
 			this.parentChangesGroup.resourceStates = resources;
+			this._onDidChangeStatus.fire();
 		} catch {
 			if (generation === this._parentChangesGeneration) {
 				this.parentChangesGroup.resourceStates = [];
