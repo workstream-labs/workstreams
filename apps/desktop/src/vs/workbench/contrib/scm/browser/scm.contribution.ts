@@ -23,7 +23,6 @@ import { SCMViewPaneContainer } from './scmViewPaneContainer.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { ModesRegistry } from '../../../../editor/common/languages/modesRegistry.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { ContextKeys, SCMViewPane } from './scmViewPane.js';
 import { RepositoryPicker, SCMViewService } from './scmViewService.js';
@@ -66,7 +65,6 @@ Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
 registerEditorContribution(QuickDiffEditorController.ID,
 	QuickDiffEditorController, EditorContributionInstantiation.AfterFirstRender);
 
-const sourceControlViewIcon = registerIcon('source-control-view-icon', Codicon.sourceControl, localize('sourceControlViewIcon', 'View icon of the Source Control view.'));
 const sourceControlViewSvgIcon = FileAccess.asBrowserUri('vs/workbench/browser/parts/orchestrator/media/git-branch.svg');
 
 const viewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
