@@ -424,11 +424,15 @@ class ResourceGroupRenderer implements ICompressibleTreeRenderer<ISCMResourceGro
 		template.name.textContent = group.label;
 		template.count.setCount(group.resources.length);
 
-		const menus = this.scmViewService.menus.getRepositoryMenus(group.provider);
-		template.elementDisposables.add(connectPrimaryMenu(menus.getResourceGroupMenu(group), primary => {
-			template.actionBar.setActions(primary);
-		}, 'inline'));
-		template.actionBar.context = group;
+		if (group.id === 'parentChanges') {
+			template.actionBar.setActions([]);
+		} else {
+			const menus = this.scmViewService.menus.getRepositoryMenus(group.provider);
+			template.elementDisposables.add(connectPrimaryMenu(menus.getResourceGroupMenu(group), primary => {
+				template.actionBar.setActions(primary);
+			}, 'inline'));
+			template.actionBar.context = group;
+		}
 	}
 
 	renderCompressedElements(node: ITreeNode<ICompressedTreeNode<ISCMResourceGroup>, FuzzyScore>): void {
@@ -615,6 +619,15 @@ class ResourceRenderer implements ICompressibleTreeRenderer<ISCMResource | IReso
 	}
 
 	private _renderActionBar(template: ResourceTemplate, resourceOrFolder: ISCMResource | IResourceNode<ISCMResource, ISCMResourceGroup>, menu: IMenu): void {
+		// Hide inline actions for parentChanges resources
+		const group = ResourceTree.isResourceNode(resourceOrFolder)
+			? resourceOrFolder.context
+			: resourceOrFolder.resourceGroup;
+		if (group.id === 'parentChanges') {
+			template.actionBar.setActions([]);
+			return;
+		}
+
 		if (!template.actionBarMenu || template.actionBarMenu !== menu) {
 			template.actionBarMenu = menu;
 			template.actionBarMenuListener.value = connectPrimaryMenu(menu, primary => {
