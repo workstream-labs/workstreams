@@ -332,11 +332,12 @@ export class OrchestratorViewPane extends ViewPane {
 			onAgentCommandChange: (agentId, command) => {
 				this.orchestratorService.setAgentCommand(agentId, command);
 			},
+			onSubmit: async (r) => {
+				await this.orchestratorService.addWorktree(repoPath, r.name, r.prompt, r.baseBranch, r.featureName);
+			},
 		});
 
 		if (result) {
-			await this.orchestratorService.addWorktree(repoPath, result.name, result.prompt, result.baseBranch, result.featureName);
-
 			const repo = this.orchestratorService.repositories.find(r => r.path === repoPath);
 			const newWorktree = repo?.worktrees.find(w => w.branch === result.name);
 			if (newWorktree) {

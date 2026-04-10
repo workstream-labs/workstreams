@@ -865,28 +865,28 @@ export function friendlyName(branch: string): string {
 
 export function validateWorktreeName(value: string): string | undefined {
 	if (!value.trim()) {
-		return localize('worktreeNameRequired', "Name is required");
+		return localize('worktreeNameRequired', "Branch name is required");
 	}
 	if (/\s/.test(value)) {
-		return localize('worktreeNameNoSpaces', "Name cannot contain spaces");
+		return localize('worktreeNameNoSpaces', "Branch name cannot contain spaces");
 	}
 	if (/[~^:\\]/.test(value)) {
-		return localize('worktreeNameNoSpecial', "Name cannot contain ~, ^, :, or \\");
+		return localize('worktreeNameNoSpecial', "Branch name cannot contain ~, ^, :, or \\");
 	}
 	if (/\.\./.test(value)) {
-		return localize('worktreeNameNoDots', "Name cannot contain '..'");
+		return localize('worktreeNameNoDots', "Branch name cannot contain '..'");
 	}
 	if (/@\{/.test(value)) {
-		return localize('worktreeNameNoReflog', "Name cannot contain '@{brace}'");
+		return localize('worktreeNameNoReflog', "Branch name cannot contain '@{brace}'");
 	}
 	if (/\.lock$/.test(value)) {
-		return localize('worktreeNameNoLock', "Name cannot end with '.lock'");
+		return localize('worktreeNameNoLock', "Branch name cannot end with '.lock'");
 	}
 	if (/^[./]/.test(value) || /\.$/.test(value) || /\/\.|\/\//.test(value)) {
-		return localize('worktreeNameNoDotEdge', "Name cannot start with '.' or '/', contain '/.', or have consecutive '/'");
+		return localize('worktreeNameNoDotEdge', "Branch name cannot start with '.' or '/', contain '/.', or have consecutive '/'");
 	}
 	if (/[\x00-\x1f\x7f]/.test(value)) {
-		return localize('worktreeNameNoControl', "Name cannot contain control characters");
+		return localize('worktreeNameNoControl', "Branch name cannot contain control characters");
 	}
 	return undefined;
 }

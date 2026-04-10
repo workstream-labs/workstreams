@@ -7,7 +7,6 @@ import { addDisposableListener, DragAndDropObserver, EventType } from '../../../
 import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { isMacintosh } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
 import { validateWorktreeName } from '../../../browser/parts/orchestrator/orchestratorService.js';
 
@@ -39,6 +38,8 @@ export interface AddWorktreeModalOptions {
 	readonly defaultAgent: string;
 	readonly agentCommands: Record<string, string>;
 	readonly onAgentCommandChange?: (agentId: string, command: string) => void;
+	/** Called on submit — throw to keep the modal open and show the error inline. */
+	readonly onSubmit?: (result: AddWorktreeResult) => Promise<void>;
 }
 
 export const TERMINAL_AGENT_ID = 'terminal';
@@ -425,9 +426,7 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		// --- Submit hint ---
 		const hint = document.createElement('span');
 		hint.className = 'add-worktree-hint';
-		hint.textContent = isMacintosh
-			? localize('submitHintMac', "\u2318\u21A9 to create")
-			: localize('submitHintOther', "Ctrl+Enter to create");
+		hint.textContent = localize('submitHint', "\u2318\u21A9 to create");
 		footerRight.appendChild(hint);
 
 		// --- Dropdown helper ---
@@ -585,7 +584,11 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 		}));
 
 		// --- Submit ---
-		function submit(): void {
+		let submitting = false;
+		async function submit(): Promise<void> {
+			if (submitting) {
+				return;
+			}
 			const feature = nameInput.value.trim();
 			if (!feature) {
 				validationMsg.textContent = localize('featureRequired', "Feature name is required");
@@ -607,14 +610,32 @@ export function showAddWorktreeModal(options: AddWorktreeModalOptions): Promise<
 				branchInput.focus();
 				return;
 			}
-			close({
+			const result: AddWorktreeResult = {
 				name: branch,
 				featureName: feature,
 				prompt: textarea.value.trim(),
 				agent: selectedAgent,
 				baseBranch: selectedBranch,
 				images: [...droppedImages],
-			});
+			};
+			if (options.onSubmit) {
+				submitting = true;
+				hint.textContent = localize('creating', "Creating...");
+				try {
+					await options.onSubmit(result);
+				} catch (err: any) {
+					const raw = err?.message || String(err);
+					const fatal = raw.match(/fatal:\s*(.+)/);
+					validationMsg.textContent = fatal ? fatal[1].trim() : raw;
+					validationMsg.style.display = 'block';
+					branchInput.focus();
+					return;
+				} finally {
+					submitting = false;
+					hint.textContent = localize('submitHint', "\u2318\u21A9 to create");
+				}
+			}
+			close(result);
 		}
 
 		function close(result?: AddWorktreeResult): void {
