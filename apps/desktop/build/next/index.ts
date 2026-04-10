@@ -273,6 +273,9 @@ const desktopResourcePatterns = [
 	// Media - audio
 	'vs/platform/accessibilitySignal/browser/media/*.mp3',
 
+	// Media - images (orchestrator)
+	'vs/workbench/browser/parts/orchestrator/media/*.svg',
+
 	// Media - images
 	'vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.svg',
 	'vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.png',
