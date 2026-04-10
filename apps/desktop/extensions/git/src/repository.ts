@@ -593,7 +593,7 @@ class ResourceCommandResolver {
 		if (resource.resourceGroupType === ResourceGroupType.ParentChanges) {
 			const ref = this.repository.parentBranchRef;
 			if (!ref) { return {}; }
-			if (resource.type === Status.INDEX_ADDED) { return {}; }
+			if (resource.type === Status.INDEX_ADDED || resource.type === Status.UNTRACKED) { return {}; }
 			return { original: toGitUri(resource.original, ref) };
 		}
 
@@ -615,10 +615,10 @@ class ResourceCommandResolver {
 	}
 
 	private getRightResource(resource: Resource): ModifiedOrOriginal {
-		// Parent changes: right = file at HEAD
+		// Parent changes: right = working tree file
 		if (resource.resourceGroupType === ResourceGroupType.ParentChanges) {
 			if (resource.type === Status.DELETED) { return {}; }
-			return { modified: toGitUri(resource.resourceUri, 'HEAD') };
+			return { modified: resource.resourceUri };
 		}
 
 		switch (resource.type) {
@@ -2935,15 +2935,19 @@ export class Repository implements Disposable {
 
 			if (generation !== this._parentChangesGeneration) { return; }
 
-			// Get committed differences between parent branch and HEAD
-			const changes = await this.diffBetween(parentRef, 'HEAD') as Change[];
+			// Get all tracked file differences between parent branch and working tree
+			// (includes committed + staged + unstaged changes)
+			const changes = await this.diffBetweenWithStats2(parentRef);
 
 			if (generation !== this._parentChangesGeneration) { return; }
 
 			const config = workspace.getConfiguration('git');
 			const useIcons = !config.get<boolean>('decorations.enabled', true);
 
-			const resources = changes.map(change =>
+			// Build a set of tracked paths so we can add untracked files without duplicates
+			const trackedPaths = new Set(changes.map(c => c.uri.fsPath));
+
+			const resources: Resource[] = changes.map(change =>
 				new Resource(
 					this.resourceCommandResolver,
 					ResourceGroupType.ParentChanges,
@@ -2954,6 +2958,26 @@ export class Repository implements Disposable {
 					this.kind,
 				)
 			);
+
+			// Add untracked files (from existing groups, already populated by getStatus)
+			const untrackedResources = [
+				...this.untrackedGroup.resourceStates,
+				...this.workingTreeGroup.resourceStates.filter(r => r.type === Status.UNTRACKED),
+			];
+			for (const r of untrackedResources) {
+				if (!trackedPaths.has(r.resourceUri.fsPath)) {
+					trackedPaths.add(r.resourceUri.fsPath);
+					resources.push(new Resource(
+						this.resourceCommandResolver,
+						ResourceGroupType.ParentChanges,
+						r.resourceUri,
+						Status.UNTRACKED,
+						useIcons,
+						undefined,
+						this.kind,
+					));
+				}
+			}
 
 			this.parentChangesGroup.resourceStates = resources;
 		} catch {
