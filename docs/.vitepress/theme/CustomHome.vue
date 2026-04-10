@@ -277,7 +277,7 @@ onUnmounted(() => {
         <div class="showcase sr">
           <div class="showcase-text">
             <span class="showcase-label">Editor</span>
-            <h3 class="showcase-title">LSP-integrated full-fledged terminal</h3>
+            <h3 class="showcase-title">LSP-integrated full-fledged editor</h3>
             <p class="showcase-desc">
               A complete development environment with Language Server Protocol
               support, syntax highlighting, and an integrated terminal to back
@@ -328,15 +328,14 @@ onUnmounted(() => {
           <div class="cta-actions">
             <div class="dl-dropdown" @click.stop>
               <button class="btn btn-primary btn-lg" @click="toggleDropdown('cta')">
-                Download for macOS
-                <DownloadIcon />
+                <AppleIcon /> Download for macOS
               </button>
               <div v-if="showDropdown === 'cta'" class="dl-menu dl-menu-center">
                 <button class="dl-option" @click="pickArch('arm64')">
-                  <AppleIcon /> Apple Silicon <span class="dl-chip">M1&ndash;M4</span>
+                  <AppleIcon /> Apple Silicon
                 </button>
                 <button class="dl-option" @click="pickArch('x64')">
-                  <AppleIcon /> Intel <span class="dl-chip">x86_64</span>
+                  <AppleIcon /> Intel
                 </button>
               </div>
             </div>
