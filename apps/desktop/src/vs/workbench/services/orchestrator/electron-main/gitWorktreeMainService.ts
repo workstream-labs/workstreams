@@ -66,23 +66,25 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	}
 
 	async getRemoteUrl(repoPath: string): Promise<string | undefined> {
-		try {
-			const { stdout } = await execFile('git', ['remote', 'get-url', 'origin'], { cwd: repoPath });
-			return stdout.trim() || undefined;
-		} catch {
-			// No 'origin' remote — try first available remote
-			try {
-				const { stdout: remotes } = await execFile('git', ['remote'], { cwd: repoPath });
-				const firstRemote = remotes.trim().split('\n')[0];
-				if (firstRemote) {
-					const { stdout } = await execFile('git', ['remote', 'get-url', firstRemote], { cwd: repoPath });
-					return stdout.trim() || undefined;
-				}
-			} catch {
-				// No remotes at all
-			}
+		// Try 'origin' first
+		const originUrl = await execFile('git', ['remote', 'get-url', 'origin'], { cwd: repoPath })
+			.then(r => r.stdout.trim() || undefined)
+			.catch(() => undefined);
+		if (originUrl) {
+			return originUrl;
+		}
+
+		// Fall back to the first available remote
+		const remotes = await execFile('git', ['remote'], { cwd: repoPath })
+			.then(r => r.stdout.trim())
+			.catch(() => '');
+		const firstRemote = remotes.split('\n')[0];
+		if (!firstRemote) {
 			return undefined;
 		}
+		return execFile('git', ['remote', 'get-url', firstRemote], { cwd: repoPath })
+			.then(r => r.stdout.trim() || undefined)
+			.catch(() => undefined);
 	}
 
 	async listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]> {

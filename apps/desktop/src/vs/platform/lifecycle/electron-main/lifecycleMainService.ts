@@ -439,6 +439,16 @@ export class LifecycleMainService extends Disposable implements ILifecycleMainSe
 
 			this.trace(`Lifecycle#window.on('close') - window ID ${window.id}`);
 
+			// macOS: hide window instead of closing when user clicks X button.
+			// Preserves all state (terminals, editors, positions). The window
+			// reappears when the user clicks the dock icon. On Cmd+Q quit,
+			// _quitRequested is true and we proceed with normal close/destroy.
+			if (isMacintosh && !this._quitRequested) {
+				e.preventDefault();
+				win.hide();
+				return;
+			}
+
 			// Otherwise prevent unload and handle it from window
 			e.preventDefault();
 			this.unload(window, UnloadReason.CLOSE).then(veto => {

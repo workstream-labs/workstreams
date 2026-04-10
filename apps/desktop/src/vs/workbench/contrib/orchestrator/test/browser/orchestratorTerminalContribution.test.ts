@@ -19,6 +19,7 @@ import { INotificationHandle, INotificationService, Severity } from '../../../..
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IEditorOptions } from '../../../../../platform/editor/common/editor.js';
+import { IStorageService, InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
 import { OrchestratorTerminalContribution } from '../../browser/orchestratorTerminalContribution.js';
 
 // --- Test helpers ---
@@ -307,6 +308,8 @@ suite('OrchestratorTerminalContribution', () => {
 			override activateGroup(group: any): any { activeGroupRef = typeof group === 'number' ? mockGroup : group; return activeGroupRef; }
 			override removeGroup(_group: any): void { /* no-op in tests */ }
 		});
+
+		instantiationService.stub(IStorageService, store.add(new InMemoryStorageService()));
 
 		/* contribution = */ store.add(instantiationService.createInstance(OrchestratorTerminalContribution));
 	});
@@ -810,6 +813,8 @@ suite('OrchestratorTerminalContribution — Tab Order & Focus', () => {
 			}
 			override removeGroup(_group: any): void { }
 		});
+
+		instantiationService.stub(IStorageService, store.add(new InMemoryStorageService()));
 
 		store.add(instantiationService.createInstance(OrchestratorTerminalContribution));
 	});

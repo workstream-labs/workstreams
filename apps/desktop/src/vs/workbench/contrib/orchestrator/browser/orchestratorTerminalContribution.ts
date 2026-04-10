@@ -6,7 +6,7 @@
 import { URI } from '../../../../base/common/uri.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
+import { ILogService, LogLevel } from '../../../../platform/log/common/log.js';
 import { localize } from '../../../../nls.js';
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
@@ -16,6 +16,7 @@ import { ITerminalEditorService, ITerminalInstance, ITerminalService } from '../
 import { GroupsOrder, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IOrchestratorService, IWorktreeEntry, WorktreeSessionState } from '../../../services/orchestrator/common/orchestratorService.js';
 import { IHookNotificationService } from '../../../services/orchestrator/common/hookNotificationService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 
 const TAG = '[OrchestratorTerminal]';
@@ -52,8 +53,10 @@ interface ITerminalOwnership {
 export class OrchestratorTerminalContribution extends Disposable {
 
 	static readonly ID = 'workbench.contrib.orchestratorTerminal';
+	private static readonly OWNERSHIP_STORAGE_KEY = 'orchestrator.terminalOwnership';
 
 	private _activeKey: string | undefined;
+	private _ownershipRestored = false;
 
 	/**
 	 * Maps terminal instanceId → ownership info (worktree key + group position).
@@ -85,10 +88,20 @@ export class OrchestratorTerminalContribution extends Disposable {
 		@IHookNotificationService private readonly _hookNotificationService: IHookNotificationService,
 		@INotificationService private readonly _notificationService: INotificationService,
 		@IAccessibilitySignalService private readonly _signalService: IAccessibilitySignalService,
+		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 
 		this._logService.info(`${TAG} Contribution initialized`);
+
+		// Seed _activeKey from already-restored active worktree so the
+		// first real switch correctly claims terminals for the current worktree.
+		const initialActive = this._orchestratorService.activeWorktree;
+		if (initialActive) {
+			this._activeKey = initialActive.path.toLowerCase();
+			this._restoreOwnership();
+			this._logService.trace(`${TAG} Seeded _activeKey="${this._activeKey}" from restored active worktree`);
+		}
 
 		/**
 		 * Hook notification listener: receives Claude Code lifecycle events
@@ -173,10 +186,9 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._orchestratorService.onDidRemoveWorktree(e => this._onWorktreeRemoved(e.worktreePath)));
 
 		/**
-		 * Redirect panel terminals to editor and track ownership.
+		 * Redirect panel terminals to editor, track ownership, and
+		 * listen for command completions (refreshes git state on finish).
 		 */
-		this._logService.info(`${TAG} Contribution initialized`);
-
 		this._register(this._terminalService.onDidCreateInstance(instance => {
 			this._logService.info(`${TAG} onDidCreateInstance: ${describeInstance(instance)}`);
 			if (instance.target === TerminalLocation.Panel) {
@@ -197,14 +209,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 			} else {
 				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
 			}
-		}));
-
-		/**
-		 * Refresh orchestrator state (branches, diff stats) after terminal commands finish.
-		 * Shell integration reports command completion; we hook into it so that
-		 * `git checkout` (or any command that changes git state) updates the sidebar.
-		 */
-		this._register(this._terminalService.onDidCreateInstance(instance => {
 			this._listenForCommandFinished(instance);
 		}));
 
@@ -249,6 +253,10 @@ export class OrchestratorTerminalContribution extends Disposable {
 	 * Dump full state for debugging.
 	 */
 	private _dumpState(context: string): void {
+		if (this._logService.getLevel() > LogLevel.Trace) {
+			return;
+		}
+
 		const all = this._terminalService.instances;
 		const fg = this._terminalService.foregroundInstances;
 		const bgCount = all.length - fg.length;
@@ -322,38 +330,21 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
-	 * Find the group index (GRID_APPEARANCE order) containing the terminal.
-	 * Returns 0 if not found.
+	 * Find the group index (GRID_APPEARANCE order) and tab index for a
+	 * terminal in a single pass over editor groups.
 	 */
-	private _findGroupIndex(instance: ITerminalInstance): number {
+	private _findGroupPosition(instance: ITerminalInstance): { groupIndex: number; tabIndex: number } {
 		if (instance.target !== TerminalLocation.Editor) {
-			return 0;
+			return { groupIndex: 0, tabIndex: -1 };
 		}
 		const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
 		for (let i = 0; i < groups.length; i++) {
-			if (groups[i].findEditors(instance.resource).length > 0) {
-				return i;
-			}
-		}
-		return 0;
-	}
-
-	/**
-	 * Find the tab index (position within the editor group's tab list)
-	 * for a terminal. Returns -1 if not found.
-	 */
-	private _findTabIndex(instance: ITerminalInstance): number {
-		if (instance.target !== TerminalLocation.Editor) {
-			return -1;
-		}
-		const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
-		for (const group of groups) {
-			const editors = group.findEditors(instance.resource);
+			const editors = groups[i].findEditors(instance.resource);
 			if (editors.length > 0) {
-				return group.getIndexOfEditor(editors[0]);
+				return { groupIndex: i, tabIndex: groups[i].getIndexOfEditor(editors[0]) };
 			}
 		}
-		return -1;
+		return { groupIndex: 0, tabIndex: -1 };
 	}
 
 	/**
@@ -413,8 +404,9 @@ export class OrchestratorTerminalContribution extends Disposable {
 		for (const instance of this._terminalService.foregroundInstances) {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
-				info.groupIndex = this._findGroupIndex(instance);
-				info.tabIndex = this._findTabIndex(instance);
+				const pos = this._findGroupPosition(instance);
+				info.groupIndex = pos.groupIndex;
+				info.tabIndex = pos.tabIndex;
 				this._logService.trace(`${TAG} Snapshotted terminal ${instance.instanceId} → groupIndex=${info.groupIndex} tabIndex=${info.tabIndex}`);
 			}
 		}
@@ -422,11 +414,14 @@ export class OrchestratorTerminalContribution extends Disposable {
 		/**
 		 * Background ALL managed foreground terminals (previous + strays).
 		 * This removes their editor tabs so saveWorkingSet captures clean state.
+		 * Set forcePersist so the pty process survives window reload and the
+		 * terminal service includes it in the persisted background layout.
 		 */
 		for (const instance of [...this._terminalService.foregroundInstances]) {
 			if (this._ownership.has(instance.instanceId)) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);
 				if (current && !current.isDisposed) {
+					current.shellLaunchConfig.forcePersist = true;
 					this._logService.trace(`${TAG} Backgrounding ${current.instanceId}: ${describeInstance(current)}`);
 					this._terminalService.moveToBackground(current);
 					this._logService.trace(`${TAG} Backgrounded ${current.instanceId} OK`);
@@ -436,6 +431,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 			}
 		}
 
+		this._persistOwnership();
 		this._dumpState('phase1-done');
 	}
 
@@ -668,6 +664,76 @@ export class OrchestratorTerminalContribution extends Disposable {
 					this._ownership.delete(instance.instanceId);
 				}
 			}
+		}
+		this._persistOwnership();
+	}
+
+	/**
+	 * Persist the ownership map to workspace storage keyed by
+	 * persistentProcessId so it survives window reload.
+	 */
+	private _persistOwnership(): void {
+		const entries: { pid: number; key: string; gi: number; ti: number }[] = [];
+		for (const [instanceId, info] of this._ownership) {
+			const inst = this._terminalService.getInstanceFromId(instanceId);
+			if (inst?.persistentProcessId !== undefined) {
+				entries.push({
+					pid: inst.persistentProcessId,
+					key: info.worktreeKey,
+					gi: info.groupIndex,
+					ti: info.tabIndex,
+				});
+			}
+		}
+		this._storageService.store(
+			OrchestratorTerminalContribution.OWNERSHIP_STORAGE_KEY,
+			JSON.stringify(entries),
+			StorageScope.WORKSPACE,
+			StorageTarget.MACHINE,
+		);
+		this._logService.trace(`${TAG} Persisted ownership: ${entries.length} entries`);
+	}
+
+	/**
+	 * Restore the ownership map once after reload by matching persisted
+	 * persistentProcessIds to revived terminal instances.
+	 */
+	private _restoreOwnership(): void {
+		if (this._ownershipRestored) {
+			return;
+		}
+		this._ownershipRestored = true;
+
+		const raw = this._storageService.get(OrchestratorTerminalContribution.OWNERSHIP_STORAGE_KEY, StorageScope.WORKSPACE);
+		if (!raw) {
+			return;
+		}
+
+		try {
+			const entries = JSON.parse(raw) as { pid: number; key: string; gi: number; ti: number }[];
+
+			const pidToInstance = new Map<number, ITerminalInstance>();
+			for (const inst of this._terminalService.instances) {
+				if (inst.persistentProcessId !== undefined) {
+					pidToInstance.set(inst.persistentProcessId, inst);
+				}
+			}
+
+			for (const entry of entries) {
+				const inst = pidToInstance.get(entry.pid);
+				if (inst && !inst.isDisposed) {
+					this._ownership.set(inst.instanceId, {
+						worktreeKey: entry.key,
+						groupIndex: entry.gi,
+						tabIndex: entry.ti,
+					});
+					this._logService.trace(`${TAG} Restored ownership: terminal ${inst.instanceId} (pid=${entry.pid}) → "${entry.key}"`);
+				}
+			}
+
+			this._logService.info(`${TAG} Restored ${this._ownership.size} terminal ownership entries`);
+		} catch {
+			this._logService.warn(`${TAG} Failed to parse persisted terminal ownership, ignoring.`);
 		}
 	}
 }

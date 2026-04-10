@@ -3,6 +3,7 @@
  *  Licensed under the Elastic License 2.0 (ELv2). See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
@@ -11,7 +12,7 @@ import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSession
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { IGitWorktreeService, IDiffStats, IPRInfo, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IPRInfo, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
@@ -55,6 +56,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	static readonly STORAGE_KEY = 'orchestrator.repositoryState';
 	static readonly AGENT_COMMANDS_KEY = 'orchestrator.agentCommands';
+	static readonly WORKING_SET_MAP_KEY = 'orchestrator.workingSetMap';
+	private static readonly REFRESH_DEBOUNCE_MS = 2000;
+	private static readonly REFRESH_REQUEUE_MS = 5000;
+	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
+	private static readonly RETRY_DELAY_MS = 500;
+	private static readonly MAX_RETRIES = 3;
 
 	declare readonly _serviceBrand: undefined;
 
@@ -85,7 +92,9 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private readonly _workingSetMap = new Map<string, IEditorWorkingSet>();
 	private readonly _refreshScheduler: RunOnceScheduler;
+	private readonly _editorRetryScheduler: RunOnceScheduler;
 	private _refreshInFlight = false;
+	private _editorRetryCount = 0;
 	private _worktreeUris: URI[] = [];
 
 	/**
@@ -116,6 +125,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		super();
 
 		this._refreshScheduler = this._register(new RunOnceScheduler(() => this._doRefreshGitState(), OrchestratorServiceImpl.REFRESH_DEBOUNCE_MS));
+		this._editorRetryScheduler = this._register(new RunOnceScheduler(() => this._doRetryFailedEditors(), OrchestratorServiceImpl.RETRY_DELAY_MS));
 
 		// Keep URI cache in sync so onDidFilesChange doesn't allocate on every event
 		this._register(this.onDidChangeRepositories(() => this._rebuildWorktreeUriCache()));
@@ -189,40 +199,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		// Get current branch and discover existing worktrees
 		const currentBranch = await this.gitService.getCurrentBranch(path);
 		const gitWorktrees = await this.gitService.listWorktrees(path);
-
-		// Build worktree entries from discovered worktrees, using on-disk meta as fallback
-		const nonBare = gitWorktrees.filter(w => !w.isBare);
-		const metaResults = await Promise.all(
-			nonBare.map(wt => this.gitService.readWorktreeMeta(path, wt.branch).catch(() => null))
-		);
-		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
-			const diskMeta = metaResults[i];
-			return {
-				name: diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
-				path: wt.path,
-				branch: wt.branch,
-				baseBranch: diskMeta?.baseBranch,
-				description: diskMeta?.description,
-				isActive: false,
-			};
-		});
-
-		// If no worktrees found (fresh init), add the main worktree
-		if (worktrees.length === 0) {
-			worktrees.push({
-				name: 'local',
-				path,
-				branch: currentBranch,
-				isActive: false,
-			});
-		}
-
-		// Populate diff stats in parallel
-		const statsMap = await this._fetchDiffStats(path, worktrees);
-		for (let i = 0; i < worktrees.length; i++) {
-			const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
-			worktrees[i] = { ...worktrees[i], ...s };
-		}
+		const worktrees = await this._buildWorktreeEntries(path, gitWorktrees, currentBranch);
 
 		const entry: IRepositoryEntry = {
 			name: basename(path),
@@ -392,6 +369,12 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.saveState();
 
 		if (worktreePath) {
+			const removedWs = this._workingSetMap.get(worktreePath);
+			if (removedWs) {
+				this.editorGroupsService.deleteWorkingSet(removedWs);
+				this._workingSetMap.delete(worktreePath);
+				this._persistWorkingSetMap();
+			}
 			this._onDidRemoveWorktree.fire({ repoPath, worktreePath });
 		}
 	}
@@ -449,8 +432,15 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			 * placed back into those slots in phase 2).
 			 */
 			if (previousPath) {
+				// Delete stale working set before creating a fresh one so dead
+				// snapshots don't accumulate across sessions.
+				const existing = this._workingSetMap.get(previousPath);
+				if (existing) {
+					this.editorGroupsService.deleteWorkingSet(existing);
+				}
 				const workingSet = this.editorGroupsService.saveWorkingSet(previousPath);
 				this._workingSetMap.set(previousPath, workingSet);
+				this._persistWorkingSetMap();
 			}
 
 			/**
@@ -496,38 +486,35 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.scheduleRefresh();
 	}
 
-	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
-	private static readonly RETRY_DELAY_MS = 500;
-	private static readonly MAX_RETRIES = 3;
-	private _editorRetryCount = 0;
-
 	private retryFailedEditors(): void {
-		setTimeout(async () => {
-			let retried = false;
-			for (const group of this.editorGroupsService.groups) {
-				if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
-					this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
-					try {
-						await group.openEditor(group.activeEditor);
-					} catch (err) {
-						this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
-					}
-					retried = true;
-				}
-			}
+		this._editorRetryScheduler.schedule();
+	}
 
-			if (retried && this._editorRetryCount < OrchestratorServiceImpl.MAX_RETRIES) {
-				const stillFailing = this.editorGroupsService.groups.some(
-					g => g.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID
-				);
-				if (stillFailing) {
-					this._editorRetryCount++;
-					this.retryFailedEditors();
-					return;
+	private async _doRetryFailedEditors(): Promise<void> {
+		let retried = false;
+		for (const group of this.editorGroupsService.groups) {
+			if (group.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID && group.activeEditor) {
+				this.logService.info(`[OrchestratorService] Auto-retrying failed editor: ${group.activeEditor.getName()}`);
+				try {
+					await group.openEditor(group.activeEditor);
+				} catch (err) {
+					this.logService.trace(`[OrchestratorService] Retry failed (InstantiationService may have been disposed), will retry: ${err}`);
 				}
+				retried = true;
 			}
-			this._editorRetryCount = 0;
-		}, OrchestratorServiceImpl.RETRY_DELAY_MS);
+		}
+
+		if (retried && this._editorRetryCount < OrchestratorServiceImpl.MAX_RETRIES) {
+			const stillFailing = this.editorGroupsService.groups.some(
+				g => g.activeEditorPane?.getId() === OrchestratorServiceImpl.ERROR_EDITOR_ID
+			);
+			if (stillFailing) {
+				this._editorRetryCount++;
+				this._editorRetryScheduler.schedule();
+				return;
+			}
+		}
+		this._editorRetryCount = 0;
 	}
 
 	setSessionState(worktreePath: string, state: WorktreeSessionState): boolean {
@@ -564,6 +551,54 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		return this._sessionStates.get(worktreePath);
 	}
 
+	/**
+	 * Builds worktree entries from git-discovered worktrees, merging persisted
+	 * state and on-disk meta. Shared between addRepository and restoreState.
+	 */
+	private async _buildWorktreeEntries(
+		repoPath: string,
+		gitWorktrees: IGitWorktreeInfo[],
+		currentBranch: string,
+		savedWorktrees?: Map<string, IPersistedWorktreeState>,
+		activeWorktreePath?: string,
+	): Promise<IWorktreeEntry[]> {
+		const nonBare = gitWorktrees.filter(w => !w.isBare);
+
+		const metaResults = await Promise.all(
+			nonBare.map(wt => savedWorktrees?.has(wt.branch)
+				? Promise.resolve(null)
+				: this.gitService.readWorktreeMeta(repoPath, wt.branch).catch(() => null))
+		);
+
+		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
+			const saved = savedWorktrees?.get(wt.branch);
+			const diskMeta = metaResults[i];
+			return {
+				name: saved?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+				path: wt.path,
+				branch: wt.branch,
+				baseBranch: saved?.baseBranch ?? diskMeta?.baseBranch,
+				description: saved?.description ?? diskMeta?.description,
+				isActive: activeWorktreePath ? wt.path === activeWorktreePath : false,
+			};
+		});
+
+		if (worktrees.length === 0) {
+			worktrees.push({
+				name: 'local',
+				path: repoPath,
+				branch: currentBranch,
+				isActive: activeWorktreePath ? repoPath === activeWorktreePath : false,
+			});
+		}
+
+		const statsMap = await this._fetchDiffStats(repoPath, worktrees);
+		return worktrees.map(wt => {
+			const s = statsMap.get(wt.path) ?? EMPTY_STATS;
+			return { ...wt, ...s };
+		});
+	}
+
 	//#region Diff stats
 
 	private _rebuildWorktreeUriCache(): void {
@@ -580,9 +615,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	scheduleRefresh(): void {
 		this._refreshScheduler.schedule();
 	}
-
-	private static readonly REFRESH_DEBOUNCE_MS = 2000;
-	private static readonly REFRESH_REQUEUE_MS = 5000;
 
 	private async _doRefreshGitState(): Promise<void> {
 		if (this._refreshInFlight) {
@@ -665,6 +697,17 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	//#endregion
 
+	private _persistWorkingSetMap(): void {
+		const entries = Array.from(this._workingSetMap.entries())
+			.map(([path, ws]) => ({ path, id: ws.id, name: ws.name }));
+		this.storageService.store(
+			OrchestratorServiceImpl.WORKING_SET_MAP_KEY,
+			JSON.stringify(entries),
+			StorageScope.WORKSPACE,
+			StorageTarget.MACHINE
+		);
+	}
+
 	private saveState(): void {
 		const state: IPersistedOrchestratorState = {
 			repositories: this._repositories.map(r => ({
@@ -724,42 +767,9 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					}
 				}
 
-				const nonBare = gitWorktrees.filter(w => !w.isBare);
-
-				// Read on-disk meta for worktrees missing from persisted state
-				const metaResults = await Promise.all(
-					nonBare.map(wt => savedWorktreeMap.has(wt.branch)
-						? Promise.resolve(null)
-						: this.gitService.readWorktreeMeta(saved.path, wt.branch).catch(() => null))
+				const worktrees = await this._buildWorktreeEntries(
+					saved.path, gitWorktrees, currentBranch, savedWorktreeMap, persisted.activeWorktreePath
 				);
-
-				const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
-					const persisted = savedWorktreeMap.get(wt.branch);
-					const diskMeta = metaResults[i];
-					return {
-						name: persisted?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
-						path: wt.path,
-						branch: wt.branch,
-						baseBranch: persisted?.baseBranch ?? diskMeta?.baseBranch,
-						description: persisted?.description ?? diskMeta?.description,
-						isActive: false,
-					};
-				});
-
-				if (worktrees.length === 0) {
-					worktrees.push({
-						name: 'local',
-						path: saved.path,
-						branch: currentBranch,
-						isActive: false,
-					});
-				}
-
-				const statsMap = await this._fetchDiffStats(saved.path, worktrees);
-				for (let i = 0; i < worktrees.length; i++) {
-					const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
-					worktrees[i] = { ...worktrees[i], ...s };
-				}
 
 				this._repositories.push({
 					name: basename(saved.path),
@@ -776,12 +786,39 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			this._onDidChangeRepositories.fire();
 		}
 
-		// Restore active worktree selection
+		// Restore working set map (path → {id, name}).
+		// The actual layout states live in editorParts under StorageScope.WORKSPACE
+		// and are already loaded by the time we get here. We only need to rebuild
+		// the in-memory path→id index so switchTo() can call applyWorkingSet().
+		const rawMap = this.storageService.get(OrchestratorServiceImpl.WORKING_SET_MAP_KEY, StorageScope.WORKSPACE);
+		if (rawMap) {
+			try {
+				const entries = JSON.parse(rawMap) as { path: string; id: string; name: string }[];
+				const validIds = new Set(this.editorGroupsService.getWorkingSets().map(ws => ws.id));
+				for (const entry of entries) {
+					if (validIds.has(entry.id)) {
+						this._workingSetMap.set(entry.path, { id: entry.id, name: entry.name });
+					}
+				}
+				this.logService.trace(`[OrchestratorService] Restored working set map: ${this._workingSetMap.size} entries`);
+			} catch {
+				this.logService.warn('[OrchestratorService] Failed to parse working set map, ignoring.');
+			}
+		}
+
+		/*
+		 * Restore active worktree selection directly — skip switchTo() because
+		 * VS Code's own editor and terminal persistence already restored the
+		 * active worktree's state. The full switch flow would wipe editors via
+		 * applyWorkingSet('empty') with nothing to restore (only inactive
+		 * worktrees have saved working sets), and redundantly re-save state,
+		 * re-fire repository changes, and re-trigger a git refresh.
+		 */
 		if (persisted.activeWorktreePath) {
 			for (const repo of this._repositories) {
 				const match = repo.worktrees.find(w => w.path === persisted.activeWorktreePath);
 				if (match) {
-					await this.switchTo(match);
+					this._activeWorktree = match;
 					break;
 				}
 			}

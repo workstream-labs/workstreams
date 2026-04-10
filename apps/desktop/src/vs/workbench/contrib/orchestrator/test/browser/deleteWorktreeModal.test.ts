@@ -32,8 +32,9 @@ suite('DeleteWorktreeModal', () => {
 	}
 
 	teardown(() => {
-		// Clean up any leftover modals
-		document.querySelectorAll('.delete-worktree-overlay').forEach(el => el.remove());
+		// Trigger close() on any open modals so the internal DisposableStore is disposed.
+		// Tests that only inspect DOM without clicking a button leave the promise pending.
+		document.querySelectorAll<HTMLButtonElement>('.delete-worktree-btn.cancel').forEach(btn => btn.click());
 	});
 
 	test('resolves false when cancel is clicked', async () => {
