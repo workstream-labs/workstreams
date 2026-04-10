@@ -11,7 +11,7 @@ import { ViewPane, IViewPaneOptions, ViewAction } from '../../../browser/parts/v
 import { append, $, clearNode, isPointerEvent, isActiveElement } from '../../../../base/browser/dom.js';
 import { asCSSUrl } from '../../../../base/browser/cssValue.js';
 import { IListVirtualDelegate, IIdentityProvider } from '../../../../base/browser/ui/list/list.js';
-import { ISCMResourceGroup, ISCMResource, ISCMRepository, ISCMInput, ISCMViewService, ISCMViewVisibleRepositoryChangeEvent, ISCMService, VIEW_PANE_ID, ISCMActionButton, ISCMActionButtonDescriptor, ISCMRepositorySortKey, ViewMode, ISCMRepositorySelectionMode } from '../common/scm.js';
+import { ISCMResourceGroup, ISCMResource, ISCMRepository, ISCMInput, ISCMViewService, ISCMViewVisibleRepositoryChangeEvent, ISCMService, VIEW_PANE_ID, PARENT_CHANGES_GROUP_ID, ISCMActionButton, ISCMActionButtonDescriptor, ISCMRepositorySortKey, ViewMode, ISCMRepositorySelectionMode } from '../common/scm.js';
 import { ResourceLabels, IResourceLabel, IFileLabelOptions } from '../../../browser/labels.js';
 import { CountBadge } from '../../../../base/browser/ui/countBadge/countBadge.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
@@ -424,11 +424,15 @@ class ResourceGroupRenderer implements ICompressibleTreeRenderer<ISCMResourceGro
 		template.name.textContent = group.label;
 		template.count.setCount(group.resources.length);
 
-		const menus = this.scmViewService.menus.getRepositoryMenus(group.provider);
-		template.elementDisposables.add(connectPrimaryMenu(menus.getResourceGroupMenu(group), primary => {
-			template.actionBar.setActions(primary);
-		}, 'inline'));
-		template.actionBar.context = group;
+		if (group.id === PARENT_CHANGES_GROUP_ID) {
+			template.actionBar.setActions([]);
+		} else {
+			const menus = this.scmViewService.menus.getRepositoryMenus(group.provider);
+			template.elementDisposables.add(connectPrimaryMenu(menus.getResourceGroupMenu(group), primary => {
+				template.actionBar.setActions(primary);
+			}, 'inline'));
+			template.actionBar.context = group;
+		}
 	}
 
 	renderCompressedElements(node: ITreeNode<ICompressedTreeNode<ISCMResourceGroup>, FuzzyScore>): void {
@@ -615,6 +619,15 @@ class ResourceRenderer implements ICompressibleTreeRenderer<ISCMResource | IReso
 	}
 
 	private _renderActionBar(template: ResourceTemplate, resourceOrFolder: ISCMResource | IResourceNode<ISCMResource, ISCMResourceGroup>, menu: IMenu): void {
+		// Hide inline actions for parentChanges resources
+		const group = ResourceTree.isResourceNode(resourceOrFolder)
+			? resourceOrFolder.context
+			: resourceOrFolder.resourceGroup;
+		if (group.id === PARENT_CHANGES_GROUP_ID) {
+			template.actionBar.setActions([]);
+			return;
+		}
+
 		if (!template.actionBarMenu || template.actionBarMenu !== menu) {
 			template.actionBarMenu = menu;
 			template.actionBarMenuListener.value = connectPrimaryMenu(menu, primary => {
