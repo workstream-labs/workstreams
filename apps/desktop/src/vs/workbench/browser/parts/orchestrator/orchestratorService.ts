@@ -551,8 +551,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		return this._sessionStates.get(worktreePath);
 	}
 
-	//#region Worktree building
-
 	/**
 	 * Builds worktree entries from git-discovered worktrees, merging persisted
 	 * state and on-disk meta. Shared between addRepository and restoreState.
@@ -600,8 +598,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			return { ...wt, ...s };
 		});
 	}
-
-	//#endregion
 
 	//#region Diff stats
 
