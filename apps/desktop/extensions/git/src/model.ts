@@ -627,7 +627,12 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			}
 
 			// Skip repositories inside .workstreams directory (managed by orchestrator)
-			if (repositoryRoot.includes(`${path.sep}.workstreams${path.sep}`)) {
+			// but only when discovered as sub-repos of the main workspace
+			const isWorkstreamsSubRepo = (workspace.workspaceFolders || []).some(folder => {
+				const relative = path.relative(folder.uri.fsPath, repositoryRoot);
+				return !relative.startsWith('..') && relative.split(path.sep).includes('.workstreams');
+			});
+			if (isWorkstreamsSubRepo) {
 				this.logger.trace(`[Model][openRepository] Repository inside .workstreams directory, skipping: ${repositoryRoot}`);
 				return;
 			}
