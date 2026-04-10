@@ -50,7 +50,8 @@ export const enum ResourceGroupType {
 	Merge,
 	Index,
 	WorkingTree,
-	Untracked
+	Untracked,
+	ParentChanges
 }
 
 export class Resource implements SourceControlResourceState {
@@ -588,6 +589,14 @@ class ResourceCommandResolver {
 	}
 
 	private getLeftResource(resource: Resource): ModifiedOrOriginal {
+		// Parent changes: left = file at origin/<default_branch>
+		if (resource.resourceGroupType === ResourceGroupType.ParentChanges) {
+			const ref = this.repository.parentBranchRef;
+			if (!ref) { return {}; }
+			if (resource.type === Status.INDEX_ADDED) { return {}; }
+			return { original: toGitUri(resource.original, ref) };
+		}
+
 		switch (resource.type) {
 			case Status.INDEX_MODIFIED:
 			case Status.INDEX_RENAMED:
@@ -606,6 +615,12 @@ class ResourceCommandResolver {
 	}
 
 	private getRightResource(resource: Resource): ModifiedOrOriginal {
+		// Parent changes: right = file at HEAD
+		if (resource.resourceGroupType === ResourceGroupType.ParentChanges) {
+			if (resource.type === Status.DELETED) { return {}; }
+			return { modified: toGitUri(resource.resourceUri, 'HEAD') };
+		}
+
 		switch (resource.type) {
 			case Status.INDEX_MODIFIED:
 			case Status.INDEX_ADDED:
@@ -648,6 +663,10 @@ class ResourceCommandResolver {
 
 	private getTitle(resource: Resource): string {
 		const basename = path.basename(resource.resourceUri.fsPath);
+
+		if (resource.resourceGroupType === ResourceGroupType.ParentChanges) {
+			return l10n.t('{0} (Parent)', basename);
+		}
 
 		switch (resource.type) {
 			case Status.INDEX_MODIFIED:
@@ -747,6 +766,12 @@ export class Repository implements Disposable {
 
 	private _untrackedGroup: SourceControlResourceGroup;
 	get untrackedGroup(): GitResourceGroup { return this._untrackedGroup as GitResourceGroup; }
+
+	private _parentChangesGroup: SourceControlResourceGroup;
+	get parentChangesGroup(): GitResourceGroup { return this._parentChangesGroup as GitResourceGroup; }
+
+	private _parentBranchRef: string | undefined;
+	get parentBranchRef(): string | undefined { return this._parentBranchRef; }
 
 	private _EMPTY_TREE: string | undefined;
 
@@ -894,6 +919,9 @@ export class Repository implements Disposable {
 	private branchProtection = new Map<string, BranchProtectionMatcher[]>();
 	private commitCommandCenter: CommitCommandsCenter;
 	private resourceCommandResolver = new ResourceCommandResolver(this);
+	private static readonly PARENT_FETCH_THROTTLE_MS = 60_000;
+	private _lastParentFetchTime = 0;
+	private _parentChangesGeneration = 0;
 	private updateModelStateCancellationTokenSource: CancellationTokenSource | undefined;
 	private disposables: Disposable[] = [];
 
@@ -997,6 +1025,7 @@ export class Repository implements Disposable {
 		this._indexGroup = this._sourceControl.createResourceGroup('index', l10n.t('Staged Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._workingTreeGroup = this._sourceControl.createResourceGroup('workingTree', l10n.t('Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._untrackedGroup = this._sourceControl.createResourceGroup('untracked', l10n.t('Untracked Changes'), { multiDiffEditorEnableViewChanges: true });
+		this._parentChangesGroup = this._sourceControl.createResourceGroup('parentChanges', l10n.t('Changes in Parent'), { multiDiffEditorEnableViewChanges: true });
 
 		const updateIndexGroupVisibility = () => {
 			const config = workspace.getConfiguration('git', root);
@@ -1033,11 +1062,13 @@ export class Repository implements Disposable {
 
 		this.mergeGroup.hideWhenEmpty = true;
 		this.untrackedGroup.hideWhenEmpty = true;
+		this.parentChangesGroup.hideWhenEmpty = true;
 
 		this.disposables.push(this.mergeGroup);
 		this.disposables.push(this.indexGroup);
 		this.disposables.push(this.workingTreeGroup);
 		this.disposables.push(this.untrackedGroup);
+		this.disposables.push(this.parentChangesGroup);
 
 		// Don't allow auto-fetch in untrusted workspaces
 		if (workspace.isTrusted) {
@@ -2846,6 +2877,9 @@ export class Repository implements Disposable {
 			this._refs = refs;
 			this._updateResourceGroupsState(resourceGroups);
 
+			// Update parent branch changes (non-blocking)
+			this._updateParentChanges().catch(() => { /* silently ignore */ });
+
 			this._onDidChangeStatus.fire();
 		}
 		catch (err) {
@@ -2871,6 +2905,62 @@ export class Repository implements Disposable {
 
 		// set count badge
 		this.setCountBadge();
+	}
+
+	private async _updateParentChanges(): Promise<void> {
+		const generation = ++this._parentChangesGeneration;
+
+		try {
+			const defaultBranch = await this.getDefaultBranch();
+			if (!defaultBranch || generation !== this._parentChangesGeneration) {
+				if (generation === this._parentChangesGeneration) {
+					this.parentChangesGroup.resourceStates = [];
+				}
+				return;
+			}
+
+			const parentRef = `${defaultBranch.remote}/${defaultBranch.name}`;
+			this._parentBranchRef = parentRef;
+
+			// Fetch latest from the remote default branch (throttled to once per 60s)
+			const now = Date.now();
+			if (now - this._lastParentFetchTime > Repository.PARENT_FETCH_THROTTLE_MS) {
+				this._lastParentFetchTime = now;
+				try {
+					await this.fetch({ remote: defaultBranch.remote!, ref: defaultBranch.name });
+				} catch {
+					// Fetch may fail (offline, no remote, etc.) — continue with stale ref
+				}
+			}
+
+			if (generation !== this._parentChangesGeneration) { return; }
+
+			// Get committed differences between parent branch and HEAD
+			const changes = await this.diffBetween(parentRef, 'HEAD') as Change[];
+
+			if (generation !== this._parentChangesGeneration) { return; }
+
+			const config = workspace.getConfiguration('git');
+			const useIcons = !config.get<boolean>('decorations.enabled', true);
+
+			const resources = changes.map(change =>
+				new Resource(
+					this.resourceCommandResolver,
+					ResourceGroupType.ParentChanges,
+					change.originalUri,
+					change.status,
+					useIcons,
+					change.renameUri,
+					this.kind,
+				)
+			);
+
+			this.parentChangesGroup.resourceStates = resources;
+		} catch {
+			if (generation === this._parentChangesGeneration) {
+				this.parentChangesGroup.resourceStates = [];
+			}
+		}
 	}
 
 	private async getStatus(cancellationToken?: CancellationToken): Promise<GitResourceGroups> {
