@@ -623,42 +623,43 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		}
 		this._refreshInFlight = true;
 		try {
-			let changed = false;
-			const updated = await Promise.all(this._repositories.map(async repo => {
-				const [statsMap, branchMap, prMap] = await Promise.all([
+			// Fetch data in parallel. The results are Maps keyed by worktree
+			// path — safe to apply to whatever _repositories looks like after
+			// the await (worktrees may have been added or removed mid-flight).
+			const fetched = await Promise.all(this._repositories.map(async repo => ({
+				repoPath: repo.path,
+				...(await Promise.all([
 					this._fetchDiffStats(repo.path, repo.worktrees),
 					this._fetchBranches(repo.worktrees),
 					this._fetchPRInfo(repo.path, repo.worktrees),
-				]);
+				]).then(([statsMap, branchMap, prMap]) => ({ statsMap, branchMap, prMap }))),
+			})));
+			const dataByRepo = new Map(fetched.map(r => [r.repoPath, r]));
+
+			// Apply to CURRENT _repositories — deleted worktrees are gone,
+			// new ones simply have no data yet and keep defaults.
+			let changed = false;
+			this._repositories = this._repositories.map(repo => {
+				const data = dataByRepo.get(repo.path);
+				if (!data) {
+					return repo;
+				}
 				const worktrees = repo.worktrees.map(wt => {
-					const s = statsMap.get(wt.path) ?? EMPTY_STATS;
-					const branch = branchMap.get(wt.path) ?? wt.branch;
-					const pr = prMap.get(wt.path) ?? null;
-					const prNumber = pr?.number;
-					const prState = pr?.state;
-					const prMergeable = pr?.mergeable;
-					const prUrl = pr?.url;
+					const s = data.statsMap.get(wt.path) ?? EMPTY_STATS;
+					const branch = data.branchMap.get(wt.path) ?? wt.branch;
+					const pr = data.prMap.get(wt.path) ?? null;
 					if (wt.additions !== s.additions || wt.deletions !== s.deletions || wt.filesChanged !== s.filesChanged || wt.branch !== branch
-						|| wt.prNumber !== prNumber || wt.prState !== prState || wt.prMergeable !== prMergeable || !wt.prLoaded) {
+						|| wt.prNumber !== pr?.number || wt.prState !== pr?.state || wt.prMergeable !== pr?.mergeable || !wt.prLoaded) {
 						changed = true;
-						return { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, defaultBranch: s.defaultBranch, branch, prLoaded: true, prNumber, prState, prMergeable, prUrl };
+						const liveState = this._sessionStates.get(wt.path);
+						const merged: IWorktreeEntry = { ...wt, filesChanged: s.filesChanged, additions: s.additions, deletions: s.deletions, defaultBranch: s.defaultBranch, branch, prLoaded: true, prNumber: pr?.number, prState: pr?.state, prMergeable: pr?.mergeable, prUrl: pr?.url };
+						return liveState !== undefined ? { ...merged, sessionState: liveState } : merged;
 					}
 					return wt;
 				});
 				return { ...repo, worktrees };
-			}));
+			});
 			if (changed) {
-				// Re-apply session states from the authoritative map.
-				// The async git operations above used a stale snapshot of
-				// _repositories, so any setSessionState() calls during the
-				// await would be lost without this merge.
-				this._repositories = updated.map(repo => ({
-					...repo,
-					worktrees: repo.worktrees.map(wt => {
-						const liveState = this._sessionStates.get(wt.path);
-						return liveState !== undefined ? { ...wt, sessionState: liveState } : wt;
-					})
-				}));
 				this._onDidChangeRepositories.fire();
 			}
 		} finally {

@@ -5,6 +5,7 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../base/common/event.js';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
@@ -36,6 +37,16 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 
 	/** Guard to prevent concurrent fetches. */
 	private _pendingFetch: Promise<void> | undefined;
+
+	/** Retry scheduler — fires after extension host has restarted. */
+	private readonly _retryScheduler = this._register(new RunOnceScheduler(() => {
+		if (this._onlineFetchState === 'idle') {
+			this.logService.info('[WorkstreamComments]', 'Retrying fetch after cancellation');
+			this._onlineFetchState = 'loading';
+			this._fetchOnlineThreadsAsync();
+			this._onNeedRefresh.fire();
+		}
+	}, 3_000));
 
 	constructor(
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
@@ -92,6 +103,7 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		this._onlineFetchState = 'idle';
 		this._onlineResolveStatus = undefined;
 		this._pendingFetch = undefined;
+		this._retryScheduler.cancel();
 		this._fetchGeneration++;
 	}
 
@@ -406,8 +418,9 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 				return;
 			}
 			if (isCancellationError(err)) {
-				this.logService.info('[WorkstreamComments]', `Fetch canceled (gen ${generation}) — setting idle for retry`);
+				this.logService.info('[WorkstreamComments]', `Fetch canceled (gen ${generation}) — scheduling retry`);
 				this._onlineFetchState = 'idle';
+				this._retryScheduler.schedule();
 				return;
 			}
 			this.logService.warn('[WorkstreamComments]', `Failed to fetch online comments:`, err);
