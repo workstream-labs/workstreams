@@ -24,6 +24,7 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { ModesRegistry } from '../../../../editor/common/languages/modesRegistry.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
+import { FileAccess } from '../../../../base/common/network.js';
 import { ContextKeys, SCMViewPane } from './scmViewPane.js';
 import { RepositoryPicker, SCMViewService } from './scmViewService.js';
 import { SCMRepositoriesViewPane } from './scmRepositoriesViewPane.js';
@@ -66,13 +67,14 @@ registerEditorContribution(QuickDiffEditorController.ID,
 	QuickDiffEditorController, EditorContributionInstantiation.AfterFirstRender);
 
 const sourceControlViewIcon = registerIcon('source-control-view-icon', Codicon.sourceControl, localize('sourceControlViewIcon', 'View icon of the Source Control view.'));
+const sourceControlViewSvgIcon = FileAccess.asBrowserUri('vs/workbench/browser/parts/orchestrator/media/git-branch.svg');
 
 const viewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
 	id: VIEWLET_ID,
 	title: localize2('source control', 'Source Control'),
 	ctorDescriptor: new SyncDescriptor(SCMViewPaneContainer),
 	storageId: 'workbench.scm.views.state',
-	icon: sourceControlViewIcon,
+	icon: sourceControlViewSvgIcon,
 	alwaysUseContainerInfo: true,
 	order: 2,
 	hideIfEmpty: true,
@@ -114,7 +116,7 @@ viewsRegistry.registerViews([{
 	order: 0,
 	when: ContextKeyExpr.and(ContextKeyExpr.has('scm.providerCount'), ContextKeyExpr.notEquals('scm.providerCount', 0)),
 	// readonly when = ContextKeyExpr.or(ContextKeyExpr.equals('config.scm.alwaysShowProviders', true), ContextKeyExpr.and(ContextKeyExpr.notEquals('scm.providerCount', 0), ContextKeyExpr.notEquals('scm.providerCount', 1)));
-	containerIcon: sourceControlViewIcon
+	containerIcon: sourceControlViewSvgIcon
 }], viewContainer);
 
 viewsRegistry.registerViews([{
@@ -127,7 +129,7 @@ viewsRegistry.registerViews([{
 	canMoveView: true,
 	weight: 40,
 	order: 1,
-	containerIcon: sourceControlViewIcon,
+	containerIcon: sourceControlViewSvgIcon,
 	openCommandActionDescriptor: {
 		id: viewContainer.id,
 		mnemonicTitle: localize({ key: 'miViewSCM', comment: ['&& denotes a mnemonic'] }, "Source &&Control"),
@@ -155,7 +157,7 @@ viewsRegistry.registerViews([{
 		ContextKeyExpr.has('scm.historyProviderCount'),
 		ContextKeyExpr.notEquals('scm.historyProviderCount', 0),
 	),
-	containerIcon: sourceControlViewIcon
+	containerIcon: sourceControlViewSvgIcon
 }], viewContainer);
 
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
