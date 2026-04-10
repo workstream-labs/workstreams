@@ -67,6 +67,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private _repositories: IRepositoryEntry[] = [];
 	private _activeWorktree: IWorktreeEntry | undefined;
+	private _previousActiveWorktree: IWorktreeEntry | undefined;
 
 	private readonly _onDidChangeRepositories = this._register(new Emitter<void>());
 	readonly onDidChangeRepositories = this._onDidChangeRepositories.event;
@@ -385,8 +386,14 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			}
 		}
 
-		if (this._activeWorktree?.branch === branchName) {
+		const wasActive = this._activeWorktree?.branch === branchName;
+		if (wasActive) {
 			this._activeWorktree = undefined;
+		}
+
+		// Also clear previous-active if it pointed at the deleted worktree
+		if (this._previousActiveWorktree?.branch === branchName) {
+			this._previousActiveWorktree = undefined;
 		}
 
 		const worktreePath = worktree?.path;
@@ -408,11 +415,24 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			}
 			this._onDidRemoveWorktree.fire({ repoPath, worktreePath });
 		}
+
+		// After cleanup, switch focus to the previous worktree or fall back to local
+		if (wasActive) {
+			const repo = this._repositories.find(r => r.path === repoPath);
+			const previous = repo?.worktrees.find(w => w.path === this._previousActiveWorktree?.path);
+			const target = previous ?? repo?.worktrees.find(w => w.path === repoPath);
+			if (target) {
+				await this.switchTo(target);
+			}
+		}
 	}
 
 	async switchTo(worktree: IWorktreeEntry): Promise<void> {
 		this._editorRetryCount = 0;
 		const previousPath = this._activeWorktree?.path;
+		if (this._activeWorktree && this._activeWorktree.path !== worktree.path) {
+			this._previousActiveWorktree = this._activeWorktree;
+		}
 		this._activeWorktree = worktree;
 
 		this._repositories = this._repositories.map(r => ({
