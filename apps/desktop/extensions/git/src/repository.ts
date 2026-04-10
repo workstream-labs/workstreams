@@ -54,6 +54,9 @@ export const enum ResourceGroupType {
 	ParentChanges
 }
 
+export const PARENT_CHANGES_GROUP_ID = 'parentChanges';
+export const PARENT_CHANGE_CONTEXT_VALUE = 'parentChange';
+
 export class Resource implements SourceControlResourceState {
 
 	static getStatusLetter(type: Status): string {
@@ -192,7 +195,7 @@ export class Resource implements SourceControlResourceState {
 	get renameResourceUri(): Uri | undefined { return this._renameResourceUri; }
 	get contextValue(): string | undefined {
 		if (this._resourceGroupType === ResourceGroupType.ParentChanges) {
-			return 'parentChange';
+			return PARENT_CHANGE_CONTEXT_VALUE;
 		}
 		return this._repositoryKind;
 	}
@@ -1030,7 +1033,7 @@ export class Repository implements Disposable {
 		this._indexGroup = this._sourceControl.createResourceGroup('index', l10n.t('Staged Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._workingTreeGroup = this._sourceControl.createResourceGroup('workingTree', l10n.t('Changes'), { multiDiffEditorEnableViewChanges: true });
 		this._untrackedGroup = this._sourceControl.createResourceGroup('untracked', l10n.t('Untracked Changes'), { multiDiffEditorEnableViewChanges: true });
-		this._parentChangesGroup = this._sourceControl.createResourceGroup('parentChanges', l10n.t('Changes in Parent'));
+		this._parentChangesGroup = this._sourceControl.createResourceGroup(PARENT_CHANGES_GROUP_ID, l10n.t('Changes in Parent'));
 
 		const updateIndexGroupVisibility = () => {
 			const config = workspace.getConfiguration('git', root);

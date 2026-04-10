@@ -76,6 +76,8 @@ import { IAccessibilityService } from '../../../../platform/accessibility/common
 import { AccessibilityCommandId } from '../../accessibility/common/accessibilityCommands.js';
 import { SCMInputWidget } from './scmInput.js';
 
+const PARENT_CHANGES_GROUP_ID = 'parentChanges';
+
 type TreeElement = ISCMRepository | ISCMInput | ISCMActionButton | ISCMResourceGroup | ISCMResource | IResourceNode<ISCMResource, ISCMResourceGroup>;
 
 function processResourceFilterData(uri: URI, filterData: FuzzyScore | LabelFuzzyScore | undefined): [IMatch[] | undefined, IMatch[] | undefined] {
@@ -424,7 +426,7 @@ class ResourceGroupRenderer implements ICompressibleTreeRenderer<ISCMResourceGro
 		template.name.textContent = group.label;
 		template.count.setCount(group.resources.length);
 
-		if (group.id === 'parentChanges') {
+		if (group.id === PARENT_CHANGES_GROUP_ID) {
 			template.actionBar.setActions([]);
 		} else {
 			const menus = this.scmViewService.menus.getRepositoryMenus(group.provider);
@@ -623,7 +625,7 @@ class ResourceRenderer implements ICompressibleTreeRenderer<ISCMResource | IReso
 		const group = ResourceTree.isResourceNode(resourceOrFolder)
 			? resourceOrFolder.context
 			: resourceOrFolder.resourceGroup;
-		if (group.id === 'parentChanges') {
+		if (group.id === PARENT_CHANGES_GROUP_ID) {
 			template.actionBar.setActions([]);
 			return;
 		}
