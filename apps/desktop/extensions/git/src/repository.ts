@@ -2925,7 +2925,6 @@ export class Repository implements Disposable {
 			}
 
 			const parentRef = `${defaultBranch.remote}/${defaultBranch.name}`;
-			this._parentBranchRef = parentRef;
 
 			// Fetch latest from the remote default branch (throttled to once per 60s)
 			const now = Date.now();
@@ -2940,9 +2939,19 @@ export class Repository implements Disposable {
 
 			if (generation !== this._parentChangesGeneration) { return; }
 
-			// Get all tracked file differences between parent branch and working tree
-			// (includes committed + staged + unstaged changes)
-			const changes = await this.diffBetweenWithStats2(parentRef);
+			// Use merge-base so the diff matches what a PR would show:
+			// only files changed on THIS branch since it diverged from origin/main
+			const mergeBase = await this.getMergeBase(parentRef, 'HEAD');
+			if (!mergeBase || generation !== this._parentChangesGeneration) {
+				if (generation === this._parentChangesGeneration) {
+					this.parentChangesGroup.resourceStates = [];
+				}
+				return;
+			}
+			this._parentBranchRef = mergeBase;
+
+			// Diff from merge-base to working tree (committed + staged + unstaged)
+			const changes = await this.diffBetweenWithStats2(mergeBase);
 
 			if (generation !== this._parentChangesGeneration) { return; }
 
