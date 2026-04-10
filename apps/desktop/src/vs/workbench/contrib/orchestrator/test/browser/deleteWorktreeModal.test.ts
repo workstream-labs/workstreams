@@ -9,8 +9,6 @@ import { showDeleteWorktreeModal, DeleteWorktreeModalOptions } from '../../brows
 
 suite('DeleteWorktreeModal', () => {
 
-	ensureNoDisposablesAreLeakedInTestSuite();
-
 	function baseOptions(overrides?: Partial<DeleteWorktreeModalOptions>): DeleteWorktreeModalOptions {
 		return {
 			name: 'feature-login',
@@ -36,6 +34,8 @@ suite('DeleteWorktreeModal', () => {
 		// Tests that only inspect DOM without clicking a button leave the promise pending.
 		document.querySelectorAll<HTMLButtonElement>('.delete-worktree-btn.cancel').forEach(btn => btn.click());
 	});
+
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('resolves false when cancel is clicked', async () => {
 		const { promise, overlay } = openModal(baseOptions());
