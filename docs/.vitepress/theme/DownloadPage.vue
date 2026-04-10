@@ -10,7 +10,6 @@ const API_BASE = "https://workstream-api.azurewebsites.net";
 
 const latestTag = ref(FALLBACK_TAG);
 const selectedArch = ref<"arm64" | "x64">("arm64");
-const downloadStarted = ref(false);
 /**
  * Controls the "Why is this needed?" disclosure panel in the quarantine step.
  * macOS quarantine removal is the most confusing install step for unsigned apps,
@@ -54,18 +53,17 @@ async function trackDownload(arch: string) {
 onMounted(async () => {
   await fetchLatestTag();
 
-  // Read arch from query param
+  // Read arch from query param (default to arm64)
   const params = new URLSearchParams(window.location.search);
   const arch = params.get("arch");
   if (arch === "arm64" || arch === "x64") {
     selectedArch.value = arch;
-    downloadStarted.value = true;
-    trackDownload(arch);
-    // Start download after a brief delay so the page renders first
-    setTimeout(() => {
-      window.location.href = dmgUrl(arch);
-    }, 500);
   }
+  trackDownload(selectedArch.value);
+  // Start download after a brief delay so the page renders first
+  setTimeout(() => {
+    window.location.href = dmgUrl(selectedArch.value);
+  }, 500);
 });
 </script>
 
@@ -80,27 +78,7 @@ onMounted(async () => {
     <NavBar />
 
     <div class="dl-content">
-      <!-- If no arch param, show picker as fallback -->
-      <template v-if="!downloadStarted">
-        <h1 class="dl-title">Download Workstream</h1>
-        <p class="dl-sub">Choose your Mac architecture to start the download.</p>
-        <div class="dl-cards">
-          <a :href="`/download?arch=arm64`" class="dl-card">
-            <div class="dl-card-icon"><AppleIcon :size="32" /></div>
-            <h3>Apple Silicon</h3>
-            <p>M1, M2, M3, M4</p>
-          </a>
-          <a :href="`/download?arch=x64`" class="dl-card">
-            <div class="dl-card-icon"><AppleIcon :size="32" /></div>
-            <h3>Intel</h3>
-            <p>x86_64</p>
-          </a>
-        </div>
-        <p class="dl-version">{{ latestTag }} &middot; macOS 12+</p>
-      </template>
-
       <!-- Download started: show instructions -->
-      <template v-else>
         <div class="dl-started">
           <h1 class="dl-title">Your download has started</h1>
           <p class="dl-sub">
@@ -171,7 +149,6 @@ onMounted(async () => {
             <a :href="dmgUrl(selectedArch)" class="dl-retry-link">Try again</a>
           </p>
         </div>
-      </template>
     </div>
   </div>
 </template>
@@ -233,38 +210,6 @@ onMounted(async () => {
 }
 .dl-sub strong { color: var(--t1); font-weight: 600; }
 
-.dl-cards {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 16px; margin-bottom: 24px;
-}
-
-.dl-card {
-  padding: 36px 24px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  cursor: pointer;
-  text-align: center;
-  text-decoration: none;
-  transition: all 0.25s ease;
-  color: var(--t1);
-}
-.dl-card:hover {
-  border-color: var(--accent);
-  background: var(--bg3);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 32px -8px rgba(0,0,0,0.4), 0 0 0 1px rgba(52,211,153,0.1);
-}
-
-.dl-card-icon { margin-bottom: 16px; color: var(--t2); }
-.dl-card:hover .dl-card-icon { color: var(--t1); }
-.dl-card h3 {
-  font-family: var(--font-d); font-size: 1.2rem; font-weight: 700;
-  margin: 0 0 6px;
-}
-.dl-card p { font-size: 0.85rem; color: var(--t2); margin: 0; font-family: var(--font-m); }
-
-.dl-version { font-family: var(--font-m); font-size: 0.78rem; color: var(--t3); margin: 0; }
 
 .dl-started { margin-bottom: 48px; }
 .dl-check {
@@ -377,7 +322,6 @@ onMounted(async () => {
 .dl-retry-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 500px) {
-  .dl-cards { grid-template-columns: 1fr; }
   .dl-content { padding: 120px 16px 80px; }
   .dl-title { font-size: 1.8rem; }
 }
