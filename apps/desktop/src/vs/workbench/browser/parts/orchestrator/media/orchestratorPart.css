@@ -308,6 +308,26 @@
 	opacity: 0.7;
 }
 
+/* -- Provisioning (optimistic placeholder while git worktree is created) -- */
+
+.monaco-workbench .orchestrator-content .worktree-item.provisioning {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.monaco-workbench .orchestrator-content .worktree-item.provisioning:hover {
+	background-color: transparent;
+}
+
+.monaco-workbench .orchestrator-content .worktree-icon.state-provisioning.codicon {
+	animation: provisioningSpin 1.2s linear infinite;
+}
+
+@keyframes provisioningSpin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
 /* -- Worktree Info -- */
 
 .monaco-workbench .orchestrator-content .worktree-info {

@@ -154,6 +154,9 @@ export class OrchestratorViewPane extends ViewPane {
 		if (worktree.isActive) {
 			item.classList.add('active');
 		}
+		if (worktree.provisioning) {
+			item.classList.add('provisioning');
+		}
 
 		const isMainWorktree = worktree.path === repo.path;
 		const iconEl = append(item, $('.worktree-icon'));
@@ -168,7 +171,7 @@ export class OrchestratorViewPane extends ViewPane {
 
 		const rightSlot = append(nameRow, $('.worktree-name-right'));
 
-		if (!isMainWorktree) {
+		if (!isMainWorktree && !worktree.provisioning) {
 			const deleteBtn = append(rightSlot, $('.worktree-delete.icon-delete-svg'));
 			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
 			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
@@ -188,16 +191,18 @@ export class OrchestratorViewPane extends ViewPane {
 			}));
 		}
 
-		const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
-		if (hasStats) {
-			const statsEl = append(rightSlot, $('.worktree-diff-stats'));
-			if (worktree.additions) {
-				const addEl = append(statsEl, $('.diff-stat-add'));
-				addEl.textContent = `+${worktree.additions}`;
-			}
-			if (worktree.deletions) {
-				const delEl = append(statsEl, $('.diff-stat-del'));
-				delEl.textContent = `-${worktree.deletions}`;
+		if (!worktree.provisioning) {
+			const hasStats = (worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0;
+			if (hasStats) {
+				const statsEl = append(rightSlot, $('.worktree-diff-stats'));
+				if (worktree.additions) {
+					const addEl = append(statsEl, $('.diff-stat-add'));
+					addEl.textContent = `+${worktree.additions}`;
+				}
+				if (worktree.deletions) {
+					const delEl = append(statsEl, $('.diff-stat-del'));
+					delEl.textContent = `-${worktree.deletions}`;
+				}
 			}
 		}
 
@@ -206,9 +211,11 @@ export class OrchestratorViewPane extends ViewPane {
 		const branchEl = append(branchRow, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
 
-		this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
-			this.orchestratorService.switchTo(worktree);
-		}));
+		if (!worktree.provisioning) {
+			this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
+				this.orchestratorService.switchTo(worktree);
+			}));
+		}
 	}
 
 	private onUpdateStateChange(state: State): void {
@@ -393,6 +400,12 @@ export class OrchestratorViewPane extends ViewPane {
 
 	private applySessionStateIcon(el: HTMLElement, worktree: IWorktreeEntry): void {
 		el.className = 'worktree-icon';
+
+		if (worktree.provisioning) {
+			el.classList.add('codicon', 'codicon-loading', 'state-provisioning');
+			return;
+		}
+
 		// Read session state from the authoritative map, not from the
 		// worktree entry which may be stale after async _repositories mutations.
 		const sessionState = this.orchestratorService.getSessionState(worktree.path);

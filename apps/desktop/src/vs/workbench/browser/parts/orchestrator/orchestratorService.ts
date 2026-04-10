@@ -282,10 +282,38 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	}
 
 	async addWorktree(repoPath: string, name: string, description: string, baseBranch?: string, displayName?: string): Promise<void> {
-		// Create actual git worktree
-		const worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
-
 		const featureName = displayName || name;
+
+		// Immediately insert a provisioning placeholder so the UI shows feedback
+		const provisioning: IWorktreeEntry = {
+			name: featureName,
+			path: '',
+			branch: name,
+			baseBranch,
+			description,
+			isActive: false,
+			provisioning: true,
+		};
+
+		this._repositories = this._repositories.map(r =>
+			r.path === repoPath ? { ...r, worktrees: [...r.worktrees, provisioning] } : r
+		);
+		this._onDidChangeRepositories.fire();
+
+		// Create actual git worktree (the slow part)
+		let worktreePath: string;
+		try {
+			worktreePath = await this.gitService.addWorktree(repoPath, name, baseBranch);
+		} catch (err) {
+			// Remove the provisioning entry on failure
+			this._repositories = this._repositories.map(r =>
+				r.path === repoPath
+					? { ...r, worktrees: r.worktrees.filter(w => !(w.branch === name && w.provisioning)) }
+					: r
+			);
+			this._onDidChangeRepositories.fire();
+			throw err;
+		}
 
 		const worktree: IWorktreeEntry = {
 			name: featureName,
@@ -308,8 +336,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			this.logService.warn('[OrchestratorService] Failed to write worktree meta:', err);
 		});
 
+		// Replace the provisioning entry with the real one
 		this._repositories = this._repositories.map(r =>
-			r.path === repoPath ? { ...r, worktrees: [...r.worktrees, worktree] } : r
+			r.path === repoPath
+				? { ...r, worktrees: r.worktrees.map(w => w.branch === name && w.provisioning ? worktree : w) }
+				: r
 		);
 		this._onDidChangeRepositories.fire();
 		this.saveState();
@@ -605,7 +636,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this._worktreeUris = [];
 		for (const repo of this._repositories) {
 			for (const wt of repo.worktrees) {
-				if (wt.path !== repo.path) {
+				if (wt.path && wt.path !== repo.path) {
 					this._worktreeUris.push(URI.file(wt.path));
 				}
 			}

@@ -45,6 +45,8 @@ export interface IWorktreeEntry {
 	readonly prState?: 'open' | 'draft' | 'merged' | 'closed';
 	readonly prMergeable?: 'mergeable' | 'conflicting' | 'unknown';
 	readonly prUrl?: string;
+	/** True while the git worktree is still being created on disk. */
+	readonly provisioning?: boolean;
 }
 
 export interface IRepositoryEntry {
