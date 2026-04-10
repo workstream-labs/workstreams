@@ -95,6 +95,9 @@ const vscodeResourceIncludes = [
 	// Accessibility Signals
 	'out-build/vs/platform/accessibilitySignal/browser/media/*.mp3',
 
+	// Orchestrator
+	'out-build/vs/workbench/browser/parts/orchestrator/media/*.svg',
+
 	// Welcome
 	'out-build/vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.{svg,png}',
 

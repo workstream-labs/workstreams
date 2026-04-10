@@ -115,7 +115,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		if (baseBranch) {
 			args.push(baseBranch);
 		}
-		await execFile('git', args, { cwd: repoPath });
+		await execFile('git', args, { cwd: repoPath, env: GitWorktreeMainService.augmentedEnv() });
 
 		await this.ensureGitignore(repoPath);
 
