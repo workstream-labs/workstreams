@@ -65,9 +65,6 @@ export class OrchestratorViewPane extends ViewPane {
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
 		container.classList.add('orchestrator-content');
-		container.style.flex = '1';
-		container.style.height = '100%';
-		container.style.minHeight = '0';
 
 		// Sticky header bar
 		const headerBar = append(container, $('.orchestrator-header-bar'));
@@ -225,8 +222,6 @@ export class OrchestratorViewPane extends ViewPane {
 				this.showUpdateBanner(container, state.update, 'available');
 				break;
 			case StateType.Downloading:
-				this.showUpdateBanner(container, state.update, 'downloading');
-				break;
 			case StateType.Downloaded:
 				this.showUpdateBanner(container, state.update, 'downloading');
 				break;

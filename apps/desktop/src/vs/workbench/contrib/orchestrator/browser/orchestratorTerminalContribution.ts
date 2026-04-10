@@ -330,38 +330,21 @@ export class OrchestratorTerminalContribution extends Disposable {
 	}
 
 	/**
-	 * Find the group index (GRID_APPEARANCE order) containing the terminal.
-	 * Returns 0 if not found.
+	 * Find the group index (GRID_APPEARANCE order) and tab index for a
+	 * terminal in a single pass over editor groups.
 	 */
-	private _findGroupIndex(instance: ITerminalInstance): number {
+	private _findGroupPosition(instance: ITerminalInstance): { groupIndex: number; tabIndex: number } {
 		if (instance.target !== TerminalLocation.Editor) {
-			return 0;
+			return { groupIndex: 0, tabIndex: -1 };
 		}
 		const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
 		for (let i = 0; i < groups.length; i++) {
-			if (groups[i].findEditors(instance.resource).length > 0) {
-				return i;
-			}
-		}
-		return 0;
-	}
-
-	/**
-	 * Find the tab index (position within the editor group's tab list)
-	 * for a terminal. Returns -1 if not found.
-	 */
-	private _findTabIndex(instance: ITerminalInstance): number {
-		if (instance.target !== TerminalLocation.Editor) {
-			return -1;
-		}
-		const groups = this._editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
-		for (const group of groups) {
-			const editors = group.findEditors(instance.resource);
+			const editors = groups[i].findEditors(instance.resource);
 			if (editors.length > 0) {
-				return group.getIndexOfEditor(editors[0]);
+				return { groupIndex: i, tabIndex: groups[i].getIndexOfEditor(editors[0]) };
 			}
 		}
-		return -1;
+		return { groupIndex: 0, tabIndex: -1 };
 	}
 
 	/**
@@ -421,8 +404,9 @@ export class OrchestratorTerminalContribution extends Disposable {
 		for (const instance of this._terminalService.foregroundInstances) {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
-				info.groupIndex = this._findGroupIndex(instance);
-				info.tabIndex = this._findTabIndex(instance);
+				const pos = this._findGroupPosition(instance);
+				info.groupIndex = pos.groupIndex;
+				info.tabIndex = pos.tabIndex;
 				this._logService.trace(`${TAG} Snapshotted terminal ${instance.instanceId} → groupIndex=${info.groupIndex} tabIndex=${info.tabIndex}`);
 			}
 		}

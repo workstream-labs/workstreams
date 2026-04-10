@@ -8,7 +8,9 @@
 .monaco-workbench .pane-body.orchestrator-content {
 	display: flex;
 	flex-direction: column;
+	flex: 1;
 	height: 100% !important;
+	min-height: 0;
 	overflow: hidden;
 	user-select: none;
 }

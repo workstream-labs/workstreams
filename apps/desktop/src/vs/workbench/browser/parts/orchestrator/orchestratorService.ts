@@ -12,7 +12,7 @@ import { IOrchestratorService, IRepositoryEntry, IWorktreeEntry, WorktreeSession
 import { basename } from '../../../../base/common/path.js';
 import { IDialogService, IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
-import { IGitWorktreeService, IDiffStats, IPRInfo, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
+import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IPRInfo, IWorktreeMeta } from '../../../services/orchestrator/common/gitWorktreeService.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { localize } from '../../../../nls.js';
 import { IWorkspaceEditingService } from '../../../services/workspaces/common/workspaceEditing.js';
@@ -57,6 +57,11 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	static readonly STORAGE_KEY = 'orchestrator.repositoryState';
 	static readonly AGENT_COMMANDS_KEY = 'orchestrator.agentCommands';
 	static readonly WORKING_SET_MAP_KEY = 'orchestrator.workingSetMap';
+	private static readonly REFRESH_DEBOUNCE_MS = 2000;
+	private static readonly REFRESH_REQUEUE_MS = 5000;
+	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
+	private static readonly RETRY_DELAY_MS = 500;
+	private static readonly MAX_RETRIES = 3;
 
 	declare readonly _serviceBrand: undefined;
 
@@ -89,6 +94,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	private readonly _refreshScheduler: RunOnceScheduler;
 	private readonly _editorRetryScheduler: RunOnceScheduler;
 	private _refreshInFlight = false;
+	private _editorRetryCount = 0;
 	private _worktreeUris: URI[] = [];
 
 	/**
@@ -193,40 +199,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		// Get current branch and discover existing worktrees
 		const currentBranch = await this.gitService.getCurrentBranch(path);
 		const gitWorktrees = await this.gitService.listWorktrees(path);
-
-		// Build worktree entries from discovered worktrees, using on-disk meta as fallback
-		const nonBare = gitWorktrees.filter(w => !w.isBare);
-		const metaResults = await Promise.all(
-			nonBare.map(wt => this.gitService.readWorktreeMeta(path, wt.branch).catch(() => null))
-		);
-		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
-			const diskMeta = metaResults[i];
-			return {
-				name: diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
-				path: wt.path,
-				branch: wt.branch,
-				baseBranch: diskMeta?.baseBranch,
-				description: diskMeta?.description,
-				isActive: false,
-			};
-		});
-
-		// If no worktrees found (fresh init), add the main worktree
-		if (worktrees.length === 0) {
-			worktrees.push({
-				name: 'local',
-				path,
-				branch: currentBranch,
-				isActive: false,
-			});
-		}
-
-		// Populate diff stats in parallel
-		const statsMap = await this._fetchDiffStats(path, worktrees);
-		for (let i = 0; i < worktrees.length; i++) {
-			const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
-			worktrees[i] = { ...worktrees[i], ...s };
-		}
+		const worktrees = await this._buildWorktreeEntries(path, gitWorktrees, currentBranch);
 
 		const entry: IRepositoryEntry = {
 			name: basename(path),
@@ -513,11 +486,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		this.scheduleRefresh();
 	}
 
-	private static readonly ERROR_EDITOR_ID = 'workbench.editors.errorEditor';
-	private static readonly RETRY_DELAY_MS = 500;
-	private static readonly MAX_RETRIES = 3;
-	private _editorRetryCount = 0;
-
 	private retryFailedEditors(): void {
 		this._editorRetryScheduler.schedule();
 	}
@@ -583,6 +551,58 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 		return this._sessionStates.get(worktreePath);
 	}
 
+	//#region Worktree building
+
+	/**
+	 * Builds worktree entries from git-discovered worktrees, merging persisted
+	 * state and on-disk meta. Shared between addRepository and restoreState.
+	 */
+	private async _buildWorktreeEntries(
+		repoPath: string,
+		gitWorktrees: IGitWorktreeInfo[],
+		currentBranch: string,
+		savedWorktrees?: Map<string, IPersistedWorktreeState>,
+		activeWorktreePath?: string,
+	): Promise<IWorktreeEntry[]> {
+		const nonBare = gitWorktrees.filter(w => !w.isBare);
+
+		const metaResults = await Promise.all(
+			nonBare.map(wt => savedWorktrees?.has(wt.branch)
+				? Promise.resolve(null)
+				: this.gitService.readWorktreeMeta(repoPath, wt.branch).catch(() => null))
+		);
+
+		const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
+			const saved = savedWorktrees?.get(wt.branch);
+			const diskMeta = metaResults[i];
+			return {
+				name: saved?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+				path: wt.path,
+				branch: wt.branch,
+				baseBranch: saved?.baseBranch ?? diskMeta?.baseBranch,
+				description: saved?.description ?? diskMeta?.description,
+				isActive: activeWorktreePath ? wt.path === activeWorktreePath : false,
+			};
+		});
+
+		if (worktrees.length === 0) {
+			worktrees.push({
+				name: 'local',
+				path: repoPath,
+				branch: currentBranch,
+				isActive: activeWorktreePath ? repoPath === activeWorktreePath : false,
+			});
+		}
+
+		const statsMap = await this._fetchDiffStats(repoPath, worktrees);
+		return worktrees.map(wt => {
+			const s = statsMap.get(wt.path) ?? EMPTY_STATS;
+			return { ...wt, ...s };
+		});
+	}
+
+	//#endregion
+
 	//#region Diff stats
 
 	private _rebuildWorktreeUriCache(): void {
@@ -599,9 +619,6 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 	scheduleRefresh(): void {
 		this._refreshScheduler.schedule();
 	}
-
-	private static readonly REFRESH_DEBOUNCE_MS = 2000;
-	private static readonly REFRESH_REQUEUE_MS = 5000;
 
 	private async _doRefreshGitState(): Promise<void> {
 		if (this._refreshInFlight) {
@@ -754,43 +771,9 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 					}
 				}
 
-				const nonBare = gitWorktrees.filter(w => !w.isBare);
-
-				// Read on-disk meta for worktrees missing from persisted state
-				const metaResults = await Promise.all(
-					nonBare.map(wt => savedWorktreeMap.has(wt.branch)
-						? Promise.resolve(null)
-						: this.gitService.readWorktreeMeta(saved.path, wt.branch).catch(() => null))
+				const worktrees = await this._buildWorktreeEntries(
+					saved.path, gitWorktrees, currentBranch, savedWorktreeMap, persisted.activeWorktreePath
 				);
-
-				const activeWtPath = persisted.activeWorktreePath;
-				const worktrees: IWorktreeEntry[] = nonBare.map((wt, i) => {
-					const savedWt = savedWorktreeMap.get(wt.branch);
-					const diskMeta = metaResults[i];
-					return {
-						name: savedWt?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
-						path: wt.path,
-						branch: wt.branch,
-						baseBranch: savedWt?.baseBranch ?? diskMeta?.baseBranch,
-						description: savedWt?.description ?? diskMeta?.description,
-						isActive: wt.path === activeWtPath,
-					};
-				});
-
-				if (worktrees.length === 0) {
-					worktrees.push({
-						name: 'local',
-						path: saved.path,
-						branch: currentBranch,
-						isActive: saved.path === activeWtPath,
-					});
-				}
-
-				const statsMap = await this._fetchDiffStats(saved.path, worktrees);
-				for (let i = 0; i < worktrees.length; i++) {
-					const s = statsMap.get(worktrees[i].path) ?? EMPTY_STATS;
-					worktrees[i] = { ...worktrees[i], ...s };
-				}
 
 				this._repositories.push({
 					name: basename(saved.path),
