@@ -605,7 +605,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 			const saved = savedWorktrees?.get(wt.branch);
 			const diskMeta = metaResults[i];
 			return {
-				name: saved?.name ?? diskMeta?.name ?? (wt.branch === currentBranch ? 'local' : friendlyName(wt.branch)),
+				name: wt.path === repoPath ? 'local' : (saved?.name ?? diskMeta?.name ?? friendlyName(wt.branch)),
 				path: wt.path,
 				branch: wt.branch,
 				baseBranch: saved?.baseBranch ?? diskMeta?.baseBranch,
