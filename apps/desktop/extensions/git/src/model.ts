@@ -427,6 +427,7 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 				const childrenFolders = children
 					.filter(dirent =>
 						dirent.isDirectory() && dirent.name !== '.git' &&
+						dirent.name !== '.workstreams' &&
 						!repositoryScanIgnoredFolders.find(f => pathEquals(dirent.name, f)))
 					.map(dirent => path.join(currentFolder.path, dirent.name));
 
@@ -622,6 +623,12 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 
 			if (this.shouldRepositoryBeIgnored(repositoryRoot)) {
 				this.logger.trace(`[Model][openRepository] Repository for path ${repositoryRoot} is ignored`);
+				return;
+			}
+
+			// Skip repositories inside .workstreams directory (managed by orchestrator)
+			if (repositoryRoot.includes(`${path.sep}.workstreams${path.sep}`)) {
+				this.logger.trace(`[Model][openRepository] Repository inside .workstreams directory, skipping: ${repositoryRoot}`);
 				return;
 			}
 
