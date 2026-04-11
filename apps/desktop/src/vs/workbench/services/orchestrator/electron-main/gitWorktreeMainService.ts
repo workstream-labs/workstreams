@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IPRInfo, IWorktreeMeta, parseWorktreeList } from '../common/gitWorktreeService.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 
 const execFile = promisify(cp.execFile);
 const readFile = promisify(fs.readFile);
@@ -15,6 +16,8 @@ const rm = promisify(fs.rm);
 const stat = promisify(fs.stat);
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
+
+const TAG = '[GitWorktreeMainService]';
 
 const MAX_UNTRACKED_FILE_SIZE = 256 * 1024; // 256 KB — skip large/binary files
 
@@ -43,9 +46,19 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 	declare readonly _serviceBrand: undefined;
 
+	constructor(private readonly logService: ILogService) { }
+
+	/**
+	 * Wrapper around execFile that always includes the augmented PATH
+	 * so that git/gh are found when launched from DMG/Finder on macOS.
+	 */
+	private static git(args: string[], opts: cp.ExecFileOptions) {
+		return execFile('git', args, { ...opts, encoding: 'utf8', env: GitWorktreeMainService.augmentedEnv() });
+	}
+
 	async isGitRepository(repoPath: string): Promise<boolean> {
 		try {
-			await execFile('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repoPath });
+			await GitWorktreeMainService.git(['rev-parse', '--is-inside-work-tree'], { cwd: repoPath });
 			return true;
 		} catch {
 			return false;
@@ -53,12 +66,12 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	}
 
 	async initRepository(repoPath: string): Promise<void> {
-		await execFile('git', ['init', '-b', 'main'], { cwd: repoPath });
+		await GitWorktreeMainService.git(['init', '-b', 'main'], { cwd: repoPath });
 	}
 
 	async getCurrentBranch(repoPath: string): Promise<string> {
 		try {
-			const { stdout } = await execFile('git', ['branch', '--show-current'], { cwd: repoPath });
+			const { stdout } = await GitWorktreeMainService.git(['branch', '--show-current'], { cwd: repoPath });
 			return stdout.trim() || 'main';
 		} catch {
 			return 'main';
@@ -67,7 +80,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 	async getRemoteUrl(repoPath: string): Promise<string | undefined> {
 		// Try 'origin' first
-		const originUrl = await execFile('git', ['remote', 'get-url', 'origin'], { cwd: repoPath })
+		const originUrl = await GitWorktreeMainService.git(['remote', 'get-url', 'origin'], { cwd: repoPath })
 			.then(r => r.stdout.trim() || undefined)
 			.catch(() => undefined);
 		if (originUrl) {
@@ -75,21 +88,21 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		}
 
 		// Fall back to the first available remote
-		const remotes = await execFile('git', ['remote'], { cwd: repoPath })
+		const remotes = await GitWorktreeMainService.git(['remote'], { cwd: repoPath })
 			.then(r => r.stdout.trim())
 			.catch(() => '');
 		const firstRemote = remotes.split('\n')[0];
 		if (!firstRemote) {
 			return undefined;
 		}
-		return execFile('git', ['remote', 'get-url', firstRemote], { cwd: repoPath })
+		return GitWorktreeMainService.git(['remote', 'get-url', firstRemote], { cwd: repoPath })
 			.then(r => r.stdout.trim() || undefined)
 			.catch(() => undefined);
 	}
 
 	async listWorktrees(repoPath: string): Promise<IGitWorktreeInfo[]> {
 		try {
-			const { stdout } = await execFile('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+			const { stdout } = await GitWorktreeMainService.git(['worktree', 'list', '--porcelain'], { cwd: repoPath });
 			return parseWorktreeList(stdout);
 		} catch {
 			return [];
@@ -98,7 +111,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 	async listBranches(repoPath: string): Promise<string[]> {
 		try {
-			const { stdout } = await execFile('git', ['branch', '--format=%(refname:short)'], { cwd: repoPath });
+			const { stdout } = await GitWorktreeMainService.git(['branch', '--format=%(refname:short)'], { cwd: repoPath });
 			return stdout.trim().split('\n').filter(b => b);
 		} catch {
 			return [];
@@ -115,7 +128,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		if (baseBranch) {
 			args.push(baseBranch);
 		}
-		await execFile('git', args, { cwd: repoPath, env: GitWorktreeMainService.augmentedEnv() });
+		await GitWorktreeMainService.git(args, { cwd: repoPath });
 
 		await this.ensureGitignore(repoPath);
 
@@ -127,9 +140,9 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		if (force) {
 			args.push('--force');
 		}
-		await execFile('git', args, { cwd: repoPath });
+		await GitWorktreeMainService.git(args, { cwd: repoPath });
 		if (branchName) {
-			await execFile('git', ['branch', '-D', branchName], { cwd: repoPath });
+			await GitWorktreeMainService.git(['branch', '-D', branchName], { cwd: repoPath });
 		}
 
 		// Clean up the parent .workstreams/<name>/ directory (workstream.json, etc.)
@@ -149,7 +162,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			 */
 			let defaultBranch = 'main';
 			try {
-				const { stdout } = await execFile('git', [
+				const { stdout } = await GitWorktreeMainService.git([
 					'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'
 				], { cwd: repoPath });
 				defaultBranch = stdout.trim().replace(/^origin\//, '');
@@ -163,7 +176,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			 */
 			let baseRef = `origin/${defaultBranch}`;
 			try {
-				await execFile('git', ['rev-parse', '--verify', baseRef], { cwd: worktreePath });
+				await GitWorktreeMainService.git(['rev-parse', '--verify', baseRef], { cwd: worktreePath });
 			} catch {
 				baseRef = defaultBranch;
 			}
@@ -176,7 +189,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			 */
 			let mergeBase = baseRef;
 			try {
-				const { stdout } = await execFile('git', [
+				const { stdout } = await GitWorktreeMainService.git([
 					'merge-base', baseRef, 'HEAD'
 				], { cwd: worktreePath });
 				mergeBase = stdout.trim();
@@ -192,10 +205,10 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			const files = new Map<string, { add: number; del: number }>();
 
 			const [numstatResult, untrackedResult] = await Promise.all([
-				execFile('git', [
+				GitWorktreeMainService.git([
 					'diff', '--numstat', mergeBase, '--'
 				], { cwd: worktreePath }).catch(() => null),
-				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
+				GitWorktreeMainService.git(['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
 			]);
 
 			if (numstatResult) {
@@ -236,7 +249,8 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				deletions += del;
 			}
 			return { filesChanged: files.size, additions, deletions, defaultBranch };
-		} catch {
+		} catch (err) {
+			this.logService.error(TAG, `getDiffStats failed for "${worktreePath}":`, err);
 			return empty;
 		}
 	}
