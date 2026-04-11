@@ -1267,7 +1267,7 @@ export class CodeApplication extends Disposable {
 		mainProcessElectronServer.registerChannel('process', processChannel);
 
 		// Git Worktree
-		const gitWorktreeChannel = ProxyChannel.fromService(new GitWorktreeMainService(), disposables);
+		const gitWorktreeChannel = ProxyChannel.fromService(new GitWorktreeMainService(accessor.get(ILogService)), disposables);
 		mainProcessElectronServer.registerChannel('gitWorktree', gitWorktreeChannel);
 
 		// Hook Notification Server (receives Claude Code lifecycle events)
