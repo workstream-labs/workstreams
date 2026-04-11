@@ -397,10 +397,38 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	font-family: var(--monaco-monospace-font);
 	min-width: 0;
 }
 
+.monaco-workbench .orchestrator-content .worktree-archive-separator {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	margin: 0 5px;
+	opacity: 0.5;
+	flex-shrink: 0;
+}
+
+.monaco-workbench .orchestrator-content .worktree-archive-btn {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	flex-shrink: 0;
+	border-radius: 3px;
+	padding: 0 3px;
+	transition: color 0.1s ease, background-color 0.1s ease;
+}
+
+.monaco-workbench .orchestrator-content .worktree-archive-btn:hover {
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench .orchestrator-content .worktree-archive-btn .codicon {
+	font-size: 12px;
+}
 
 /* -- Add Worktree Modal -- */
 

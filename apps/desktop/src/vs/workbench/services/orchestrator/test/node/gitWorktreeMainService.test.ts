@@ -185,7 +185,7 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		assert.strictEqual(stats.deletions, 1);
 	});
 
-	test('returns zeros for a squash-merged branch', async () => {
+	test('squash-merged branch still shows changes from merge-base', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'squashed', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'squashed', wtPath);
 
@@ -204,13 +204,15 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
-		// Scoped two-dot diff detects that branch files match main's tree
-		assert.strictEqual(stats.additions, 0);
+		// Merge-base diff shows branch changes from the fork point,
+		// matching GitHub PR behavior. Squash-merged branches should
+		// be archived rather than relying on 0-diff detection.
+		assert.strictEqual(stats.additions, 2);
 		assert.strictEqual(stats.deletions, 0);
-		assert.strictEqual(stats.filesChanged, 0);
+		assert.strictEqual(stats.filesChanged, 1);
 	});
 
-	test('returns zeros for squash-merged branch even when main moves ahead', async () => {
+	test('squash-merged branch shows changes from merge-base even when main moves ahead', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'merged-stale', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'merged-stale', wtPath);
 
@@ -230,14 +232,15 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
-		// Branch only touched feature.ts, which matches main.
-		// CHANGELOG.md is main-only — should NOT be counted.
-		assert.strictEqual(stats.additions, 0);
+		// Merge-base diff shows the branch's own changes from the fork
+		// point. Main-only files (CHANGELOG.md) are not counted since
+		// they don't exist in the worktree's working tree diff.
+		assert.strictEqual(stats.additions, 1);
 		assert.strictEqual(stats.deletions, 0);
-		assert.strictEqual(stats.filesChanged, 0);
+		assert.strictEqual(stats.filesChanged, 1);
 	});
 
-	test('shows diff for partially merged branch', async () => {
+	test('partially merged branch shows all changes from merge-base', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'partial', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'partial', wtPath);
 
@@ -257,11 +260,11 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
-		// a.ts is merged (scoped diff = 0 for that file), b.ts is not.
-		// The scoped two-dot diff should show only b.ts.
-		assert.strictEqual(stats.additions, 1);
+		// Merge-base diff shows all changes since the fork point:
+		// both a.ts and b.ts are new relative to the merge-base.
+		assert.strictEqual(stats.additions, 2);
 		assert.strictEqual(stats.deletions, 0);
-		assert.strictEqual(stats.filesChanged, 1);
+		assert.strictEqual(stats.filesChanged, 2);
 	});
 
 	test('handles multiple files with mixed additions and deletions', async () => {
@@ -518,7 +521,7 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 		assert.strictEqual(stats.deletions, 0);
 	});
 
-	test('squash-merged branch with local edits shows only local edits', async () => {
+	test('squash-merged branch with local edits shows all changes from merge-base', async () => {
 		const wtPath = path.join(repoPath, '.workstreams', 'squash-local', 'tree');
 		await git(repoPath, 'worktree', 'add', '-b', 'squash-local', wtPath);
 
@@ -536,10 +539,10 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 
 		const stats = await service.getDiffStats(repoPath, wtPath);
 
-		// feature.ts was squash-merged (tree matches) → 0 diff for that file.
-		// README.md changed from "# Test\n" to "# Changed\n" → +1 -1.
-		assert.strictEqual(stats.additions, 1);
+		// Merge-base diff shows everything since the fork point:
+		// feature.ts: +1 (new file), README.md: +1 -1 (modified)
+		assert.strictEqual(stats.additions, 2);
 		assert.strictEqual(stats.deletions, 1);
-		assert.strictEqual(stats.filesChanged, 1);
+		assert.strictEqual(stats.filesChanged, 2);
 	});
 });

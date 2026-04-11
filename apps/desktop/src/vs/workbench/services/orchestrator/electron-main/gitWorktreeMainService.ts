@@ -170,13 +170,9 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 			/**
 			 * Find the merge-base (common ancestor) between baseRef
-			 * and HEAD. Used for two things only:
-			 *  1. Ahead count  — how many commits this branch added.
-			 *  2. File discovery — which files did the branch touch?
-			 *
-			 * The actual numstat diff is still against baseRef (the
-			 * current tip of origin/main) so squash-merged content
-			 * correctly shows 0 diff.
+			 * and HEAD. The diff is computed from merge-base to the
+			 * working tree — matching how GitHub PRs show changes
+			 * and how SCM "Changes in Parent" works.
 			 */
 			let mergeBase = baseRef;
 			try {
@@ -188,81 +184,23 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 				// If merge-base fails, fall back to baseRef
 			}
 
-			// Ahead count — how many commits this branch has over the base
-			let ahead = 0;
-			try {
-				const { stdout: tracking } = await execFile('git', [
-					'rev-list', '--count', `${mergeBase}..HEAD`
-				], { cwd: worktreePath });
-				ahead = parseInt(tracking.trim() || '0', 10);
-			} catch {
-				// If rev-list fails (e.g. unrelated histories), fall through
-			}
-
 			/**
-			 * Build the set of files to diff against baseRef.
-			 *
-			 * When the branch has commits ahead, use the merge-base to
-			 * find which files the branch touched (avoids pulling in
-			 * main-only files). Also include locally modified tracked
-			 * files (staged + unstaged). The union ensures both
-			 * committed and uncommitted changes are counted.
-			 */
-			const filesToDiff = new Set<string>();
-
-			if (ahead > 0) {
-				const nameResult = await execFile('git', [
-					'diff', '--name-only', `${mergeBase}...HEAD`
-				], { cwd: worktreePath }).catch(() => null);
-
-				if (nameResult) {
-					for (const f of nameResult.stdout.trim().split('\n')) {
-						if (f) {
-							filesToDiff.add(f);
-						}
-					}
-				}
-			}
-
-			// Find locally modified tracked files (staged + unstaged)
-			const [stagedNamesResult, unstagedNamesResult, untrackedResult] = await Promise.all([
-				execFile('git', ['diff', '--cached', '--name-only'], { cwd: worktreePath }).catch(() => null),
-				execFile('git', ['diff', '--name-only'], { cwd: worktreePath }).catch(() => null),
-				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
-			]);
-
-			for (const result of [stagedNamesResult, unstagedNamesResult]) {
-				if (result) {
-					for (const f of result.stdout.trim().split('\n')) {
-						if (f) {
-							filesToDiff.add(f);
-						}
-					}
-				}
-			}
-
-			/**
-			 * Single diff from baseRef to the working tree, scoped to
-			 * the files we care about.
-			 *
-			 * We use baseRef (current tip of main), NOT merge-base, so
-			 * that squash-merged content is detected: if the branch's
-			 * files already match main's tree, the diff is 0.
-			 *
-			 * File discovery above uses merge-base to avoid pulling in
-			 * main-only files, but the actual content comparison must
-			 * be against the current tip.
+			 * Single diff from merge-base to the working tree.
+			 * This captures committed + staged + unstaged changes in
+			 * one command — matching the "Changes in Parent" algorithm.
 			 */
 			const files = new Map<string, { add: number; del: number }>();
 
-			if (filesToDiff.size > 0) {
-				const result = await execFile('git', [
-					'diff', '--numstat', baseRef, '--', ...filesToDiff
-				], { cwd: worktreePath }).catch(() => null);
-				if (result) {
-					for (const [file, stats] of parseNumstat(result.stdout)) {
-						files.set(file, stats);
-					}
+			const [numstatResult, untrackedResult] = await Promise.all([
+				execFile('git', [
+					'diff', '--numstat', mergeBase, '--'
+				], { cwd: worktreePath }).catch(() => null),
+				execFile('git', ['ls-files', '--others', '--exclude-standard'], { cwd: worktreePath }).catch(() => null),
+			]);
+
+			if (numstatResult) {
+				for (const [file, stats] of parseNumstat(numstatResult.stdout)) {
+					files.set(file, stats);
 				}
 			}
 
