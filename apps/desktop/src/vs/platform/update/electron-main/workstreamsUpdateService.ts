@@ -216,6 +216,15 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 				return;
 			}
 
+			// Already staged this exact version — skip re-download
+			if (this.stagedUpdatePath && this.state.type === StateType.Ready) {
+				const stagedCommit = this.applicationStorageMainService.get(STAGED_UPDATE_COMMIT_KEY, StorageScope.APPLICATION);
+				if (stagedCommit === manifest.version) {
+					this.logService.info('workstreams-update#checkGitHubRelease - already staged', manifest.version);
+					return;
+				}
+			}
+
 			this.logService.info('workstreams-update#checkGitHubRelease - update available', {
 				current: this.productService.commit,
 				new: manifest.version,
