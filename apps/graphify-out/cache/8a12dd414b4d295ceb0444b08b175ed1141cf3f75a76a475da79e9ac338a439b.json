@@ -1,0 +1,1 @@
+{"nodes": [{"id": "polyfillnestedworker_protocol", "label": "polyfillNestedWorker.protocol.ts", "file_type": "code", "source_file": "apps/desktop/src/vs/workbench/services/extensions/common/polyfillNestedWorker.protocol.ts", "source_location": "L1"}], "edges": []}

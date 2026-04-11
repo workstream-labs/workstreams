@@ -1,0 +1,1 @@
+{"nodes": [{"id": "git_d", "label": "git.d.ts", "file_type": "code", "source_file": "apps/desktop/extensions/github/src/typings/git.d.ts", "source_location": "L1"}], "edges": [{"source": "git_d", "target": "vscode", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/extensions/github/src/typings/git.d.ts", "source_location": "L6", "weight": 1.0}]}

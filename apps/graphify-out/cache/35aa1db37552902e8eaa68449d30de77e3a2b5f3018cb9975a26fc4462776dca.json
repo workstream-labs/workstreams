@@ -1,0 +1,1 @@
+{"nodes": [{"id": "desktop", "label": "desktop.rs", "file_type": "code", "source_file": "apps/desktop/cli/src/desktop.rs", "source_location": "L1"}], "edges": [{"source": "desktop", "target": "version_manager", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/cli/src/desktop.rs", "source_location": "L8", "weight": 1.0}]}

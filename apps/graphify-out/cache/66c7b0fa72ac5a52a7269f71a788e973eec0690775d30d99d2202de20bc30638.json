@@ -1,0 +1,1 @@
+{"nodes": [{"id": "util", "label": "util.rs", "file_type": "code", "source_file": "apps/desktop/cli/src/util.rs", "source_location": "L1"}], "edges": [{"source": "util", "target": "is_integrated", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/cli/src/util.rs", "source_location": "L17", "weight": 1.0}]}

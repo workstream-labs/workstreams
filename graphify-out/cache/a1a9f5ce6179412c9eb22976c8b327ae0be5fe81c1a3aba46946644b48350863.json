@@ -1,0 +1,1 @@
+{"nodes": [{"id": "scenario_chat_response", "label": "E2E Scenario: Send Chat Message and Verify Response", "file_type": "document", "source_file": "apps/desktop/src/vs/sessions/test/e2e/scenarios/01-chat-response.scenario.md", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

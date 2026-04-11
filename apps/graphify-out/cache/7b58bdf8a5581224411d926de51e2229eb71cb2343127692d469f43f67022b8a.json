@@ -1,0 +1,1 @@
+{"nodes": [{"id": "options", "label": "options.ts", "file_type": "code", "source_file": "apps/desktop/test/mcp/src/options.ts", "source_location": "L1"}], "edges": [{"source": "options", "target": "minimist", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/test/mcp/src/options.ts", "source_location": "L5", "weight": 1.0}]}

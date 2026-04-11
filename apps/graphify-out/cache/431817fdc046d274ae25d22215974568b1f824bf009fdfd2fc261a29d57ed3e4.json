@@ -1,0 +1,1 @@
+{"nodes": [{"id": "terminal_suggest", "label": "terminal.suggest.ts", "file_type": "code", "source_file": "apps/desktop/src/vs/workbench/contrib/terminalContrib/suggest/common/terminal.suggest.ts", "source_location": "L1"}], "edges": []}

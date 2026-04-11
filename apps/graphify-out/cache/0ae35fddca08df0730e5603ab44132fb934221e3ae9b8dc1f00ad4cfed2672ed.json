@@ -1,0 +1,1 @@
+{"nodes": [{"id": "foo", "label": "foo.ts", "file_type": "code", "source_file": "apps/desktop/extensions/typescript-language-features/test-workspace/foo.ts", "source_location": "L1"}], "edges": []}

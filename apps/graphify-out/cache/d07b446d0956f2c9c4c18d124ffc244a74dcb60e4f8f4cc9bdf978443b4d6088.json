@@ -1,0 +1,1 @@
+{"nodes": [{"id": "core", "label": "core.js", "file_type": "code", "source_file": "apps/desktop/test/monaco/core.js", "source_location": "L1"}], "edges": [{"source": "core", "target": "monaco_editor_core", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/test/monaco/core.js", "source_location": "L6", "weight": 1.0}]}

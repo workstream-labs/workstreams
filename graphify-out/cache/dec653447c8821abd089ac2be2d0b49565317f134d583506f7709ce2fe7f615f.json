@@ -1,0 +1,1 @@
+{"nodes": [{"id": "search_fixture_subfile", "label": "Search Test Fixture: subfolder/subfile.txt", "file_type": "document", "source_file": "apps/desktop/src/vs/workbench/services/search/test/node/fixtures/examples/subfolder/subfile.txt", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

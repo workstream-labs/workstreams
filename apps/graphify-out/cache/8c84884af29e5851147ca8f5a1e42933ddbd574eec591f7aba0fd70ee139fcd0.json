@@ -1,0 +1,1 @@
+{"nodes": [{"id": "commands", "label": "commands.rs", "file_type": "code", "source_file": "apps/desktop/cli/src/commands.rs", "source_location": "L1"}], "edges": [{"source": "commands", "target": "commandcontext", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "apps/desktop/cli/src/commands.rs", "source_location": "L14", "weight": 1.0}]}

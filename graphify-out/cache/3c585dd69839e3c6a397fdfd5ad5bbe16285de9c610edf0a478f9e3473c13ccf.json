@@ -1,0 +1,1 @@
+{"nodes": [{"id": "encoding_fixture_cp1252", "label": "Encoding Test Fixture some.cp1252.txt", "file_type": "document", "source_file": "apps/desktop/src/vs/workbench/services/textfile/test/node/encoding/fixtures/some.cp1252.txt", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}
