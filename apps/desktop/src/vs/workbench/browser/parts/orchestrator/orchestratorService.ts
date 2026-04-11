@@ -720,9 +720,7 @@ export class OrchestratorServiceImpl extends Disposable implements IOrchestrator
 
 	private async _fetchDiffStats(repoPath: string, worktrees: readonly IWorktreeEntry[]): Promise<Map<string, IDiffStats>> {
 		const results = await Promise.all(
-			worktrees.map(wt => wt.path === repoPath
-				? Promise.resolve(EMPTY_STATS)
-				: this.gitService.getDiffStats(repoPath, wt.path).catch(() => EMPTY_STATS))
+			worktrees.map(wt => this.gitService.getDiffStats(repoPath, wt.path).catch(() => EMPTY_STATS))
 		);
 		const map = new Map<string, IDiffStats>();
 		worktrees.forEach((wt, i) => map.set(wt.path, results[i]));
