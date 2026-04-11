@@ -17,6 +17,7 @@ import { IProductService } from '../../product/common/productService.js';
 import { asJson, IRequestService } from '../../request/common/request.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+import { StorageScope, StorageTarget } from '../../storage/common/storage.js';
 import { AvailableForDownload, IUpdate, State, StateType, UpdateType } from '../common/update.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { AbstractUpdateService, IUpdateURLOptions } from './abstractUpdateService.js';
@@ -32,6 +33,11 @@ import { Promises } from '../../../base/node/pfs.js';
  * 3. Extracts the .app bundle → Ready
  * 4. On restart: spawns a helper script that swaps the .app and relaunches
  */
+const STAGED_UPDATE_PATH_KEY = 'workstreamsUpdate/stagedPath';
+const STAGED_UPDATE_COMMIT_KEY = 'workstreamsUpdate/stagedCommit';
+const STAGED_UPDATE_VERSION_KEY = 'workstreamsUpdate/stagedProductVersion';
+const STAGED_UPDATE_CHANGELOG_KEY = 'workstreamsUpdate/stagedChangelogUrl';
+
 export class WorkstreamsUpdateService extends AbstractUpdateService implements IRelaunchHandler {
 
 	private stagedUpdatePath: string | undefined;
@@ -64,6 +70,50 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 		this.logService.trace('workstreams-update#handleRelaunch(): applying update on relaunch');
 		this.doQuitAndInstall();
 		return true;
+	}
+
+	protected override async postInitialize(): Promise<void> {
+		const stagedPath = this.applicationStorageMainService.get(STAGED_UPDATE_PATH_KEY, StorageScope.APPLICATION);
+		const stagedCommit = this.applicationStorageMainService.get(STAGED_UPDATE_COMMIT_KEY, StorageScope.APPLICATION);
+		const stagedVersion = this.applicationStorageMainService.get(STAGED_UPDATE_VERSION_KEY, StorageScope.APPLICATION);
+		const stagedChangelog = this.applicationStorageMainService.get(STAGED_UPDATE_CHANGELOG_KEY, StorageScope.APPLICATION);
+
+		if (stagedPath && stagedCommit && stagedCommit !== this.productService.commit) {
+			try {
+				const stat = await fs.promises.stat(stagedPath);
+				if (stat.isDirectory()) {
+					this.logService.info('workstreams-update#postInitialize - restoring staged update', { stagedPath, stagedCommit });
+					this.stagedUpdatePath = stagedPath;
+					this.setState(State.Ready({
+						version: stagedCommit,
+						productVersion: stagedVersion || '',
+						changelogUrl: stagedChangelog || undefined,
+					}, true, false));
+					return;
+				}
+			} catch {
+				// File doesn't exist — clean up stale storage
+			}
+		}
+
+		// Clean up stale keys if no valid staged update
+		this.clearStagedUpdateStorage();
+	}
+
+	private clearStagedUpdateStorage(): void {
+		this.applicationStorageMainService.remove(STAGED_UPDATE_PATH_KEY, StorageScope.APPLICATION);
+		this.applicationStorageMainService.remove(STAGED_UPDATE_COMMIT_KEY, StorageScope.APPLICATION);
+		this.applicationStorageMainService.remove(STAGED_UPDATE_VERSION_KEY, StorageScope.APPLICATION);
+		this.applicationStorageMainService.remove(STAGED_UPDATE_CHANGELOG_KEY, StorageScope.APPLICATION);
+	}
+
+	private persistStagedUpdate(extractedAppPath: string, update: IUpdate): void {
+		this.applicationStorageMainService.store(STAGED_UPDATE_PATH_KEY, extractedAppPath, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		this.applicationStorageMainService.store(STAGED_UPDATE_COMMIT_KEY, update.version!, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		this.applicationStorageMainService.store(STAGED_UPDATE_VERSION_KEY, update.productVersion!, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		if (update.changelogUrl) {
+			this.applicationStorageMainService.store(STAGED_UPDATE_CHANGELOG_KEY, update.changelogUrl, StorageScope.APPLICATION, StorageTarget.MACHINE);
+		}
 	}
 
 	protected buildUpdateFeedUrl(quality: string, _commit: string, _options?: IUpdateURLOptions): string | undefined {
@@ -182,6 +232,9 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 			};
 
 			this.setState(State.AvailableForDownload(update));
+
+			// Auto-download in background — no user interaction needed
+			this.doDownloadUpdate(State.AvailableForDownload(update) as AvailableForDownload);
 		} catch (err) {
 			this.logService.error('workstreams-update#checkGitHubRelease - error', err);
 			this.setState(State.Idle(UpdateType.Archive, explicit ? String(err) : undefined));
@@ -244,6 +297,7 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 			}
 
 			this.stagedUpdatePath = extractedAppPath;
+			this.persistStagedUpdate(extractedAppPath, update);
 
 			// Clean up the zip
 			await Promises.rm(zipPath).catch(() => { /* ignore */ });
@@ -276,6 +330,8 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 			this.logService.error('workstreams-update#doQuitAndInstall - no staged update');
 			return;
 		}
+
+		this.clearStagedUpdateStorage();
 
 		const currentAppPath = this.resolveCurrentAppPath();
 		if (!currentAppPath) {
