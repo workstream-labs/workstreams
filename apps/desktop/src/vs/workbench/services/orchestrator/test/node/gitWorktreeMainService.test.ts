@@ -83,7 +83,7 @@ suite('GitWorktreeMainService - getDiffStats', () => {
 	const tempDirs: string[] = [];
 
 	setup(async () => {
-		service = new GitWorktreeMainService();
+		service = new GitWorktreeMainService({ trace: () => { }, debug: () => { }, info: () => { }, warn: () => { }, error: () => { }, flush: () => { } } as any);
 		repoPath = await createTempRepo();
 		tempDirs.push(repoPath);
 	});
