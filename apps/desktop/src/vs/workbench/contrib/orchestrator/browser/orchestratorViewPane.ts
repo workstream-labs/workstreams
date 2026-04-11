@@ -35,6 +35,8 @@ export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
 
 export class OrchestratorViewPane extends ViewPane {
 
+	private static readonly FLIP_DURATION_MS = 250;
+
 	private repoListElement: HTMLElement | undefined;
 	private updateBannerElement: HTMLElement | undefined;
 	private readonly renderDisposables = this._register(new DisposableStore());
@@ -59,6 +61,7 @@ export class OrchestratorViewPane extends ViewPane {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 		this.headerVisible = false;
 		this._register(this.orchestratorService.onDidChangeRepositories(() => this.renderContent()));
+		this._register(this.orchestratorService.onDidChangeSessionState(() => this.renderContent()));
 		this._register(this.updateService.onStateChange(state => this.onUpdateStateChange(state)));
 	}
 
@@ -96,12 +99,18 @@ export class OrchestratorViewPane extends ViewPane {
 			return;
 		}
 
+		// FLIP step 1: snapshot old positions before clearing DOM
+		const oldPositions = this.snapshotWorktreePositions();
+
 		this.renderDisposables.clear();
 		this.repoListElement.textContent = '';
 
 		for (const repo of this.orchestratorService.repositories) {
 			this.renderRepository(repo);
 		}
+
+		// FLIP step 2: animate items that moved
+		this.animateFlip(oldPositions);
 	}
 
 	private renderRepository(repo: IRepositoryEntry): void {
@@ -143,7 +152,8 @@ export class OrchestratorViewPane extends ViewPane {
 
 		if (!repo.isCollapsed) {
 			const worktreeList = append(repoSection, $('.worktree-list'));
-			for (const worktree of repo.worktrees) {
+			const sorted = this.sortWorktrees(repo.worktrees, repo.path);
+			for (const worktree of sorted) {
 				this.renderWorktree(worktreeList, repo, worktree);
 			}
 		}
@@ -151,6 +161,7 @@ export class OrchestratorViewPane extends ViewPane {
 
 	private renderWorktree(container: HTMLElement, repo: IRepositoryEntry, worktree: IWorktreeEntry): void {
 		const item = append(container, $('.worktree-item'));
+		item.dataset.worktreePath = worktree.path;
 		if (worktree.isActive) {
 			item.classList.add('active');
 		}
@@ -206,10 +217,23 @@ export class OrchestratorViewPane extends ViewPane {
 			}
 		}
 
-		// Row 2: branch
+		// Row 2: branch ... [· Archive] for merged PRs
 		const branchRow = append(info, $('.worktree-branch-row'));
 		const branchEl = append(branchRow, $('.worktree-branch'));
 		branchEl.textContent = worktree.branch;
+
+		if (worktree.prState === 'merged' && !isMainWorktree && !worktree.provisioning) {
+			const separator = append(branchRow, $('.worktree-archive-separator'));
+			separator.textContent = '\u00B7';
+			const archiveBtn = append(branchRow, $('.worktree-archive-btn'));
+			append(archiveBtn, $('span.codicon.codicon-archive'));
+			const archiveLabel = append(archiveBtn, $('span'));
+			archiveLabel.textContent = localize('archive', "Archive");
+			this.renderDisposables.add(addDisposableListener(archiveBtn, EventType.CLICK, e => {
+				e.stopPropagation();
+				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+			}));
+		}
 
 		if (!worktree.provisioning) {
 			this.renderDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
@@ -395,6 +419,97 @@ export class OrchestratorViewPane extends ViewPane {
 		}
 		return parts.join('\n');
 	}
+
+	//#region Sorting
+
+	private sortWorktrees(worktrees: readonly IWorktreeEntry[], repoPath: string): IWorktreeEntry[] {
+		return [...worktrees].sort((a, b) =>
+			this.getWorktreeSortPriority(a, repoPath) - this.getWorktreeSortPriority(b, repoPath)
+		);
+	}
+
+	private getWorktreeSortPriority(worktree: IWorktreeEntry, repoPath: string): number {
+		// Main/local worktree always first
+		if (worktree.path === repoPath) {
+			return 0;
+		}
+		const sessionState = this.orchestratorService.getSessionState(worktree.path);
+		// Needs attention — agent waiting for user input
+		if (sessionState === WorktreeSessionState.Permission) {
+			return 1;
+		}
+		// Running — agent actively working
+		if (sessionState === WorktreeSessionState.Working) {
+			return 2;
+		}
+		// Merged PRs — bottom, ready to archive
+		if (worktree.prState === 'merged') {
+			return 5;
+		}
+		// Has changes — branches with work
+		if ((worktree.additions ?? 0) > 0 || (worktree.deletions ?? 0) > 0) {
+			return 3;
+		}
+		// Idle / no changes
+		return 4;
+	}
+
+	//#endregion
+
+	//#region FLIP animation
+
+	private snapshotWorktreePositions(): Map<string, DOMRect> {
+		const positions = new Map<string, DOMRect>();
+		if (!this.repoListElement) {
+			return positions;
+		}
+		for (const el of this.repoListElement.querySelectorAll<HTMLElement>('.worktree-item[data-worktree-path]')) {
+			const wtPath = el.dataset.worktreePath;
+			if (wtPath) {
+				positions.set(wtPath, el.getBoundingClientRect());
+			}
+		}
+		return positions;
+	}
+
+	private animateFlip(oldPositions: Map<string, DOMRect>): void {
+		if (oldPositions.size === 0 || !this.repoListElement) {
+			return;
+		}
+
+		const items = this.repoListElement.querySelectorAll<HTMLElement>('.worktree-item[data-worktree-path]');
+		for (const el of items) {
+			const wtPath = el.dataset.worktreePath;
+			if (!wtPath) {
+				continue;
+			}
+
+			const oldRect = oldPositions.get(wtPath);
+			if (!oldRect) {
+				continue; // new item — no animation
+			}
+
+			const newRect = el.getBoundingClientRect();
+			const deltaY = oldRect.top - newRect.top;
+
+			if (Math.abs(deltaY) < 1) {
+				continue; // didn't move
+			}
+
+			// Invert: place at old position
+			el.style.transform = `translateY(${deltaY}px)`;
+			el.style.transition = 'none';
+
+			// Force layout so the invert is applied before the play
+			el.offsetHeight; // eslint-disable-line no-unused-expressions
+
+			// Play: animate to new position
+			el.style.transition = `transform ${OrchestratorViewPane.FLIP_DURATION_MS}ms ease`;
+			el.style.transform = '';
+		}
+	}
+
+	//#endregion
 
 	private static readonly BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 	private static readonly BRAILLE_INTERVAL_MS = 80;
