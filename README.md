@@ -91,6 +91,13 @@ See `apps/desktop/.claude/CLAUDE.md` for full DMG build instructions.
 
 ## Contributing
 
+If you find this cool, help others discover it:
+
+- :star: **[Star the repo](https://github.com/workstream-labs/workstreams)**
+- **Tell a friend** about Workstreams
+- **[Open an issue](https://github.com/workstream-labs/workstreams/issues)** — feedback, feature requests, even a small friction or imperfection is a pain not yet solved
+- **Share:** [X](https://x.com/intent/tweet?text=Workstreams%20%E2%80%94%20an%20IDE%20for%20orchestrating%20parallel%20AI%20coding%20agents%20in%20isolated%20git%20worktrees&url=https%3A%2F%2Fgithub.com%2Fworkstream-labs%2Fworkstreams) · [Reddit](https://reddit.com/submit?url=https%3A%2F%2Fgithub.com%2Fworkstream-labs%2Fworkstreams&title=Workstreams%20%E2%80%94%20an%20IDE%20for%20orchestrating%20parallel%20AI%20coding%20agents%20in%20isolated%20git%20worktrees) · [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2Fworkstream-labs%2Fworkstreams)
+
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
