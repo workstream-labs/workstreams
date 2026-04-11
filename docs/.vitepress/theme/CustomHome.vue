@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import NavBar from "./NavBar.vue";
 import AppleIcon from "./icons/AppleIcon.vue";
 import DiscordIcon from "./icons/DiscordIcon.vue";
@@ -71,35 +71,26 @@ const companies = [
   { name: "DE Shaw", domain: "deshaw.com" },
 ];
 
-// --- Download count ---
-const downloadCount = ref<number | null>(null);
-
-async function fetchDownloadCount() {
-  try {
-    const res = await fetch(
-      "https://api.github.com/repos/workstream-labs/workstreams/releases/latest"
-    );
-    if (!res.ok) return;
-    const data = await res.json();
-    const dmgs = (data.assets || []).filter((a: any) =>
-      a.name.endsWith(".dmg")
-    );
-    downloadCount.value = dmgs.reduce(
-      (sum: number, a: any) => sum + (a.download_count || 0),
-      0
-    );
-  } catch {
-    // silent
+// --- Trusted-by flip ---
+const ROW_SIZE = 6;
+const companyRows = (() => {
+  const rows: typeof companies[] = [];
+  for (let i = 0; i < companies.length; i += ROW_SIZE) {
+    rows.push(companies.slice(i, i + ROW_SIZE));
   }
-}
+  return rows;
+})();
+const activeRow = ref(0);
+let rowTimer: ReturnType<typeof setInterval> | null = null;
 
 // --- Scroll reveal ---
 let observer: IntersectionObserver | null = null;
 
-onMounted(async () => {
-  fetchDownloadCount();
+onMounted(() => {
+  rowTimer = setInterval(() => {
+    activeRow.value = (activeRow.value + 1) % companyRows.length;
+  }, 3500);
   document.addEventListener("click", closeDropdowns);
-  await nextTick();
   observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((e) => {
@@ -113,6 +104,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   observer?.disconnect();
+  if (rowTimer) clearInterval(rowTimer);
   document.removeEventListener("click", closeDropdowns);
 });
 </script>
@@ -151,18 +143,12 @@ onUnmounted(() => {
         </h1>
 
         <p class="hero-sub anim" style="--d: 1">
-          Run dozens of AI agents simultaneously in isolated git worktrees.
-          Review diffs, leave inline comments, resume with
-          feedback&thinsp;&mdash;&thinsp;all from one interface.
+          Orchestrate AI coding agents in parallel, each in its own git
+          worktree. Review diffs, comment inline, and send feedback to
+          resume&thinsp;&mdash;&thinsp;from one desktop IDE.
         </p>
 
-        <!-- Download count hidden for now — uncomment when numbers are meaningful
-        <div v-if="downloadCount != null" class="hero-count anim" style="--d: 2">
-          {{ downloadCount.toLocaleString() }} downloads
-        </div>
-        -->
-
-        <div class="hero-actions anim" style="--d: 3">
+        <div class="hero-actions anim" style="--d: 2">
           <div class="dl-dropdown" @click.stop>
             <button class="btn btn-primary" @click="toggleDropdown('hero')">
               <AppleIcon /> Download for macOS
@@ -181,7 +167,7 @@ onUnmounted(() => {
           </a>
         </div>
 
-        <div class="hero-image anim" style="--d: 4">
+        <div class="hero-image anim" style="--d: 3">
           <img src="/hero.gif" alt="Workstream IDE — worktree sidebar, agent session, and workspace explorer" class="hero-screenshot" />
         </div>
       </div>
@@ -190,18 +176,28 @@ onUnmounted(() => {
     <!-- ========== TRUSTED BY ========== -->
     <section class="trusted sr">
       <h3 class="trusted-title">
-        Trusted by world-class developers
+        Built and trusted by world-class developers
       </h3>
-      <div class="trusted-logos">
-        <img v-for="c in companies" :key="c.name" :src="`https://img.logo.dev/${c.domain}?token=pk_MdLdiT0EQ6uFB9FQBG3xcA&size=120&format=png`" :alt="c.name" class="trusted-logo" />
+      <div class="trusted-row">
+        <div v-for="i in ROW_SIZE" :key="i" class="trusted-slot" :style="{ '--i': i - 1 }">
+          <div class="trusted-flipper" :class="{ flipped: activeRow === 1 }">
+            <div class="trusted-face">
+              <img
+                :src="`https://img.logo.dev/${companyRows[0][i - 1].domain}?token=pk_MdLdiT0EQ6uFB9FQBG3xcA&size=200&format=png`"
+                :alt="companyRows[0][i - 1].name"
+                class="trusted-logo"
+              />
+            </div>
+            <div class="trusted-face trusted-face-back">
+              <img
+                :src="`https://img.logo.dev/${companyRows[1][i - 1].domain}?token=pk_MdLdiT0EQ6uFB9FQBG3xcA&size=200&format=png`"
+                :alt="companyRows[1][i - 1].name"
+                class="trusted-logo"
+              />
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
-
-    <!-- ========== TAGLINE ========== -->
-    <section class="tagline sr">
-      <h2 class="tagline-text">
-        Ship code <span class="gradient">10&times; faster</span> with no context switching
-      </h2>
     </section>
 
     <!-- ========== FEATURES ========== -->
@@ -212,11 +208,11 @@ onUnmounted(() => {
         <div class="showcase sr">
           <div class="showcase-text">
             <span class="showcase-label">Orchestrate</span>
-            <h3 class="showcase-title">Run dozens of agents at once</h3>
+            <h3 class="showcase-title">All your agents, one panel</h3>
             <p class="showcase-desc">
-              Spin up agents across multiple repos from a single orchestration
-              panel. Track live status for every agent&thinsp;&mdash;&thinsp;get
-              notified instantly when one needs your permission.
+              Launch agents across repos from a single panel. Track live
+              status and diff stats at a glance&thinsp;&mdash;&thinsp;get
+              notified the moment an agent needs your input.
             </p>
           </div>
           <div class="showcase-img">
@@ -230,9 +226,9 @@ onUnmounted(() => {
             <span class="showcase-label">Agents</span>
             <h3 class="showcase-title">Works with any CLI agent</h3>
             <p class="showcase-desc">
-              Deeply integrated with <strong>Claude Code</strong> and
-              <strong>Codex</strong>, but the terminal is your open
-              playground&thinsp;&mdash;&thinsp;run any agent of your choice.
+              Name your task, pick an agent, choose a branch&thinsp;&mdash;&thinsp;and
+              go. Deep integration with <strong>Claude Code</strong>, plus
+              support for any CLI agent you can run in a terminal.
             </p>
           </div>
           <div class="showcase-img">
@@ -244,11 +240,11 @@ onUnmounted(() => {
         <div class="showcase sr">
           <div class="showcase-text">
             <span class="showcase-label">Isolation</span>
-            <h3 class="showcase-title">Changes are isolated</h3>
+            <h3 class="showcase-title">Every change stays isolated</h3>
             <p class="showcase-desc">
-              Every agent works in its own git worktree. No conflicts, no
-              stepping on each other. Each branch is fully isolated, backed
-              by git&thinsp;&mdash;&thinsp;merge when you're ready.
+              Every agent runs in its own git worktree&thinsp;&mdash;&thinsp;a
+              real branch with full history. No file conflicts, no stepping on
+              each other. Review the diff, commit, and merge when you're ready.
             </p>
           </div>
           <div class="showcase-img">
@@ -260,16 +256,15 @@ onUnmounted(() => {
         <div class="showcase showcase-reverse sr">
           <div class="showcase-text">
             <span class="showcase-label">Review loop</span>
-            <h3 class="showcase-title">Offline &amp; online comments</h3>
+            <h3 class="showcase-title">Comment, send, resume</h3>
             <p class="showcase-desc">
-              Write <strong>offline comments</strong> directly on diffs. Fetch
-              <strong>online comments</strong> from GitHub PRs with isolated git
-              authorisation per repo. Send them all back to the agent in one
-              click.
+              Write comments directly on diffs&thinsp;&mdash;&thinsp;offline or
+              pulled from GitHub. Select the ones that matter and send them back
+              to the agent in one click. The agent resumes with your full context.
             </p>
           </div>
           <div class="showcase-img">
-            <img src="/review-comments.png" alt="Inline review comments with offline and online support" />
+            <img src="/sending-comments.png" alt="Send review comments back to the AI agent" />
           </div>
         </div>
 
@@ -277,11 +272,11 @@ onUnmounted(() => {
         <div class="showcase sr">
           <div class="showcase-text">
             <span class="showcase-label">Editor</span>
-            <h3 class="showcase-title">LSP-integrated full-fledged editor</h3>
+            <h3 class="showcase-title">Full editor with LSP</h3>
             <p class="showcase-desc">
-              A complete development environment with Language Server Protocol
-              support, syntax highlighting, and an integrated terminal to back
-              you up on everything.
+              Syntax highlighting, go-to-definition, and autocomplete powered
+              by Language Server Protocol. Plus an integrated terminal for when
+              you need to step in yourself.
             </p>
           </div>
           <div class="showcase-img">
@@ -325,6 +320,7 @@ onUnmounted(() => {
       <div class="container">
         <div class="cta-inner sr">
           <h2 class="cta-title">Start shipping faster</h2>
+          <p class="cta-sub">Free and open source. No accounts, no API keys.</p>
           <div class="cta-actions">
             <div class="dl-dropdown" @click.stop>
               <button class="btn btn-primary btn-lg" @click="toggleDropdown('cta')">
@@ -394,6 +390,7 @@ onUnmounted(() => {
   background: var(--bg);
   font-family: var(--font-b);
   color: var(--t1);
+  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -495,14 +492,6 @@ section, footer { position: relative; z-index: 1; }
   max-width: 580px; margin: 0 auto 36px;
 }
 
-.hero-count {
-  display: inline-block;
-  padding: 5px 14px; border-radius: 100px;
-  border: 1px solid var(--border); background: rgba(255,255,255,0.03);
-  font-family: var(--font-m); font-size: 0.78rem; color: var(--t2);
-  margin-bottom: 28px;
-}
-
 /* ===== BUTTONS ===== */
 .hero-actions {
   display: flex; align-items: center; justify-content: center;
@@ -525,22 +514,11 @@ section, footer { position: relative; z-index: 1; }
   margin: 0 auto;
   border-radius: var(--r-lg);
   overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7);
+  box-shadow:
+    0 30px 80px -20px rgba(0, 0, 0, 0.7),
+    0 0 140px -20px rgba(52, 211, 153, 0.15);
 }
 .hero-screenshot { width: 100%; display: block; }
-
-/* ===== TAGLINE ===== */
-.tagline { padding: 100px 24px; text-align: center; }
-.tagline-text {
-  font-family: var(--font-d); font-size: clamp(1.6rem, 4vw, 2.8rem);
-  font-weight: 700; letter-spacing: -0.025em; color: var(--t2);
-  max-width: 650px; margin: 0 auto; line-height: 1.2;
-}
-.gradient {
-  background: linear-gradient(135deg, var(--accent), var(--cyan));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
 
 /* ===== TRUSTED BY ===== */
 .trusted {
@@ -549,35 +527,62 @@ section, footer { position: relative; z-index: 1; }
 }
 
 .trusted-title {
-  font-family: var(--font-d);
-  font-size: clamp(1.3rem, 3vw, 1.8rem);
-  font-weight: 500;
-  line-height: 1.45;
+  font-family: var(--font-b);
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.6;
   color: var(--t3);
-  margin: 0 auto 48px;
-  max-width: 500px;
+  margin: 0 auto 40px;
 }
 
-.trusted-logos {
+.trusted-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 40px 56px;
+  gap: 48px;
   max-width: 1000px;
   margin: 0 auto;
 }
 
+.trusted-slot {
+  perspective: 600px;
+}
+
+.trusted-flipper {
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 0.08s);
+  position: relative;
+}
+.trusted-flipper.flipped {
+  transform: rotateX(180deg);
+}
+
+.trusted-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  height: 36px;
+}
+.trusted-face-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(180deg);
+}
+
 .trusted-logo {
-  height: 32px;
+  height: 36px;
   width: auto;
-  opacity: 0.45;
-  filter: grayscale(1) brightness(1.6);
-  transition: all 0.3s ease;
+  max-width: 140px;
+  object-fit: contain;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
 }
 .trusted-logo:hover {
-  opacity: 0.85;
-  filter: grayscale(0) brightness(1);
+  opacity: 1;
 }
 
 /* ===== SHOWCASE FEATURES (with screenshots) ===== */
@@ -619,64 +624,17 @@ section, footer { position: relative; z-index: 1; }
 .showcase-img {
   border-radius: var(--r);
   overflow: hidden;
-  box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 20px 60px -15px rgba(0, 0, 0, 0.5),
+    0 0 80px -20px rgba(52, 211, 153, 0.08);
+  transition: box-shadow 0.4s ease;
+}
+.showcase.visible .showcase-img {
+  box-shadow:
+    0 20px 60px -15px rgba(0, 0, 0, 0.5),
+    0 0 100px -10px rgba(52, 211, 153, 0.12);
 }
 .showcase-img img { width: 100%; display: block; }
-
-.showcase-img-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  background: var(--bg2);
-  border: 1px dashed var(--border);
-  border-radius: var(--r);
-  color: var(--t3);
-  font-family: var(--font-m);
-  font-size: 0.82rem;
-}
-
-/* ===== CAPABILITIES GRID ===== */
-.capabilities { padding: 40px 0 100px; }
-
-.section-head { text-align: center; margin-bottom: 56px; }
-.section-title {
-  font-family: var(--font-d); font-size: clamp(1.6rem, 3.5vw, 2.2rem);
-  font-weight: 700; letter-spacing: -0.02em; margin: 0 0 14px;
-}
-.section-sub { font-size: 1.05rem; color: var(--t2); margin: 0; }
-
-.cap-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.cap {
-  background: var(--bg2);
-  padding: 32px 28px;
-  transition: background 0.25s;
-}
-.cap:hover { background: var(--bg3); }
-
-.cap-icon {
-  width: 36px; height: 36px;
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 16px; color: var(--accent);
-}
-.cap-icon svg { width: 20px; height: 20px; }
-
-.cap h4 {
-  font-family: var(--font-d); font-size: 1rem; font-weight: 700;
-  margin: 0 0 8px; color: var(--t1);
-}
-.cap p {
-  font-size: 0.88rem; line-height: 1.6; color: var(--t2); margin: 0;
-}
 
 /* ===== FAQ ===== */
 .faq { padding: 80px 0 100px; }
@@ -737,16 +695,33 @@ section, footer { position: relative; z-index: 1; }
 /* ===== CTA ===== */
 .cta { padding: 80px 0 120px; }
 .cta-inner {
-  text-align: center; padding: 0;
+  text-align: center;
+  padding: 48px 32px;
+  border-radius: 20px;
+  border: 1px solid rgba(52, 211, 153, 0.12);
+  background: linear-gradient(145deg, rgba(52, 211, 153, 0.04), rgba(34, 211, 238, 0.03));
+  position: relative;
+}
+.cta-inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: radial-gradient(ellipse at 50% 80%, rgba(52, 211, 153, 0.06), transparent 60%);
+  pointer-events: none;
 }
 .cta-title {
-  font-family: var(--font-m); font-size: clamp(1.6rem, 4vw, 2.8rem);
-  font-weight: 500; letter-spacing: -0.02em; margin: 0 0 36px;
-  color: var(--t1);
+  font-family: var(--font-d); font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 700; letter-spacing: -0.02em; margin: 0 0 8px;
+  color: var(--t1); position: relative;
 }
-.cta-actions { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
+.cta-sub {
+  font-size: 0.9rem; color: var(--t2); margin: 0 0 28px;
+  position: relative;
+}
+.cta-actions { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; position: relative; }
 
-.btn-lg { padding: 14px 32px; font-size: 1rem; }
+.btn-lg { padding: 12px 28px; font-size: 0.92rem; }
 
 /* ===== DOWNLOAD DROPDOWN ===== */
 .dl-dropdown {
@@ -761,8 +736,9 @@ section, footer { position: relative; z-index: 1; }
   min-width: 180px;
   padding: 4px;
   border-radius: 10px;
-  border: 1px solid var(--border-h);
-  background: var(--bg2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #111 !important;
+  color-scheme: dark;
   box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.6);
   z-index: 200;
   animation: dropIn 0.15s ease;
@@ -772,14 +748,12 @@ section, footer { position: relative; z-index: 1; }
   right: auto;
   left: 50%;
   transform: translateX(-50%);
+  animation: dropInCenter 0.15s ease;
 }
 
 @keyframes dropIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
-}
-.dl-menu-center {
-  animation: dropInCenter 0.15s ease;
 }
 @keyframes dropInCenter {
   from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
@@ -794,8 +768,8 @@ section, footer { position: relative; z-index: 1; }
   padding: 8px 12px;
   border: none;
   border-radius: 6px;
-  background: transparent;
-  color: var(--t2);
+  background-color: transparent;
+  color: #888;
   font-family: var(--font-b);
   font-size: 0.82rem;
   font-weight: 500;
@@ -803,8 +777,23 @@ section, footer { position: relative; z-index: 1; }
   transition: all 0.15s;
 }
 .dl-option:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--t1);
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #fafafa;
+}
+
+/* Force dark on all dropdown buttons — override VitePress globals */
+.ws .dl-menu button,
+.ws .dl-menu button:hover,
+.ws .dl-menu button:focus {
+  background-color: transparent;
+  color: #888;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+.ws .dl-menu button:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #fafafa;
 }
 
 /* ===== FOOTER ===== */
@@ -862,19 +851,20 @@ section, footer { position: relative; z-index: 1; }
   .showcase-reverse { grid-template-columns: 1fr; }
   .showcase-reverse .showcase-text { order: 1; }
   .showcase-reverse .showcase-img { order: 2; }
-  .cap-grid { grid-template-columns: repeat(2, 1fr); }
+  .trusted-row { gap: 32px; flex-wrap: wrap; }
   .hero { padding: 110px 20px 40px; }
   .hero-actions { margin-bottom: 48px; }
 }
 
 @media (max-width: 640px) {
+  .trusted-row { gap: 24px; }
+  .trusted-logo { height: 20px; }
   .hero { padding: 90px 16px 32px; }
   .hero-title { font-size: 2.3rem; }
   .hero-sub { font-size: 1rem; }
   .hero-actions { flex-direction: column; }
   .btn { width: 100%; justify-content: center; }
   .showcase { padding: 24px 18px; }
-  .cap-grid { grid-template-columns: 1fr; }
   .cta-inner { padding: 48px 20px; }
   .cta-actions { flex-direction: column; }
 }

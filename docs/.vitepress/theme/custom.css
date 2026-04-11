@@ -250,3 +250,21 @@ button.VPNavBarSearchButton .search-text,
 .VPDocAside .VPDocAsideOutline {
   font-family: "IBM Plex Sans", system-ui, sans-serif !important;
 }
+
+/* ===================================================
+   Force dark dropdown on custom pages
+   =================================================== */
+.is-home .dl-menu {
+  background: #111 !important;
+  color-scheme: dark !important;
+}
+.is-home .dl-menu button.dl-option {
+  background: transparent !important;
+  color: #888 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.is-home .dl-menu button.dl-option:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fafafa !important;
+}
