@@ -344,7 +344,7 @@
 }
 
 .monaco-workbench .orchestrator-content .worktree-name {
-	font-size: 12px;
+	font-size: var(--vscode-font-size, 13px);
 	font-weight: 400;
 	white-space: nowrap;
 	overflow: hidden;
@@ -364,7 +364,7 @@
 .monaco-workbench .orchestrator-content .worktree-diff-stats {
 	display: flex;
 	gap: 4px;
-	font-size: 10px;
+	font-size: calc(var(--vscode-font-size, 13px) - 2px);
 	font-family: var(--monaco-monospace-font);
 	line-height: 1;
 	border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.12));
@@ -392,7 +392,7 @@
 }
 
 .monaco-workbench .orchestrator-content .worktree-branch {
-	font-size: 11px;
+	font-size: calc(var(--vscode-font-size, 13px) - 1px);
 	color: var(--vscode-descriptionForeground);
 	white-space: nowrap;
 	overflow: hidden;
