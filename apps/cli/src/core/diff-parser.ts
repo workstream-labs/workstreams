@@ -29,92 +29,85 @@ export interface ParsedDiff {
 }
 
 export function parseDiff(raw: string): ParsedDiff {
-  const lines = raw.split("\n");
-  const files: FileDiff[] = [];
-  let current: FileDiff | null = null;
-  let currentHunk: Hunk | null = null;
-  let oldNum = 0;
-  let newNum = 0;
+  return { files: splitFileChunks(raw.split("\n")).map(parseFileDiff) };
+}
 
-  const pushHunk = () => {
-    if (currentHunk && current) {
-      current.hunks.push(currentHunk);
-      currentHunk = null;
-    }
-  };
-
-  const pushFile = () => {
-    pushHunk();
-    if (current) files.push(current);
-    current = null;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // New file header
+/** Split raw lines at each "diff --git" boundary into per-file chunks. */
+function splitFileChunks(lines: string[]): string[][] {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  for (const line of lines) {
     if (line.startsWith("diff --git ")) {
-      pushFile();
-      // Extract paths from "diff --git a/foo b/foo"
-      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
-      const path = m ? m[2] : line.slice(11);
-      const oldPath = m ? m[1] : undefined;
-      current = { path, oldPath, status: "M", binary: false, hunks: [] };
-      continue;
+      if (chunk.length > 0) chunks.push(chunk);
+      chunk = [];
     }
+    chunk.push(line);
+  }
+  // Only push the final chunk if it started with a diff header
+  if (chunk.length > 0 && chunk[0].startsWith("diff --git ")) chunks.push(chunk);
+  return chunks;
+}
 
-    if (!current) continue;
+/** Parse a single file's chunk of diff lines into a FileDiff. */
+function parseFileDiff(lines: string[]): FileDiff {
+  const file: FileDiff = { path: "", status: "M", binary: false, hunks: [] };
 
-    if (line.startsWith("new file mode")) {
-      current.status = "A";
-      continue;
-    }
-    if (line.startsWith("deleted file mode")) {
-      current.status = "D";
-      continue;
-    }
-    if (line.startsWith("rename from ")) {
-      current.status = "R";
-      current.oldPath = line.slice(12);
-      continue;
-    }
-    if (line.startsWith("rename to ")) {
-      current.path = line.slice(10);
-      continue;
-    }
-    if (line.startsWith("Binary files")) {
-      current.binary = true;
-      continue;
-    }
+  // First line is always "diff --git a/... b/..."
+  const m = lines[0].match(/^diff --git a\/(.*) b\/(.*)$/);
+  file.path = m ? m[2] : lines[0].slice(11);
+  file.oldPath = m ? m[1] : undefined;
 
-    // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-    if (line.startsWith("@@")) {
-      pushHunk();
-      const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      oldNum = m ? parseInt(m[1], 10) : 1;
-      newNum = m ? parseInt(m[2], 10) : 1;
-      currentHunk = { header: line, oldStart: oldNum, newStart: newNum, lines: [] };
-      continue;
+  // Find where hunks start (first @@ line)
+  let hunkStart = lines.findIndex((l) => l.startsWith("@@"));
+  if (hunkStart === -1) hunkStart = lines.length;
+
+  // Parse header metadata (everything between "diff --git" and first @@)
+  for (let i = 1; i < hunkStart; i++) {
+    const line = lines[i];
+    if (line.startsWith("new file mode")) file.status = "A";
+    else if (line.startsWith("deleted file mode")) file.status = "D";
+    else if (line.startsWith("rename from ")) { file.status = "R"; file.oldPath = line.slice(12); }
+    else if (line.startsWith("rename to ")) file.path = line.slice(10);
+    else if (line.startsWith("Binary files")) file.binary = true;
+    // index, ---, +++ lines are intentionally skipped
+  }
+
+  // Split remaining lines into per-hunk groups and parse each
+  file.hunks = splitHunkChunks(lines.slice(hunkStart)).map(parseHunk);
+  return file;
+}
+
+/** Split hunk-region lines at each @@ boundary. */
+function splitHunkChunks(lines: string[]): string[][] {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("@@") && chunk.length > 0) {
+      chunks.push(chunk);
+      chunk = [];
     }
+    chunk.push(line);
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
 
-    // Skip index/--- /+++ lines (file header metadata)
-    if (
-      line.startsWith("index ") ||
-      line.startsWith("--- ") ||
-      line.startsWith("+++ ")
-    ) {
-      continue;
-    }
+/** Parse a single hunk: @@ header followed by +/-/context lines. */
+function parseHunk(lines: string[]): Hunk {
+  const header = lines[0];
+  const m = header.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  let oldNum = m ? parseInt(m[1], 10) : 1;
+  let newNum = m ? parseInt(m[2], 10) : 1;
 
-    if (!currentHunk) continue;
-
+  const parsed: DiffLine[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
     if (line.startsWith("+")) {
-      currentHunk.lines.push({ type: "add", content: line.slice(1), newNum: newNum++ });
+      parsed.push({ type: "add", content: line.slice(1), newNum: newNum++ });
     } else if (line.startsWith("-")) {
-      currentHunk.lines.push({ type: "del", content: line.slice(1), oldNum: oldNum++ });
+      parsed.push({ type: "del", content: line.slice(1), oldNum: oldNum++ });
     } else {
-      // context (starts with " " or is empty at end of hunk)
-      currentHunk.lines.push({
+      parsed.push({
         type: "context",
         content: line.startsWith(" ") ? line.slice(1) : line,
         oldNum: oldNum++,
@@ -123,8 +116,7 @@ export function parseDiff(raw: string): ParsedDiff {
     }
   }
 
-  pushFile();
-  return { files };
+  return { header, oldStart: m ? parseInt(m[1], 10) : 1, newStart: m ? parseInt(m[2], 10) : 1, lines: parsed };
 }
 
 /** Total +/- line counts for a file */
