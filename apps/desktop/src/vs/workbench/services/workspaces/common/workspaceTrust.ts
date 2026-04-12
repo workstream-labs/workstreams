@@ -373,6 +373,11 @@ export class WorkspaceTrustManagementService extends Disposable implements IWork
 			return { trusted: true, uri };
 		}
 
+		// Workstreams worktree directories (~/.workstreams/) are always trusted
+		if (this.isWorkstreamsWorktree(uri)) {
+			return { trusted: true, uri };
+		}
+
 		if (this.isTrustedVirtualResource(uri)) {
 			return { trusted: true, uri };
 		}
@@ -459,6 +464,14 @@ export class WorkspaceTrustManagementService extends Disposable implements IWork
 		}
 
 		return (isEqualAuthority(getRemoteAuthority(uri), this._remoteAuthority.authority.authority)) && !!this._remoteAuthority.options?.isTrusted;
+	}
+
+	private isWorkstreamsWorktree(uri: URI): boolean {
+		if (uri.scheme !== Schemas.file || !this.environmentService.userHome) {
+			return false;
+		}
+		const workstreamsDir = URI.joinPath(this.environmentService.userHome, '.workstreams');
+		return this.uriIdentityService.extUri.isEqualOrParent(uri, workstreamsDir);
 	}
 
 	private set isTrusted(value: boolean) {
