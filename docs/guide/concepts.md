@@ -20,7 +20,7 @@ Workstreams stores its data outside the repository under `~/.workstreams/`:
   your-repo/                       # one directory per repository
     refactor-auth/                 # one directory per branch
       your-repo/                   # the git worktree checkout
-      workstream.json              # metadata
+      metadata.json              # metadata
       comments.json                # inline review comments
       images/                      # attached screenshots/mockups
 ```
@@ -28,7 +28,7 @@ Workstreams stores its data outside the repository under `~/.workstreams/`:
 Important paths:
 
 - `~/.workstreams/<repo>/<branch>/<repo>/`: the linked git worktree directory (named after the repo so VS Code shows the project name in the title bar)
-- `~/.workstreams/<repo>/<branch>/workstream.json`: display name, branch, base branch, description, creation time
+- `~/.workstreams/<repo>/<branch>/metadata.json`: display name, branch, base branch, description, creation time
 - `~/.workstreams/<repo>/<branch>/comments.json`: saved inline review comments
 - `~/.workstreams/<repo>/<branch>/images/`: screenshots or mockups attached to the initial prompt
 

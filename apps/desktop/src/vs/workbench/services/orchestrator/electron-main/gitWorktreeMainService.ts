@@ -139,7 +139,7 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			await GitWorktreeMainService.git(['branch', '-D', branchName], { cwd: repoPath });
 		}
 
-		// Clean up the parent branch directory (workstream.json, comments, images, etc.)
+		// Clean up the parent branch directory (metadata.json, comments, images, etc.)
 		const branchDir = path.dirname(worktreePath);
 		const wsRoot = path.join(os.homedir(), '.workstreams');
 		if (branchDir.startsWith(wsRoot + path.sep) && branchDir !== wsRoot) {
@@ -335,13 +335,13 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 
 	async writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void> {
 		const dir = this.branchDir(repoPath, branchName);
-		const metaPath = path.join(dir, 'workstream.json');
+		const metaPath = path.join(dir, 'metadata.json');
 		await mkdir(dir, { recursive: true });
 		await writeFile(metaPath, JSON.stringify(meta, null, '\t') + '\n', 'utf8');
 	}
 
 	async readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null> {
-		const metaPath = path.join(this.branchDir(repoPath, branchName), 'workstream.json');
+		const metaPath = path.join(this.branchDir(repoPath, branchName), 'metadata.json');
 		try {
 			const content = await readFile(metaPath, 'utf8');
 			return JSON.parse(content);
