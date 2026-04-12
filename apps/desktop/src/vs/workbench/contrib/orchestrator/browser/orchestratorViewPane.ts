@@ -28,6 +28,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { URI } from '../../../../base/common/uri.js';
 import { showAddWorktreeModal, agentsFromIds, DroppedImage, TERMINAL_AGENT_ID } from './addWorktreeModal.js';
 import { showDeleteWorktreeModal } from './deleteWorktreeModal.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IUpdate, IUpdateService, State, StateType } from '../../../../platform/update/common/update.js';
 
 export const ORCHESTRATOR_VIEW_CONTAINER_ID = 'workbench.view.orchestrator';
@@ -36,6 +37,8 @@ export const ORCHESTRATOR_VIEW_ID = 'workbench.view.orchestrator.worktrees';
 export class OrchestratorViewPane extends ViewPane {
 
 	private static readonly FLIP_DURATION_MS = 250;
+	private static readonly DISMISS_KEY = 'update/bannerDismissedTime';
+	private static readonly DISMISS_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day
 
 	private repoListElement: HTMLElement | undefined;
 	private updateBannerElement: HTMLElement | undefined;
@@ -48,6 +51,7 @@ export class OrchestratorViewPane extends ViewPane {
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IFileService private readonly fileService: IFileService,
 		@IUpdateService private readonly updateService: IUpdateService,
+		@IStorageService private readonly storageService: IStorageService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -248,75 +252,58 @@ export class OrchestratorViewPane extends ViewPane {
 			return;
 		}
 
-		switch (state.type) {
-			case StateType.AvailableForDownload:
-				this.showUpdateBanner(container, state.update, 'available');
-				break;
-			case StateType.Downloading:
-			case StateType.Downloaded:
-				this.showUpdateBanner(container, state.update, 'downloading');
-				break;
-			case StateType.Ready:
-				this.showUpdateBanner(container, state.update, 'ready');
-				break;
-			default:
-				this.hideUpdateBanner();
-				break;
+		if (state.type === StateType.Ready && !this.isDismissCooldownActive()) {
+			this.showUpdateBanner(container, state.update);
+		} else {
+			this.hideUpdateBanner();
 		}
 	}
 
-	private showUpdateBanner(container: HTMLElement, update: IUpdate | undefined, phase: 'available' | 'downloading' | 'ready'): void {
+	private isDismissCooldownActive(): boolean {
+		const raw = this.storageService.get(OrchestratorViewPane.DISMISS_KEY, StorageScope.APPLICATION);
+		if (!raw) {
+			return false;
+		}
+		return (Date.now() - parseInt(raw, 10)) < OrchestratorViewPane.DISMISS_COOLDOWN_MS;
+	}
+
+	private showUpdateBanner(container: HTMLElement, update: IUpdate | undefined): void {
 		this.hideUpdateBanner();
 
 		const banner = append(container, $('.update-banner'));
 
-		const textRow = append(banner, $('.update-banner-text'));
-		const icon = append(textRow, $('span'));
-		icon.setAttribute('aria-hidden', 'true');
+		// Dismiss button (top-right)
+		const dismissBtn = append(banner, $('button.update-banner-dismiss'));
+		dismissBtn.setAttribute('aria-label', localize('dismiss', "Dismiss"));
+		const dismissIcon = append(dismissBtn, $('span.codicon.codicon-close'));
+		dismissIcon.setAttribute('aria-hidden', 'true');
+		this.bannerDisposables.add(addDisposableListener(dismissBtn, EventType.CLICK, () => {
+			this.storageService.store(
+				OrchestratorViewPane.DISMISS_KEY,
+				String(Date.now()),
+				StorageScope.APPLICATION,
+				StorageTarget.MACHINE
+			);
+			this.hideUpdateBanner();
+		}));
 
-		const label = append(textRow, $('span'));
+		// Description text
+		const description = append(banner, $('.update-banner-description'));
+		const version = update?.productVersion ? `v${update.productVersion}` : 'A new version';
+		description.textContent = localize('readyToUpdateDesc', "{0} is available. Restart to update.", version);
 
-		if (phase === 'available') {
-			icon.className = 'update-banner-icon codicon codicon-arrow-up';
-			label.textContent = localize('updateAvailable', "Update available");
-		} else if (phase === 'downloading') {
-			icon.className = 'update-banner-icon codicon codicon-sync update-banner-spin';
-			label.textContent = localize('downloading', "Downloading update...");
-		} else {
-			icon.className = 'update-banner-icon codicon codicon-check';
-			label.textContent = localize('restartToUpdate', "Ready to update");
-		}
-
-		if (update?.productVersion) {
-			const version = append(textRow, $('.update-banner-version'));
-			version.textContent = `v${update.productVersion}`;
-		}
-
+		// Actions row
 		const actions = append(banner, $('.update-banner-actions'));
 
-		if (phase === 'available') {
-			const updateBtn = append(actions, $('button.update-banner-btn.primary'));
-			updateBtn.textContent = localize('update', "Update");
-			this.bannerDisposables.add(addDisposableListener(updateBtn, EventType.CLICK, () => {
-				this.updateService.downloadUpdate(true);
-			}));
-		} else if (phase === 'downloading') {
-			const downloadingBtn = append(actions, $('button.update-banner-btn.primary'));
-			downloadingBtn.textContent = localize('downloadingBtn', "Downloading...");
-			downloadingBtn.setAttribute('disabled', 'true');
-			downloadingBtn.style.opacity = '0.6';
-			downloadingBtn.style.cursor = 'default';
-		} else {
-			const restartBtn = append(actions, $('button.update-banner-btn.primary'));
-			restartBtn.textContent = localize('restartNow', "Restart");
-			this.bannerDisposables.add(addDisposableListener(restartBtn, EventType.CLICK, () => {
-				this.updateService.quitAndInstall();
-			}));
-		}
+		const restartBtn = append(actions, $('button.update-banner-btn.action'));
+		restartBtn.textContent = localize('restart', "Restart");
+		this.bannerDisposables.add(addDisposableListener(restartBtn, EventType.CLICK, () => {
+			this.updateService.quitAndInstall();
+		}));
 
 		if (update?.changelogUrl) {
-			const changelogBtn = append(actions, $('button.update-banner-btn.secondary'));
-			changelogBtn.textContent = localize('changelog', "Changelog");
+			const changelogBtn = append(actions, $('button.update-banner-btn.link'));
+			changelogBtn.textContent = localize('changelog', "Changelog \u2192");
 			this.bannerDisposables.add(addDisposableListener(changelogBtn, EventType.CLICK, () => {
 				this.openerService.open(URI.parse(update.changelogUrl!));
 			}));
