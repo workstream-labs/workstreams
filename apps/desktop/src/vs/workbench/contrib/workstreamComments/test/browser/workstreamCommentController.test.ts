@@ -48,7 +48,7 @@ function createMocks(ds: Pick<DisposableStore, 'add'>) {
 		activeWorktree: {
 			name: 'test-worktree',
 			branch: 'test-branch',
-			path: '/test/repo/.workstreams/trees/test-worktree',
+			path: '/home/.workstreams/test-repo/test-branch/test-repo',
 			isActive: true,
 			sessionState: WorktreeSessionState.Idle,
 		} as IWorktreeEntry | undefined,
@@ -151,13 +151,13 @@ suite('WorkstreamCommentController', () => {
 
 	suite('getDocumentComments', () => {
 		test('returns commenting ranges for git:// URIs (original side)', async () => {
-			const resource = URI.from({ scheme: 'git', path: '/test/repo/.workstreams/trees/test-worktree/src/foo.ts' });
+			const resource = URI.from({ scheme: 'git', path: '/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts' });
 			const result = await controller.getDocumentComments(resource, CancellationToken.None);
 			assert.strictEqual(result.commentingRanges!.ranges!.length, 1);
 		});
 
 		test('returns empty for file:// URIs not in a diff editor', async () => {
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			mocks.setEditors([]);
 			mocks.setDiffEditors([]);
 
@@ -166,7 +166,7 @@ suite('WorkstreamCommentController', () => {
 		});
 
 		test('returns commenting ranges for file:// URIs in a diff editor', async () => {
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const editor = makeMockCodeEditor({ id: 'e1', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
 				id: 'e0',
@@ -187,7 +187,7 @@ suite('WorkstreamCommentController', () => {
 		});
 
 		test('handles race condition via EditorOption.inDiffEditor fallback', async () => {
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const editor = makeMockCodeEditor({ id: 'e1', uri: resource, inDiffEditor: true });
 			mocks.setEditors([editor]);
 			mocks.setDiffEditors([]); // empty — simulates race
@@ -219,11 +219,11 @@ suite('WorkstreamCommentController', () => {
 
 	suite('side and label detection', () => {
 		test('split view: left editor, deleted line → side old, label L{n}, storedLine=n', () => {
-			const resource = URI.from({ scheme: 'git', path: '/test/repo/.workstreams/trees/test-worktree/src/foo.ts' });
+			const resource = URI.from({ scheme: 'git', path: '/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts' });
 			const originalEditor = makeMockCodeEditor({ id: 'orig', uri: resource, inDiffEditor: true });
 			const modifiedEditor = makeMockCodeEditor({
 				id: 'mod',
-				uri: URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts'),
+				uri: URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts'),
 				inDiffEditor: true,
 			});
 			// Deletion at lines 40-44 on the left (no corresponding modified lines)
@@ -249,11 +249,11 @@ suite('WorkstreamCommentController', () => {
 		});
 
 		test('split view: left editor, context line → side new, label R{right-n}, storedLine=right-n', () => {
-			const resource = URI.from({ scheme: 'git', path: '/test/repo/.workstreams/trees/test-worktree/src/foo.ts' });
+			const resource = URI.from({ scheme: 'git', path: '/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts' });
 			const originalEditor = makeMockCodeEditor({ id: 'orig', uri: resource, inDiffEditor: true });
 			const modifiedEditor = makeMockCodeEditor({
 				id: 'mod',
-				uri: URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts'),
+				uri: URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts'),
 				inDiffEditor: true,
 			});
 			// Addition at lines 5-7 on modified (shifts all subsequent lines by +2)
@@ -280,7 +280,7 @@ suite('WorkstreamCommentController', () => {
 		});
 
 		test('split view: right editor → side new, label R{n}, storedLine=n', () => {
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const originalEditor = makeMockCodeEditor({
 				id: 'orig',
 				uri: URI.from({ scheme: 'git', path: resource.path }),
@@ -305,7 +305,7 @@ suite('WorkstreamCommentController', () => {
 		test('inline view: pure addition → side new, label R{n}', async () => {
 			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
 
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
 				id: 'orig',
@@ -337,7 +337,7 @@ suite('WorkstreamCommentController', () => {
 		test('inline view: changed line → side new, label R{n}', async () => {
 			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
 
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
 				id: 'orig',
@@ -363,7 +363,7 @@ suite('WorkstreamCommentController', () => {
 		test('inline view: context line → side new, label R{n}', async () => {
 			await mocks.configurationService.setUserConfiguration('diffEditor.renderSideBySide', false);
 
-			const resource = URI.file('/test/repo/.workstreams/trees/test-worktree/src/foo.ts');
+			const resource = URI.file('/home/.workstreams/test-repo/test-branch/test-repo/src/foo.ts');
 			const modifiedEditor = makeMockCodeEditor({ id: 'mod', uri: resource, inDiffEditor: true });
 			const originalEditor = makeMockCodeEditor({
 				id: 'orig',

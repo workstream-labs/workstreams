@@ -76,7 +76,7 @@ Saved comments appear inline with **Edit** and **Delete** buttons. Comments are 
 
 ### Where comments are stored
 
-Comments persist as JSON at `{repoPath}/.workstreams/comments/{worktreeName}.json`, compatible with the CLI's comment format.
+Comments persist as JSON at `~/.workstreams/{repoName}/{worktreeBranchName}/comments.json`, compatible with the CLI's comment format.
 
 ## Bundled Extensions
 

@@ -378,7 +378,7 @@ export class OrchestratorViewPane extends ViewPane {
 			return [];
 		}
 
-		const imagesDir = URI.file(`${worktreePath}/.workstreams/images`);
+		const imagesDir = URI.joinPath(URI.file(worktreePath), '..', 'images');
 		await this.fileService.createFolder(imagesDir);
 
 		const paths: string[] = [];

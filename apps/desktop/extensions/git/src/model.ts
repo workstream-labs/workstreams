@@ -11,6 +11,7 @@ import { dispose, anyEvent, filterEvent, isDescendant, pathEquals, toDisposable,
 import { Git } from './git';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { fromGitUri } from './uri';
 import type { APIState as State, CredentialsProvider, PushErrorHandler, PublishEvent, RemoteSourcePublisher, PostCommitCommandsProvider, BranchProtectionProvider, SourceControlHistoryItemDetailsProvider } from './api/git';
 import { Askpass } from './askpass';
@@ -427,7 +428,6 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 				const childrenFolders = children
 					.filter(dirent =>
 						dirent.isDirectory() && dirent.name !== '.git' &&
-						dirent.name !== '.workstreams' &&
 						!repositoryScanIgnoredFolders.find(f => pathEquals(dirent.name, f)))
 					.map(dirent => path.join(currentFolder.path, dirent.name));
 
@@ -626,15 +626,17 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 				return;
 			}
 
-			// Skip repositories inside .workstreams directory (managed by orchestrator)
-			// but only when discovered as sub-repos of the main workspace
-			const isWorkstreamsSubRepo = (workspace.workspaceFolders || []).some(folder => {
-				const relative = path.relative(folder.uri.fsPath, repositoryRoot);
-				return !relative.startsWith('..') && relative.split(path.sep).includes('.workstreams');
-			});
-			if (isWorkstreamsSubRepo) {
-				this.logger.trace(`[Model][openRepository] Repository inside .workstreams directory, skipping: ${repositoryRoot}`);
-				return;
+			// Skip repositories inside ~/.workstreams/ unless they are
+			// the current workspace folder (i.e. the active worktree)
+			const workstreamsRoot = path.join(os.homedir(), '.workstreams');
+			if (isDescendant(workstreamsRoot, repositoryRoot)) {
+				const isWorkspaceFolder = (workspace.workspaceFolders || []).some(
+					folder => pathEquals(folder.uri.fsPath, repositoryRoot)
+				);
+				if (!isWorkspaceFolder) {
+					this.logger.trace(`[Model][openRepository] Repository inside ~/.workstreams/ but not a workspace folder, skipping: ${repositoryRoot}`);
+					return;
+				}
 			}
 
 			// Handle git repositories that are in parent folders

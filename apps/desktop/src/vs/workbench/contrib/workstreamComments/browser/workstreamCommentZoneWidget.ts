@@ -242,10 +242,10 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 		}
 
 		if (this._savedComment) {
-			await this._workstreamCommentService.updateComment(worktree.name, this._savedComment.id, text);
+			await this._workstreamCommentService.updateComment(worktree.branch, this._savedComment.id, text);
 		} else {
 			await this._workstreamCommentService.addComment(
-				worktree.name, relativePath, this._storedLine, text, this._side
+				worktree.branch, relativePath, this._storedLine, text, this._side
 			);
 		}
 		// Close — onDidChangeComments will recreate from saved data
@@ -262,7 +262,7 @@ export class WorkstreamCommentZoneWidget extends ZoneWidget {
 			return;
 		}
 
-		await this._workstreamCommentService.deleteComment(worktree.name, this._savedComment.id);
+		await this._workstreamCommentService.deleteComment(worktree.branch, this._savedComment.id);
 		this._close();
 	}
 

@@ -25,12 +25,19 @@ class MockGitWorktreeService implements IGitWorktreeService {
 	}
 	async listBranches(): Promise<string[]> { return ['main']; }
 	async detectAgents(): Promise<string[]> { return ['claude']; }
-	async addWorktree(repoPath: string, name: string): Promise<string> { return `${repoPath}/.workstreams/${name}/tree`; }
+	async addWorktree(repoPath: string, name: string): Promise<string> {
+		const repoName = repoPath.split('/').pop()!;
+		return `/home/.workstreams/${repoName}/${name}/${repoName}`;
+	}
 	async removeWorktree(): Promise<void> { }
 	async getDiffStats(): Promise<IDiffStats> { return { filesChanged: 0, additions: 0, deletions: 0, defaultBranch: 'main' }; }
 	async getPRInfo(): Promise<null> { return null; }
 	async writeWorktreeMeta(): Promise<void> { }
 	async readWorktreeMeta(): Promise<IWorktreeMeta | null> { return null; }
+	async getWorkstreamsDir(repoPath: string): Promise<string> {
+		const repoName = repoPath.split('/').pop()!;
+		return `/home/.workstreams/${repoName}`;
+	}
 }
 
 suite('OrchestratorService', () => {
@@ -461,7 +468,7 @@ suite('parseWorktreeList', () => {
 			'HEAD abc1234',
 			'branch refs/heads/main',
 			'',
-			'worktree /Users/dev/my-repo/.workstreams/feature/tree',
+			'worktree /Users/dev/.workstreams/my-repo/feature/my-repo',
 			'HEAD def5678',
 			'branch refs/heads/feature',
 			''
@@ -470,7 +477,7 @@ suite('parseWorktreeList', () => {
 		const result = parseWorktreeList(output);
 		assert.strictEqual(result.length, 2);
 		assert.strictEqual(result[0].branch, 'main');
-		assert.strictEqual(result[1].path, '/Users/dev/my-repo/.workstreams/feature/tree');
+		assert.strictEqual(result[1].path, '/Users/dev/.workstreams/my-repo/feature/my-repo');
 		assert.strictEqual(result[1].branch, 'feature');
 	});
 

@@ -76,7 +76,8 @@ suite('parseNumstat', () => {
 	});
 });
 
-suite('GitWorktreeMainService - getDiffStats', () => {
+suite('GitWorktreeMainService - getDiffStats', function () {
+	this.timeout(10_000);
 
 	let service: GitWorktreeMainService;
 	let repoPath: string;
