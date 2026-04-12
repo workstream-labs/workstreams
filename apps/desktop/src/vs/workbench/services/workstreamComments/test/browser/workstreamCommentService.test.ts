@@ -16,7 +16,7 @@ suite('WorkstreamCommentService', () => {
 	setup(() => {
 		const instantiationService = ds.add(workbenchInstantiationService(undefined, ds));
 		service = ds.add(instantiationService.createInstance(WorkstreamCommentServiceImpl));
-		service.setBasePath(URI.file('/test/repo'));
+		service.setBasePath(URI.file('/home/.workstreams/test-repo'));
 	});
 
 	test('returns empty thread for unknown workstream', async () => {
@@ -187,7 +187,7 @@ suite('WorkstreamCommentService', () => {
 
 			// Change base path — cache should be cleared, and the old file
 			// won't be at the new path, so we get empty
-			service.setBasePath(URI.file('/different/repo'));
+			service.setBasePath(URI.file('/home/.workstreams/different-repo'));
 			const comments = await service.getComments('ws1');
 			assert.strictEqual(comments.length, 0);
 		});

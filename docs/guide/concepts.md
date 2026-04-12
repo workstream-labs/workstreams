@@ -13,28 +13,24 @@ Each additional workstream has its own branch, working tree, diff stats, termina
 
 ## On-disk layout
 
-Workstreams stores its metadata under `.workstreams/` inside the repository:
+Workstreams stores its data outside the repository under `~/.workstreams/`:
 
 ```text
-your-repo/
-  .workstreams/
-    refactor-auth/
-      tree/
-      workstream.json
-    comments/
-      refactor-auth.json
-  src/
-  package.json
+~/.workstreams/
+  your-repo/                       # one directory per repository
+    refactor-auth/                 # one directory per branch
+      your-repo/                   # the git worktree checkout
+      workstream.json              # metadata
+      comments.json                # inline review comments
+      images/                      # attached screenshots/mockups
 ```
 
 Important paths:
 
-- `.workstreams/<branch>/tree`: the linked git worktree directory
-- `.workstreams/<branch>/workstream.json`: display name, branch, base branch, description, creation time
-- `.workstreams/comments/<worktree>.json`: saved inline review comments for that worktree
-- `<worktree>/.workstreams/images/`: screenshots or mockups attached to the initial prompt
-
-Workstreams also makes sure `.workstreams/` is ignored in `.gitignore`.
+- `~/.workstreams/<repo>/<branch>/<repo>/`: the linked git worktree directory (named after the repo so VS Code shows the project name in the title bar)
+- `~/.workstreams/<repo>/<branch>/workstream.json`: display name, branch, base branch, description, creation time
+- `~/.workstreams/<repo>/<branch>/comments.json`: saved inline review comments
+- `~/.workstreams/<repo>/<branch>/images/`: screenshots or mockups attached to the initial prompt
 
 ## Feature name vs branch name
 

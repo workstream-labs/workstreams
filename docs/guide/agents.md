@@ -50,6 +50,6 @@ Workstreams stores the chosen command per agent and reuses it the next time you 
 
 ## Image attachments
 
-The creation modal accepts dropped images. Workstreams writes those files into the new worktree at `.workstreams/images/` and appends their file paths to the initial prompt.
+The creation modal accepts dropped images. Workstreams writes those files into the branch directory at `~/.workstreams/<repo>/<branch>/images/` and appends their file paths to the initial prompt.
 
 That makes desktop workflows useful for screenshot-driven UI tasks, bug reports, and design polish where the agent should inspect a visual reference.

@@ -51,6 +51,7 @@ export interface IGitWorktreeService {
 	detectAgents(): Promise<string[]>;
 	writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void>;
 	readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null>;
+	getWorkstreamsDir(repoPath: string): Promise<string>;
 }
 
 export function parseWorktreeList(output: string): IGitWorktreeInfo[] {

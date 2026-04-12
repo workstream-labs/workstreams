@@ -223,7 +223,7 @@ export class WorkstreamCommentServiceImpl extends Disposable implements IWorkstr
 
 	private _commentsFileUri(workstream: string): URI {
 		const base = this._basePath ?? URI.file('.');
-		return joinPath(base, '.workstreams', 'comments', `${workstream}.json`);
+		return joinPath(base, workstream, 'comments.json');
 	}
 
 	// --- Serialization (CLI-compatible) ---

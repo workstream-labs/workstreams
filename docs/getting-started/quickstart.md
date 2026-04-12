@@ -28,7 +28,7 @@ When you confirm the modal, Workstreams:
 
 - creates a new git worktree
 - creates a branch with the exact branch name you entered
-- stores worktree metadata in `.workstreams/<branch>/workstream.json`
+- stores worktree metadata in `~/.workstreams/<repo>/<branch>/workstream.json`
 - switches the IDE into that new worktree
 - opens a terminal and launches the selected agent command
 

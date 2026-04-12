@@ -44,6 +44,7 @@ class WorkstreamCommentsContribution extends Disposable {
 		@ICommentService private readonly commentService: ICommentService,
 		@IWorkstreamCommentService private readonly workstreamCommentService: IWorkstreamCommentService,
 		@IOrchestratorService private readonly orchestratorService: IOrchestratorService,
+		@IGitWorktreeService private readonly gitWorktreeService: IGitWorktreeService,
 		@ICodeEditorService private readonly codeEditorService: ICodeEditorService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INotificationService _notificationService: INotificationService,
@@ -57,9 +58,9 @@ class WorkstreamCommentsContribution extends Disposable {
 		this.orchestratorService.whenReady.then(() => this._initialize());
 	}
 
-	private _initialize(): void {
-		// Set the base path from the first repository (the main repo root)
-		this._updateBasePath();
+	private async _initialize(): Promise<void> {
+		// Set the base path from the first repository's workstreams directory
+		await this._updateBasePath();
 
 		// Create the comment controller
 		this._controller.value = new WorkstreamCommentController(
@@ -99,12 +100,12 @@ class WorkstreamCommentsContribution extends Disposable {
 		}
 	}
 
-	private _updateBasePath(): void {
-		// Use the first repo's path as the base for comment storage
+	private async _updateBasePath(): Promise<void> {
 		const repos = this.orchestratorService.repositories;
 		if (repos.length > 0) {
+			const wsDir = await this.gitWorktreeService.getWorkstreamsDir(repos[0].path);
 			const commentService = this.workstreamCommentService as WorkstreamCommentServiceImpl;
-			commentService.setBasePath(URI.file(repos[0].path));
+			commentService.setBasePath(URI.file(wsDir));
 		}
 	}
 }

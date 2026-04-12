@@ -13,7 +13,7 @@ Comments are anchored to:
 - diff side (`original` or `modified`)
 - optional line context
 
-They are stored per worktree in `.workstreams/comments/<worktree>.json`.
+They are stored per worktree in `~/.workstreams/<repo>/<worktree>/comments.json`.
 
 ![Inline review comments](/commenting-view.png)
 

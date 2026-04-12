@@ -5,6 +5,7 @@
 
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import { IGitWorktreeService, IGitWorktreeInfo, IDiffStats, IPRInfo, IWorktreeMeta, parseWorktreeList } from '../common/gitWorktreeService.js';
@@ -20,10 +21,6 @@ const mkdir = promisify(fs.mkdir);
 const TAG = '[GitWorktreeMainService]';
 
 const MAX_UNTRACKED_FILE_SIZE = 256 * 1024; // 256 KB — skip large/binary files
-
-const WORKSTREAMS_DIR = '.workstreams';
-const WORKTREE_SUBDIR = 'tree';
-const GITIGNORE_ENTRY = '.workstreams/';
 
 export function parseNumstat(stdout: string): Map<string, { add: number; del: number }> {
 	const files = new Map<string, { add: number; del: number }>();
@@ -119,18 +116,15 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	}
 
 	async addWorktree(repoPath: string, name: string, baseBranch?: string): Promise<string> {
-		const workstreamsDir = path.join(repoPath, WORKSTREAMS_DIR);
-		const worktreeDir = path.join(workstreamsDir, name);
-		const worktreePath = path.join(worktreeDir, WORKTREE_SUBDIR);
+		const branchDir = this.branchDir(repoPath, name);
+		const worktreePath = path.join(branchDir, path.basename(repoPath));
 
-		await mkdir(worktreeDir, { recursive: true });
+		await mkdir(branchDir, { recursive: true });
 		const args = ['worktree', 'add', '-b', name, worktreePath];
 		if (baseBranch) {
 			args.push(baseBranch);
 		}
 		await GitWorktreeMainService.git(args, { cwd: repoPath });
-
-		await this.ensureGitignore(repoPath);
 
 		return worktreePath;
 	}
@@ -145,10 +139,11 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 			await GitWorktreeMainService.git(['branch', '-D', branchName], { cwd: repoPath });
 		}
 
-		// Clean up the parent .workstreams/<name>/ directory (workstream.json, etc.)
-		const worktreeDir = path.dirname(worktreePath);
-		if (worktreeDir.includes(WORKSTREAMS_DIR) && worktreeDir !== path.join(repoPath, WORKSTREAMS_DIR)) {
-			await rm(worktreeDir, { recursive: true, force: true }).catch(() => { });
+		// Clean up the parent branch directory (workstream.json, comments, images, etc.)
+		const branchDir = path.dirname(worktreePath);
+		const wsRoot = path.join(os.homedir(), '.workstreams');
+		if (branchDir.startsWith(wsRoot + path.sep) && branchDir !== wsRoot) {
+			await rm(branchDir, { recursive: true, force: true }).catch(() => { });
 		}
 	}
 
@@ -339,14 +334,14 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 	}
 
 	async writeWorktreeMeta(repoPath: string, branchName: string, meta: IWorktreeMeta): Promise<void> {
-		const worktreeDir = path.join(repoPath, WORKSTREAMS_DIR, branchName);
-		const metaPath = path.join(worktreeDir, 'workstream.json');
-		await mkdir(worktreeDir, { recursive: true });
+		const dir = this.branchDir(repoPath, branchName);
+		const metaPath = path.join(dir, 'workstream.json');
+		await mkdir(dir, { recursive: true });
 		await writeFile(metaPath, JSON.stringify(meta, null, '\t') + '\n', 'utf8');
 	}
 
 	async readWorktreeMeta(repoPath: string, branchName: string): Promise<IWorktreeMeta | null> {
-		const metaPath = path.join(repoPath, WORKSTREAMS_DIR, branchName, 'workstream.json');
+		const metaPath = path.join(this.branchDir(repoPath, branchName), 'workstream.json');
 		try {
 			const content = await readFile(metaPath, 'utf8');
 			return JSON.parse(content);
@@ -355,22 +350,12 @@ export class GitWorktreeMainService implements IGitWorktreeService {
 		}
 	}
 
-	private async ensureGitignore(repoPath: string): Promise<void> {
-		const gitignorePath = path.join(repoPath, '.gitignore');
+	async getWorkstreamsDir(repoPath: string): Promise<string> {
+		return path.join(os.homedir(), '.workstreams', path.basename(repoPath));
+	}
 
-		let content = '';
-		try {
-			content = await readFile(gitignorePath, 'utf8');
-		} catch {
-			// .gitignore doesn't exist yet
-		}
-
-		const lines = content.split('\n');
-		const alreadyHasEntry = lines.some(line => line.trim() === GITIGNORE_ENTRY || line.trim() === WORKSTREAMS_DIR);
-
-		if (!alreadyHasEntry) {
-			const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-			await writeFile(gitignorePath, content + suffix + GITIGNORE_ENTRY + '\n', 'utf8');
-		}
+	/** Returns the per-branch directory: ~/.workstreams/<repoName>/<branchName>/ */
+	private branchDir(repoPath: string, branchName: string): string {
+		return path.join(os.homedir(), '.workstreams', path.basename(repoPath), branchName);
 	}
 }
