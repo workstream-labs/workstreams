@@ -278,7 +278,7 @@ export class WorkstreamCommentController extends Disposable implements ICommentC
 			const editorSide: CommentSide | 'both' = isInline ? 'both' : (isOriginal ? 'old' : 'new');
 
 			const relativePath = model.uri.fsPath.substring(worktreePrefix.length);
-			const comments = await this.workstreamCommentService.getComments(worktree.name, relativePath);
+			const comments = await this.workstreamCommentService.getComments(worktree.branch, relativePath);
 
 			for (const comment of comments) {
 				if (editorSide !== 'both' && comment.side !== editorSide) {

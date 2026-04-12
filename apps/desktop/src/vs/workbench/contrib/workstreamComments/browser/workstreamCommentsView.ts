@@ -133,7 +133,7 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 		const worktree = this.orchestratorService.activeWorktree;
 		let offlineCount = 0;
 		if (worktree) {
-			const comments = await this.workstreamCommentService.getComments(worktree.name);
+			const comments = await this.workstreamCommentService.getComments(worktree.branch);
 			offlineCount = comments.length;
 		}
 
@@ -181,7 +181,7 @@ export class WorkstreamCommentsTreeDataProvider extends Disposable implements IT
 			return [];
 		}
 
-		const comments = await this.workstreamCommentService.getComments(worktree.name);
+		const comments = await this.workstreamCommentService.getComments(worktree.branch);
 		if (comments.length === 0) {
 			return [];
 		}

@@ -177,7 +177,7 @@ registerAction2(class extends Action2 {
 		}
 
 		// Fetch both offline and online comments
-		const offlineComments = await commentService.getComments(worktree.name);
+		const offlineComments = await commentService.getComments(worktree.branch);
 
 		// Find the repo that owns this worktree
 		const repos = orchestratorService.repositories;
@@ -352,7 +352,7 @@ registerAction2(class extends Action2 {
 		// Delete only offline comments (online comments stay on GitHub)
 		for (const item of picked) {
 			if (item.source === 'offline' && item.offlineComment) {
-				await commentService.deleteComment(worktree.name, item.offlineComment.id);
+				await commentService.deleteComment(worktree.branch, item.offlineComment.id);
 			}
 		}
 
