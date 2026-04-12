@@ -467,10 +467,11 @@ export class WorkspaceTrustManagementService extends Disposable implements IWork
 	}
 
 	private isWorkstreamsWorktree(uri: URI): boolean {
-		if (uri.scheme !== Schemas.file || !this.environmentService.userHome) {
+		const userHome = (this.environmentService as { userHome?: URI }).userHome;
+		if (uri.scheme !== Schemas.file || !userHome) {
 			return false;
 		}
-		const workstreamsDir = URI.joinPath(this.environmentService.userHome, '.workstreams');
+		const workstreamsDir = URI.joinPath(userHome, '.workstreams');
 		return this.uriIdentityService.extUri.isEqualOrParent(uri, workstreamsDir);
 	}
 
