@@ -11,6 +11,7 @@ import { dispose, anyEvent, filterEvent, isDescendant, pathEquals, toDisposable,
 import { Git } from './git';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { fromGitUri } from './uri';
 import type { APIState as State, CredentialsProvider, PushErrorHandler, PublishEvent, RemoteSourcePublisher, PostCommitCommandsProvider, BranchProtectionProvider, SourceControlHistoryItemDetailsProvider } from './api/git';
 import { Askpass } from './askpass';
@@ -623,6 +624,19 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			if (this.shouldRepositoryBeIgnored(repositoryRoot)) {
 				this.logger.trace(`[Model][openRepository] Repository for path ${repositoryRoot} is ignored`);
 				return;
+			}
+
+			// Skip repositories inside ~/.workstreams/ unless they are
+			// the current workspace folder (i.e. the active worktree)
+			const workstreamsRoot = path.join(os.homedir(), '.workstreams');
+			if (isDescendant(workstreamsRoot, repositoryRoot)) {
+				const isWorkspaceFolder = (workspace.workspaceFolders || []).some(
+					folder => pathEquals(folder.uri.fsPath, repositoryRoot)
+				);
+				if (!isWorkspaceFolder) {
+					this.logger.trace(`[Model][openRepository] Repository inside ~/.workstreams/ but not a workspace folder, skipping: ${repositoryRoot}`);
+					return;
+				}
 			}
 
 			// Handle git repositories that are in parent folders
