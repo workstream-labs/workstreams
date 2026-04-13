@@ -8,6 +8,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as electron from 'electron';
 import { CancellationToken } from '../../../base/common/cancellation.js';
+import { timeout } from '../../../base/common/async.js';
 import { streamToBuffer } from '../../../base/common/buffer.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
@@ -140,7 +141,7 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 		this.checkGitHubRelease(url, explicit);
 	}
 
-	private async checkGitHubRelease(url: string, explicit: boolean): Promise<void> {
+	private async checkGitHubRelease(url: string, explicit: boolean, attempt: number = 1): Promise<void> {
 		try {
 			this.logService.trace('workstreams-update#checkGitHubRelease', { url });
 
@@ -152,9 +153,15 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 						'User-Agent': `Workstreams/${this.productService.version}`,
 					},
 					callSite: 'workstreamsUpdateService.checkGitHubRelease',
+					timeout: 30_000,
 				},
 				CancellationToken.None
 			);
+
+			// Treat server errors (5xx) as retryable
+			if (context.res.statusCode && context.res.statusCode >= 500) {
+				throw new Error(`Server returned ${context.res.statusCode}`);
+			}
 
 			if (context.res.statusCode !== 200) {
 				this.logService.info('workstreams-update#checkGitHubRelease - non-200 response', context.res.statusCode);
@@ -198,6 +205,7 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 						'User-Agent': `Workstreams/${this.productService.version}`,
 					},
 					callSite: 'workstreamsUpdateService.fetchManifest',
+					timeout: 30_000,
 				},
 				CancellationToken.None
 			);
@@ -245,7 +253,15 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 			// Auto-download in background — no user interaction needed
 			this.doDownloadUpdate(State.AvailableForDownload(update) as AvailableForDownload);
 		} catch (err) {
-			this.logService.error('workstreams-update#checkGitHubRelease - error', err);
+			const maxAttempts = 3;
+			const retryDelays = [10_000, 30_000]; // 10s, 30s backoff
+			if (attempt < maxAttempts) {
+				const delay = retryDelays[attempt - 1];
+				this.logService.error(`workstreams-update#checkGitHubRelease - attempt ${attempt}/${maxAttempts} failed, retrying in ${delay / 1000}s`, err);
+				await timeout(delay);
+				return this.checkGitHubRelease(url, explicit, attempt + 1);
+			}
+			this.logService.error('workstreams-update#checkGitHubRelease - all attempts failed', err);
 			this.setState(State.Idle(UpdateType.Archive, explicit ? String(err) : undefined));
 		}
 	}
@@ -280,6 +296,7 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 					url: update.url,
 					headers: { 'User-Agent': `Workstreams/${this.productService.version}` },
 					callSite: 'workstreamsUpdateService.downloadZip',
+					timeout: 60_000, // 60s connection timeout
 				},
 				CancellationToken.None
 			);
@@ -288,7 +305,16 @@ export class WorkstreamsUpdateService extends AbstractUpdateService implements I
 				throw new Error(`Download failed with status ${context.res.statusCode}`);
 			}
 
-			const buffer = await streamToBuffer(context.stream);
+			// Stream the download with a 5-minute timeout to prevent indefinite hangs
+			const downloadTimeout = 5 * 60 * 1000;
+			let downloadTimer: NodeJS.Timeout;
+			const buffer = await Promise.race([
+				streamToBuffer(context.stream),
+				new Promise<never>((_, reject) => {
+					downloadTimer = setTimeout(() => reject(new Error(`Download timed out after ${downloadTimeout / 1000}s`)), downloadTimeout);
+				}),
+			]);
+			clearTimeout(downloadTimer!);
 			await fs.promises.writeFile(zipPath, buffer.buffer);
 
 			this.logService.info('workstreams-update#doDownloadUpdate - download complete, extracting');
