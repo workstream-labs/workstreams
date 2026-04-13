@@ -186,7 +186,8 @@ export class OrchestratorViewPane extends ViewPane {
 
 		const rightSlot = append(nameRow, $('.worktree-name-right'));
 
-		if (!isMainWorktree && !worktree.provisioning) {
+		const hasArchive = worktree.prState === 'merged';
+		if (!isMainWorktree && !worktree.provisioning && !hasArchive) {
 			const deleteBtn = append(rightSlot, $('.worktree-delete.icon-delete-svg'));
 			deleteBtn.title = localize('deleteWorktree', "Delete Worktree");
 			this.renderDisposables.add(addDisposableListener(deleteBtn, EventType.CLICK, e => {
@@ -235,7 +236,12 @@ export class OrchestratorViewPane extends ViewPane {
 			archiveLabel.textContent = localize('archive', "Archive");
 			this.renderDisposables.add(addDisposableListener(archiveBtn, EventType.CLICK, e => {
 				e.stopPropagation();
-				this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+				item.style.maxHeight = `${item.scrollHeight}px`;
+				item.offsetHeight; // force reflow
+				item.classList.add('archiving');
+				setTimeout(() => {
+					this.orchestratorService.removeWorktree(repo.path, worktree.branch);
+				}, 350);
 			}));
 		}
 
