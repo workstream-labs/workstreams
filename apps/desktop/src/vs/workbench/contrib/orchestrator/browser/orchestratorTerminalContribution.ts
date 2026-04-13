@@ -59,6 +59,14 @@ export class OrchestratorTerminalContribution extends Disposable {
 	private _ownershipRestored = false;
 
 	/**
+	 * Persisted ownership entries loaded from storage on restore,
+	 * keyed by persistentProcessId. Used by onDidCreateInstance to
+	 * reclaim late-arriving restored terminals instead of blindly
+	 * assigning them to _activeKey.
+	 */
+	private readonly _persistedOwnershipByPid = new Map<number, { key: string; gi: number; ti: number }>();
+
+	/**
 	 * Maps terminal instanceId → ownership info (worktree key + group position).
 	 */
 	private readonly _ownership = new Map<number, ITerminalOwnership>();
@@ -92,15 +100,20 @@ export class OrchestratorTerminalContribution extends Disposable {
 	) {
 		super();
 
-		this._logService.info(`${TAG} Contribution initialized`);
+		this._logService.info(`${TAG} Contribution initialized (${this._terminalService.instances.length} terminals at construction)`);
+
+		// Restore ownership from storage FIRST — even if activeWorktree
+		// isn't available yet. This populates _persistedOwnershipByPid so that
+		// late-arriving restored terminals (via onDidCreateInstance) can reclaim
+		// their correct worktree instead of being blindly assigned to _activeKey.
+		this._restoreOwnership();
 
 		// Seed _activeKey from already-restored active worktree so the
 		// first real switch correctly claims terminals for the current worktree.
 		const initialActive = this._orchestratorService.activeWorktree;
 		if (initialActive) {
 			this._activeKey = initialActive.path.toLowerCase();
-			this._restoreOwnership();
-			this._logService.trace(`${TAG} Seeded _activeKey="${this._activeKey}" from restored active worktree`);
+			this._logService.trace(`${TAG} Seeded _activeKey="${this._activeKey}"`);
 		}
 
 		/**
@@ -108,8 +121,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		 * from the main-process HTTP server and updates session state.
 		 */
 		this._register(this._hookNotificationService.onDidReceiveNotification(event => {
-			this._logService.trace(`${TAG} Hook event: ${event.eventType} for "${event.worktreePath}" | current state: ${this._findWorktreeSessionState(event.worktreePath) ?? 'undefined'}`);
-			this._logService.info(`${TAG} Hook notification: ${event.eventType} for "${event.worktreePath}"`);
+			this._logService.trace(`${TAG} Hook: ${event.eventType} for "${event.worktreePath}" (state=${this._findWorktreeSessionState(event.worktreePath) ?? 'undefined'})`);
 
 			const worktreeName = this._resolveWorktreeName(event.worktreePath);
 
@@ -190,12 +202,39 @@ export class OrchestratorTerminalContribution extends Disposable {
 		 * listen for command completions (refreshes git state on finish).
 		 */
 		this._register(this._terminalService.onDidCreateInstance(instance => {
-			this._logService.info(`${TAG} onDidCreateInstance: ${describeInstance(instance)}`);
+			const attach = instance.shellLaunchConfig.attachPersistentProcess;
+			const isRestored = !!attach;
+			this._logService.trace(`${TAG} onDidCreateInstance: ${describeInstance(instance)} restored=${isRestored}`);
+
 			if (instance.target === TerminalLocation.Panel) {
 				this._terminalService.moveToEditor(instance);
 				this._logService.trace(`${TAG} Moved panel terminal ${instance.instanceId} → editor`);
 			}
-			if (this._activeKey) {
+
+			// Skip if already owned (e.g. matched eagerly in _restoreOwnership).
+			if (this._ownership.has(instance.instanceId)) {
+				this._logService.trace(`${TAG} Terminal ${instance.instanceId} already owned — skipping`);
+				this._listenForCommandFinished(instance);
+				return;
+			}
+
+			// Check if this is a restored terminal with persisted ownership.
+			// On reload, terminals arrive asynchronously via attachPersistentProcess
+			// and may belong to a background worktree — don't blindly assign
+			// them to _activeKey.
+			// Use shellLaunchConfig.attachPersistentProcess.id (available immediately)
+			// rather than instance.persistentProcessId (requires process manager connection).
+			const pid = attach?.id ?? instance.persistentProcessId;
+			const persisted = pid !== undefined ? this._persistedOwnershipByPid.get(pid) : undefined;
+			if (persisted) {
+				this._ownership.set(instance.instanceId, {
+					worktreeKey: persisted.key,
+					groupIndex: persisted.gi,
+					tabIndex: persisted.ti,
+				});
+				this._persistedOwnershipByPid.delete(pid!);
+				this._logService.trace(`${TAG} Reclaimed terminal ${instance.instanceId} (pid=${pid}) → "${persisted.key}"`);
+			} else if (this._activeKey) {
 				this._ownership.set(instance.instanceId, { worktreeKey: this._activeKey, groupIndex: 0, tabIndex: -1 });
 				this._logService.trace(`${TAG} Claimed terminal ${instance.instanceId} → "${this._activeKey}"`);
 
@@ -207,7 +246,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 					slc.env = { ...slc.env, WORKSTREAMS_WORKTREE_PATH: worktreePath };
 				}
 			} else {
-				this._logService.trace(`${TAG} WARNING: no activeKey when terminal ${instance.instanceId} created — not claiming`);
+				this._logService.trace(`${TAG} No activeKey for terminal ${instance.instanceId} — unclaimed`);
 			}
 			this._listenForCommandFinished(instance);
 		}));
@@ -218,8 +257,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._terminalService.onDidDisposeInstance(instance => {
 			const info = this._ownership.get(instance.instanceId);
 			if (info) {
-				this._logService.trace(`${TAG} onDidDisposeInstance: terminal ${instance.instanceId} owner="${info.worktreeKey}"`);
-				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}" — removing from ownership`);
+				this._logService.trace(`${TAG} onDidDisposeInstance: ${instance.instanceId} owner="${info.worktreeKey}"`);
 				this._ownership.delete(instance.instanceId);
 
 				// If this was the last terminal for a worktree still in Working/Permission
@@ -247,6 +285,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		this._register(this._terminalService.onDidChangeInstances(() => {
 			this._dumpState('onDidChangeInstances');
 		}));
+
 	}
 
 	/**
@@ -625,7 +664,6 @@ export class OrchestratorTerminalContribution extends Disposable {
 			scheduler = new RunOnceScheduler(() => {
 				const state = this._findWorktreeSessionState(worktreePath);
 				if (state === WorktreeSessionState.Working) {
-					this._logService.trace(`${TAG} Heartbeat timeout: "${worktreePath}" state=${state} → Idle`);
 					this._logService.warn(`${TAG} Heartbeat timeout for "${worktreePath}" — resetting to Idle`);
 					this._orchestratorService.setSessionState(worktreePath, WorktreeSessionState.Idle);
 					const worktreeName = this._resolveWorktreeName(worktreePath);
@@ -655,6 +693,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 		const key = worktreePath.toLowerCase();
 		this._logService.trace(`${TAG} Worktree removed: "${key}"`);
 		this._cancelHeartbeat(worktreePath);
+		this._savedActiveEditors.delete(key);
 		for (const instance of [...this._terminalService.instances]) {
 			if (this._ownership.get(instance.instanceId)?.worktreeKey === key) {
 				const current = this._terminalService.getInstanceFromId(instance.instanceId);
@@ -691,7 +730,7 @@ export class OrchestratorTerminalContribution extends Disposable {
 			StorageScope.WORKSPACE,
 			StorageTarget.MACHINE,
 		);
-		this._logService.trace(`${TAG} Persisted ownership: ${entries.length} entries`);
+		this._logService.info(`${TAG} Persisted ${entries.length} terminal ownership entries`);
 	}
 
 	/**
@@ -712,28 +751,43 @@ export class OrchestratorTerminalContribution extends Disposable {
 		try {
 			const entries = JSON.parse(raw) as { pid: number; key: string; gi: number; ti: number }[];
 
+			// Build a PID->ownership lookup so late-arriving restored terminals
+			// (created after this method runs) can reclaim their real owner
+			// instead of being blindly assigned to _activeKey.
+			for (const entry of entries) {
+				this._persistedOwnershipByPid.set(entry.pid, entry);
+			}
+
+			// Match by persistentProcessId or attachPersistentProcess.id
 			const pidToInstance = new Map<number, ITerminalInstance>();
+			const attachPidToInstance = new Map<number, ITerminalInstance>();
 			for (const inst of this._terminalService.instances) {
 				if (inst.persistentProcessId !== undefined) {
 					pidToInstance.set(inst.persistentProcessId, inst);
 				}
+				const apid = inst.shellLaunchConfig.attachPersistentProcess?.id;
+				if (apid !== undefined) {
+					attachPidToInstance.set(apid, inst);
+				}
 			}
 
+			let matched = 0;
 			for (const entry of entries) {
-				const inst = pidToInstance.get(entry.pid);
+				const inst = pidToInstance.get(entry.pid) ?? attachPidToInstance.get(entry.pid);
 				if (inst && !inst.isDisposed) {
 					this._ownership.set(inst.instanceId, {
 						worktreeKey: entry.key,
 						groupIndex: entry.gi,
 						tabIndex: entry.ti,
 					});
-					this._logService.trace(`${TAG} Restored ownership: terminal ${inst.instanceId} (pid=${entry.pid}) → "${entry.key}"`);
+					this._persistedOwnershipByPid.delete(entry.pid);
+					matched++;
 				}
 			}
 
-			this._logService.info(`${TAG} Restored ${this._ownership.size} terminal ownership entries`);
-		} catch {
-			this._logService.warn(`${TAG} Failed to parse persisted terminal ownership, ignoring.`);
+			this._logService.info(`${TAG} Restored ownership: ${matched} matched, ${this._persistedOwnershipByPid.size} pending late arrival`);
+		} catch (e) {
+			this._logService.warn(`${TAG} Failed to parse persisted terminal ownership: ${e}`);
 		}
 	}
 }
