@@ -4,8 +4,6 @@ An IDE for orchestrating parallel AI coding agents in isolated git worktrees.
 
 Run multiple agents on different tasks simultaneously, review their output with inline diff comments, and iterate with a tight feedback loop — all from a single window. Agent-agnostic: works with Claude, Codex, Aider, and more.
 
-![Workstreams IDE](docs/public/hero.gif)
-
 ## Download
 
 Workstreams is available as a macOS desktop app.
@@ -35,15 +33,9 @@ The orchestrator sidebar manages multiple git worktrees per repository, showing 
 
 Leave comments directly on split-side diffs, then send them to Claude as structured prompts. Comments include file path, line number, and diff context so the agent knows exactly what to fix.
 
-![Inline review comments](apps/desktop/docs/public/commenting-view.png)
-
-![Send comments to Claude](apps/desktop/docs/public/sending-comments.png)
-
 ### Create workstreams with agent selection
 
 Define tasks with natural language prompts and pick which agent to run. Each workstream gets its own isolated git worktree.
-
-![Create a workstream](apps/desktop/docs/public/creating-workstream.png)
 
 ### Agent session state tracking
 
